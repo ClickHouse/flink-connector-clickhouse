@@ -11,7 +11,6 @@ import java.util.Collections;
 import java.util.List;
 
 class DummyFlinkClusterTest extends EmbeddedFlinkClusterForTests {
-
     // A simple Collection Sink
     private static class CollectSink implements SinkFunction<Long> {
 
