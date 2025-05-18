@@ -5,11 +5,6 @@
  * For more details on building Java & JVM projects, please refer to https://docs.gradle.org/8.14/userguide/building_java_projects.html in the Gradle documentation.
  */
 
-plugins {
-    // Apply the application plugin to add support for building a CLI application in Java.
-    application
-}
-
 repositories {
     // Use Maven Central for resolving dependencies.
     mavenCentral()
@@ -65,11 +60,6 @@ java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(11)
     }
-}
-
-application {
-    // Define the main class for the application.
-    mainClass = "org.example.App"
 }
 
 tasks.named<Test>("test") {
