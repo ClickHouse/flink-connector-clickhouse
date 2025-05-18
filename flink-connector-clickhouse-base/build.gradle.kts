@@ -3,6 +3,11 @@
  * 
  */
 
+plugins {
+    kotlin("jvm") version "1.9.0"
+    java
+}
+
 repositories {
     // Use Maven Central for resolving dependencies.
     mavenCentral()
