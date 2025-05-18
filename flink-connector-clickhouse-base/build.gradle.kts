@@ -1,0 +1,66 @@
+/*
+ *  This file is the build file of flink-connector-clickhouse-base submodule
+ * 
+ */
+
+repositories {
+    // Use Maven Central for resolving dependencies.
+    mavenCentral()
+}
+
+extra.apply {
+    set("clickHouseDriverVersion", "0.8.5")
+    set("flinkVersion", "2.0.0")
+    set("log4jVersion","2.17.2")
+}
+
+
+dependencies {
+    // Use JUnit Jupiter for testing.
+    testImplementation(libs.junit.jupiter)
+
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    // This dependency is used by the application.
+    implementation(libs.guava)
+    // logger
+    implementation("org.apache.logging.log4j:log4j-slf4j-impl:${project.extra["log4jVersion"]}")
+    implementation("org.apache.logging.log4j:log4j-api:${project.extra["log4jVersion"]}")
+    implementation("org.apache.logging.log4j:log4j-1.2-api:${project.extra["log4jVersion"]}")
+    implementation("org.apache.logging.log4j:log4j-core:${project.extra["log4jVersion"]}")
+
+    // ClickHouse Client Libraries
+    implementation("com.clickhouse:clickhouse-client:${project.extra["clickHouseDriverVersion"]}")
+    implementation("com.clickhouse:clickhouse-http-client:${project.extra["clickHouseDriverVersion"]}")
+    implementation("com.clickhouse:clickhouse-data:${project.extra["clickHouseDriverVersion"]}")
+    implementation("com.clickhouse:client-v2:${project.extra["clickHouseDriverVersion"]}")
+    // Apache Flink Libraries
+    implementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
+    implementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
+
+
+    testImplementation("org.apache.flink:flink-connector-files:${project.extra["flinkVersion"]}")
+    testImplementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
+    testImplementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
+    testImplementation("org.apache.flink:flink-clients:${project.extra["flinkVersion"]}")
+    testImplementation("org.apache.flink:flink-runtime:${project.extra["flinkVersion"]}")
+    // logger
+    testImplementation("org.apache.logging.log4j:log4j-slf4j-impl:${project.extra["log4jVersion"]}")
+    testImplementation("org.apache.logging.log4j:log4j-api:${project.extra["log4jVersion"]}")
+    testImplementation("org.apache.logging.log4j:log4j-1.2-api:${project.extra["log4jVersion"]}")
+    testImplementation("org.apache.logging.log4j:log4j-core:${project.extra["log4jVersion"]}")
+    // flink tests
+    testImplementation("org.apache.flink:flink-test-utils:${project.extra["flinkVersion"]}")
+}
+
+// Apply a specific Java toolchain to ease working on different environments.
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(11)
+    }
+}
+
+tasks.named<Test>("test") {
+    // Use JUnit Platform for unit tests.
+    useJUnitPlatform()
+}
