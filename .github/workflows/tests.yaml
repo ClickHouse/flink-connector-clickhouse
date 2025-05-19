@@ -43,4 +43,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-report
-          path: file:///home/runner/work/flink-connector-clickhouse/flink-connector-clickhouse/flink-connector-clickhouse-base/build/reports/
+          path: file:///home/runner/work/flink-connector-clickhouse/flink-connector-clickhouse/flink-connector-clickhouse-base/build/reports/tests/test/index.html
