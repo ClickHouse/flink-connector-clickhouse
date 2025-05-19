@@ -1,4 +1,4 @@
-package org.apache.flink.connector.test;
+package org.apache.flink.connector.test.embedded.flink;
 
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.RestOptions;
@@ -21,8 +21,7 @@ public class EmbeddedFlinkClusterForTests {
         return Integer.parseInt(value);
     }
 
-    @BeforeAll
-    static void setUp() throws Exception {
+    public static void setUp() throws Exception {
         Configuration config = new Configuration();
         config.set(RestOptions.PORT, REST_PORT); // web UI port (optional)
         config.set(TaskManagerOptions.NUM_TASK_SLOTS, NUM_TASK_SLOTS);
@@ -34,14 +33,13 @@ public class EmbeddedFlinkClusterForTests {
                         .build());
         flinkCluster.before();
     }
-    @AfterAll
-    static void tearDown() {
+    public static void tearDown() {
         if (flinkCluster != null) {
             flinkCluster.after();
         }
     }
 
-    protected static MiniClusterWithClientResource getMiniCluster() {
+    public static MiniClusterWithClientResource getMiniCluster() {
         if (flinkCluster == null)
             throw new RuntimeException("No MiniCluster available");
         return flinkCluster;
