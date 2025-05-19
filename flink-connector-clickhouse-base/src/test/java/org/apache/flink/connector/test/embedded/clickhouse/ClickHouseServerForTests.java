@@ -30,12 +30,14 @@ public class ClickHouseServerForTests {
 
     public static void initConfiguration() {
         if (isCloud) {
+            LOG.info("Init ClickHouse Cloud Configuration");
             host = System.getenv("CLICKHOUSE_CLOUD_HOST");
             port = Integer.parseInt(ClickHouseTestHelpers.HTTPS_PORT);
-            database = System.getenv("CLICKHOUSE_DATABASE");
+            database = String.format("flink_connector_test_%s", System.currentTimeMillis());
             username = System.getenv("CLICKHOUSE_USERNAME");
-            password = System.getenv("CLICKHOUSE_CLOUD_HOST");
+            password = System.getenv("CLICKHOUSE_CLOUD_PASSWORD");
         } else {
+            LOG.info("Init ClickHouse Docker Configuration");
             host = db.getHost();
             port = db.getFirstMappedPort();
             database = ClickHouseTestHelpers.DATABASE_DEFAULT;
@@ -45,27 +47,22 @@ public class ClickHouseServerForTests {
         isSSL = ClickHouseTestHelpers.isCloud();
     }
     public static void setUp() throws InterruptedException {
-        if (database == null) {
-            database = String.format("flink_connector_test_%s", System.currentTimeMillis());
-        }
         if (!isCloud) {
             db = new ClickHouseContainer(ClickHouseTestHelpers.CLICKHOUSE_DOCKER_IMAGE).withPassword("test_password").withEnv("CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT", "1");
             db.start();
         }
         initConfiguration();
-        if (isCloud) {
-            // wakeup cloud
-            // have a for loop
-            boolean isLive = false;
-            int counter = 0;
-            while (counter < 5) {
-                isLive = ClickHouseTestHelpers.ping(isCloud, host, port, isSSL, username, password);
-                if (isLive) return;
-                Thread.sleep(2000);
-                counter++;
-            }
-            throw new RuntimeException("Failed to connect to ClickHouse");
+        // wakeup cloud
+        // have a for loop
+        boolean isLive = false;
+        int counter = 0;
+        while (counter < 5) {
+            isLive = ClickHouseTestHelpers.ping(isCloud, host, port, isSSL, username, password);
+            if (isLive) return;
+            Thread.sleep(2000);
+            counter++;
         }
+        throw new RuntimeException("Failed to connect to ClickHouse");
     }
 
     public static void tearDown() {
