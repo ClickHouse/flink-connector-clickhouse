@@ -38,9 +38,3 @@ jobs:
           CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}
         with:
           arguments: test
-      - name: Upload Test Report
-        if: failure()  # Only upload if tests fail (optional)
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-report
-          path: file:///home/runner/work/flink-connector-clickhouse/flink-connector-clickhouse/flink-connector-clickhouse-base/build/reports/tests/test/index.html

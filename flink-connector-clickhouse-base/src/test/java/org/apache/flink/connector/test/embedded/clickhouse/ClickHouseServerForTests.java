@@ -34,7 +34,7 @@ public class ClickHouseServerForTests {
             host = System.getenv("CLICKHOUSE_CLOUD_HOST");
             port = Integer.parseInt(ClickHouseTestHelpers.HTTPS_PORT);
             database = String.format("flink_connector_test_%s", System.currentTimeMillis());
-            username = System.getenv("CLICKHOUSE_USERNAME");
+            username = ClickHouseTestHelpers.USERNAME_DEFAULT;
             password = System.getenv("CLICKHOUSE_CLOUD_PASSWORD");
         } else {
             LOG.info("Init ClickHouse Docker Configuration");

@@ -19,8 +19,8 @@ public class ClickHouseTestHelpers {
     public static final String DATABASE_DEFAULT = "default";
     public static final String USERNAME_DEFAULT = "default";
 
-    private static final int CLOUD_TIMEOUT_VALUE = 900;
-    private static final TimeUnit CLOUD_TIMEOUT_UNIT = TimeUnit.SECONDS;
+    private static final int TIMEOUT_VALUE = 60;
+    private static final TimeUnit TIMEOUT_UNIT = TimeUnit.SECONDS;
 
     public static String getClickhouseVersion() {
         String clickHouseVersion = System.getenv("CLICKHOUSE_VERSION");
@@ -39,6 +39,7 @@ public class ClickHouseTestHelpers {
         return new Client.Builder().addEndpoint(Protocol.HTTP, host, port, ssl)
                                    .setUsername(username)
                                    .setPassword(password)
+                                   .setConnectTimeout(TIMEOUT_VALUE, TIMEOUT_UNIT.toChronoUnit())
                                    .build();
     }
 
