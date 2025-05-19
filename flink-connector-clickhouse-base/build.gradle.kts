@@ -17,6 +17,7 @@ extra.apply {
     set("clickHouseDriverVersion", "0.8.5")
     set("flinkVersion", "2.0.0")
     set("log4jVersion","2.17.2")
+    set("testContainersVersion", "1.21.0")
 }
 
 
@@ -56,6 +57,9 @@ dependencies {
     testImplementation("org.apache.logging.log4j:log4j-core:${project.extra["log4jVersion"]}")
     // flink tests
     testImplementation("org.apache.flink:flink-test-utils:${project.extra["flinkVersion"]}")
+    //
+    testImplementation("org.testcontainers:testcontainers:${project.extra["testContainersVersion"]}")
+    testImplementation("org.testcontainers:clickhouse:${project.extra["testContainersVersion"]}")
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
