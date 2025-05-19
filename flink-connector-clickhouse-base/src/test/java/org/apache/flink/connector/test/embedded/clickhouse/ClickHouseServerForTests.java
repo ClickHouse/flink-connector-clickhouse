@@ -30,8 +30,8 @@ public class ClickHouseServerForTests {
 
     public static void initConfiguration() {
         if (isCloud) {
-            host = System.getenv("CLICKHOUSE_CLOUD_HOST");
-            port = Integer.parseInt(System.getenv("CLICKHOUSE_CLOUD_PORT"));
+            host = System.getenv("INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT");
+            port = Integer.parseInt(System.getenv("INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT"));
             database = System.getenv("CLICKHOUSE_DATABASE");
             username = System.getenv("CLICKHOUSE_USERNAME");
             password = System.getenv("CLICKHOUSE_PASSWORD");
