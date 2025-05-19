@@ -44,7 +44,7 @@ public class ClickHouseServerForTests {
         }
         isSSL = ClickHouseTestHelpers.isCloud();
     }
-    public static void setUp() {
+    public static void setUp() throws InterruptedException {
         if (database == null) {
             database = String.format("flink_connector_test_%s", System.currentTimeMillis());
         }
@@ -58,12 +58,13 @@ public class ClickHouseServerForTests {
             // have a for loop
             boolean isLive = false;
             int counter = 0;
-            while (isLive || counter < 3) {
+            while (counter < 5) {
                 isLive = ClickHouseTestHelpers.ping(isCloud, host, port, isSSL, username, password);
+                if (isLive) return;
+                Thread.sleep(2000);
                 counter++;
             }
-            if (!isLive)
-                throw new RuntimeException("Failed to connect to ClickHouse");
+            throw new RuntimeException("Failed to connect to ClickHouse");
         }
     }
 
