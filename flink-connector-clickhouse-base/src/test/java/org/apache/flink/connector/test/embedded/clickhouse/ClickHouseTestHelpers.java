@@ -35,7 +35,7 @@ public class ClickHouseTestHelpers {
         return clickHouseVersion != null && clickHouseVersion.equalsIgnoreCase("cloud");
     }
 
-    public static Client getClient(boolean isCloud, String host, int port, boolean ssl, String username, String password) {
+    public static Client getClient(String host, int port, boolean ssl, String username, String password) {
         return new Client.Builder().addEndpoint(Protocol.HTTP, host, port, ssl)
                                    .setUsername(username)
                                    .setPassword(password)
@@ -43,8 +43,8 @@ public class ClickHouseTestHelpers {
                                    .build();
     }
 
-    public static boolean ping(boolean isCloud, String host, int port, boolean ssl, String username, String password) {
-        Client client = getClient(isCloud(), host, port, ssl, username, password);
+    public static boolean ping(String host, int port, boolean ssl, String username, String password) {
+        Client client = getClient(host, port, ssl, username, password);
         return client.ping();
     }
 

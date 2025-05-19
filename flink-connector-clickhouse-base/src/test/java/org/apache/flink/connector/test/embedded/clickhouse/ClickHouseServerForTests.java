@@ -57,7 +57,7 @@ public class ClickHouseServerForTests {
         boolean isLive = false;
         int counter = 0;
         while (counter < 5) {
-            isLive = ClickHouseTestHelpers.ping(isCloud, host, port, isSSL, username, password);
+            isLive = ClickHouseTestHelpers.ping(host, port, isSSL, username, password);
             if (isLive) {
                 String createDatabase = String.format("CREATE DATABASE IF NOT EXISTS `%s`", database);
                 executeSql(createDatabase);
@@ -78,13 +78,13 @@ public class ClickHouseServerForTests {
     public static String getDataBase() { return database; }
 
     public static void executeSql(String sql) throws ExecutionException, InterruptedException {
-        Client client = ClickHouseTestHelpers.getClient(isCloud, host, port, isSSL, username, password);
+        Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
         client.execute(sql).get();
     }
 
     public static int countRows(String table) throws ExecutionException, InterruptedException {
         String countSql = String.format("SELECT COUNT(*) FROM `%s`.`%s`", database, table);
-        Client client = ClickHouseTestHelpers.getClient(isCloud, host, port, isSSL, username, password);
+        Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
         List<GenericRecord> countResult = client.queryAll(countSql);
         return countResult.get(0).getInteger(1);
     }
