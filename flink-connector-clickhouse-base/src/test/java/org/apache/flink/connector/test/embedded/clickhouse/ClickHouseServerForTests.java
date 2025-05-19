@@ -46,7 +46,7 @@ public class ClickHouseServerForTests {
         }
         isSSL = ClickHouseTestHelpers.isCloud();
     }
-    public static void setUp() throws InterruptedException {
+    public static void setUp() throws InterruptedException, ExecutionException {
         if (!isCloud) {
             db = new ClickHouseContainer(ClickHouseTestHelpers.CLICKHOUSE_DOCKER_IMAGE).withPassword("test_password").withEnv("CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT", "1");
             db.start();
@@ -58,7 +58,11 @@ public class ClickHouseServerForTests {
         int counter = 0;
         while (counter < 5) {
             isLive = ClickHouseTestHelpers.ping(isCloud, host, port, isSSL, username, password);
-            if (isLive) return;
+            if (isLive) {
+                String createDatabase = String.format("CREATE DATABASE IF NOT EXISTS `%s`", database);
+                executeSql(createDatabase);
+                return;
+            }
             Thread.sleep(2000);
             counter++;
         }

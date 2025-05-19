@@ -7,7 +7,7 @@ import org.junit.jupiter.api.BeforeAll;
 
 public class FlinkClusterTests {
     @BeforeAll
-    static void setup() throws Exception {
+    static void setUp() throws Exception {
         EmbeddedFlinkClusterForTests.setUp();
         ClickHouseServerForTests.setUp();
     }
