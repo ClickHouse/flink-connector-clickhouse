@@ -47,10 +47,10 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
     void CSVDataTest() throws Exception {
         //String path = ClickHouseSinkTests.class.getClassLoader().getResource(".").toString();
         String tableName = "csv_covid";
-        String dropTable = "drop table if exists " + tableName;
+        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
         ClickHouseServerForTests.executeSql(dropTable);
         // create table
-        String tableSql = "CREATE TABLE " + tableName + " (" +
+        String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
                             "date Date," +
                             "location_key LowCardinality(String)," +
                             "new_confirmed Int32," +
