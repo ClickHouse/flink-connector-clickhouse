@@ -18,4 +18,19 @@ public class FlinkClusterTests {
         ClickHouseServerForTests.tearDown();
     }
 
+    public String getServerURL() {
+        return ClickHouseServerForTests.getURL();
+    }
+
+    public String getUsername() {
+        return ClickHouseServerForTests.getUsername();
+    }
+
+    public String getPassword() {
+        return ClickHouseServerForTests.getPassword();
+    }
+
+    public String getDatabase() {
+        return ClickHouseServerForTests.getDatabase();
+    }
 }

@@ -1,0 +1,41 @@
+package org.apache.flink.connector.clickhouse.sink;
+
+import org.apache.flink.connector.base.sink.writer.AsyncSinkWriterStateSerializer;
+import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+
+public class ClickHouseAsyncSinkSerializer extends AsyncSinkWriterStateSerializer<ClickHousePayload> {
+    private static final Logger LOG = LoggerFactory.getLogger(AsyncSinkWriterStateSerializer.class);
+
+    @Override
+    protected void serializeRequestToStream(ClickHousePayload clickHousePayload, DataOutputStream dataOutputStream) throws IOException {
+        byte[] bytes = clickHousePayload.getPayload();
+        dataOutputStream.writeInt(bytes.length);
+        dataOutputStream.write(bytes);
+    }
+
+    private ClickHousePayload deserializeV1(DataInputStream dataInputStream) throws IOException {
+        int len = dataInputStream.readInt();
+        byte[] payload = dataInputStream.readNBytes(len);
+        return new ClickHousePayload(payload);
+    }
+
+    @Override
+    protected ClickHousePayload deserializeRequestFromStream(long version, DataInputStream dataInputStream) throws IOException {
+        if (version == 1) {
+            return deserializeV1(dataInputStream);
+        } else {
+            throw new IOException("Unsupported version: " + version);
+        }
+    }
+
+    @Override
+    public int getVersion() {
+        return 1;
+    }
+}

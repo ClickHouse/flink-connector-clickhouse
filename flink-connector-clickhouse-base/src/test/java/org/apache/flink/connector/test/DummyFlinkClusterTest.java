@@ -52,7 +52,7 @@ class DummyFlinkClusterTest extends FlinkClusterTests {
     @Test
     void testClickHouse() throws ExecutionException, InterruptedException {
         String tableName = "clickhouse_test";
-        String createTableSQl = String.format("CREATE TABLE `%s`.`%s` (order_id UInt64) ENGINE = MergeTree ORDER BY tuple(order_id);", ClickHouseServerForTests.getDataBase(), tableName);
+        String createTableSQl = String.format("CREATE TABLE `%s`.`%s` (order_id UInt64) ENGINE = MergeTree ORDER BY tuple(order_id);", getDatabase(), tableName);
         ClickHouseServerForTests.executeSql(createTableSQl);
         int rows = ClickHouseServerForTests.countRows(tableName);
         Assertions.assertEquals(0, rows);

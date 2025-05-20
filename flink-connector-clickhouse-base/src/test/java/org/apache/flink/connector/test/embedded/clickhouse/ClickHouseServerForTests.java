@@ -75,7 +75,19 @@ public class ClickHouseServerForTests {
         }
     }
 
-    public static String getDataBase() { return database; }
+    public static String getDatabase() { return database; }
+
+    public static String getHost() { return host; }
+    public static int getPort() { return port; }
+    public static String getUsername() { return username; }
+    public static String getPassword() { return password; }
+    public static String getURL() {
+        if (isCloud) {
+            return "https://" + host + ":" + port + "/";
+        } else {
+            return "http://" + host + ":" + port + "/";
+        }
+    }
 
     public static void executeSql(String sql) throws ExecutionException, InterruptedException {
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);

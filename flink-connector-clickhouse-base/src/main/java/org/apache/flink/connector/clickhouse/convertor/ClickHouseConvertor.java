@@ -1,0 +1,60 @@
+package org.apache.flink.connector.clickhouse.convertor;
+
+import org.apache.flink.api.connector.sink2.SinkWriter;
+import org.apache.flink.api.connector.sink2.WriterInitContext;
+import org.apache.flink.connector.base.sink.writer.ElementConverter;
+import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class ClickHouseConvertor<InputT> implements ElementConverter<InputT, ClickHousePayload> {
+    private static final Logger LOG = LoggerFactory.getLogger(ClickHouseConvertor.class);
+
+    enum Types {
+        STRING,
+        POJO,
+    }
+    private final Types type;
+
+    public ClickHouseConvertor(Class<?> clazz) {
+        if (clazz == null) {
+            throw new IllegalArgumentException("clazz must not be not null");
+        }
+        if (clazz == String.class) {
+            type = Types.STRING;
+
+        } else {
+            type = Types.POJO;
+            // lets register it
+
+        }
+    }
+
+    @Override
+    public ClickHousePayload apply( InputT o, SinkWriter.Context context) {
+        if (o == null) {
+            // we need to skip it
+            return null;
+        }
+        //
+        if (o instanceof String && type == Types.STRING) {
+            String payload = o.toString();
+            if (payload.isEmpty()) {
+                return new ClickHousePayload(null);
+            }
+            if (payload.endsWith("\n"))
+                return new ClickHousePayload(payload.getBytes());
+            return new ClickHousePayload((payload + "\n").getBytes());
+        }
+        if (type == Types.POJO) {
+            // TODO Convert to byte stream
+            return null;
+        }
+        throw new IllegalArgumentException("unable to convert " + o + " to " + type);
+    }
+
+    @Override
+    public void open(WriterInitContext context) {
+        ElementConverter.super.open(context);
+    }
+}
