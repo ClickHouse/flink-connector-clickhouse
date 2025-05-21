@@ -82,7 +82,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 clickHouseClientConfig
         );
         // in case of just want to forward our data use the appropriate ClickHouse format
-        csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
+        csvSink.setClickHouseFormat(ClickHouseFormat.TSV);
 
         Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
 

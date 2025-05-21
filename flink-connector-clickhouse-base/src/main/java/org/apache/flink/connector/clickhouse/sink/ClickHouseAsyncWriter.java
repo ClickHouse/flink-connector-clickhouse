@@ -80,12 +80,10 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
                 }
                 LOG.info("Data that will be send to ClickHouse in bytes {} and the amount of records {}.", totalSizeSend.get(), requestEntries.size());
                 out.close();
-
-                // .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true").serverSetting(ServerSettings.WAIT_END_OF_QUERY, "0")
             }, format, new InsertSettings().setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true"));
             response.whenComplete((insertResponse, throwable) -> {
                 if (throwable != null) {
-                    System.out.println(throwable.getMessage());
+                    handleFailedRequest(requestEntries, resultHandler, throwable);
                 } else {
                     handleSuccessfulRequest(resultHandler, insertResponse);
                 }
@@ -98,8 +96,22 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
 
     private void handleSuccessfulRequest(
             ResultHandler<ClickHousePayload> resultHandler, InsertResponse response) {
+        LOG.info("Successfully completed submitting request. Response [written rows {}, time took to insert {}, written bytes {}, query_id {}]",
+                response.getWrittenRows(),
+                response.getServerTime(),
+                response.getWrittenBytes(),
+                response.getQueryId()
+        );
         resultHandler.complete();
-        LOG.info("Successfully completed." + response.getWrittenRows());
-        LOG.info("Successfully completed." + response.getServerTime());
     }
+
+    private void handleFailedRequest(
+            List<ClickHousePayload> requestEntries,
+            ResultHandler<ClickHousePayload> resultHandler,
+            Throwable error) {
+        // TODO extract from error if we can retry
+        error.printStackTrace();
+
+    }
+
 }
