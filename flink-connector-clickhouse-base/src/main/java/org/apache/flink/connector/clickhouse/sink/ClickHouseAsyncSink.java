@@ -23,7 +23,7 @@ public class ClickHouseAsyncSink<InputT> extends AsyncSinkBase<InputT, ClickHous
     protected ClickHouseClientConfig clickHouseClientConfig;
     protected ClickHouseFormat clickHouseFormat = null;
 
-    protected ClickHouseAsyncSink(
+    public ClickHouseAsyncSink(
         ElementConverter<InputT, ClickHousePayload> converter,
         int maxBatchSize,
         int maxInFlightRequests,

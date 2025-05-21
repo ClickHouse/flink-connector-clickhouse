@@ -6,31 +6,32 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 
 public class FlinkClusterTests {
+
     @BeforeAll
-    static void setUp() throws Exception {
+    public static void setUp() throws Exception {
         EmbeddedFlinkClusterForTests.setUp();
         ClickHouseServerForTests.setUp();
     }
 
     @AfterAll
-    static void tearDown() {
+    public static void tearDown() {
         EmbeddedFlinkClusterForTests.tearDown();
         ClickHouseServerForTests.tearDown();
     }
 
-    public String getServerURL() {
+    public static String getServerURL() {
         return ClickHouseServerForTests.getURL();
     }
 
-    public String getUsername() {
+    public static String getUsername() {
         return ClickHouseServerForTests.getUsername();
     }
 
-    public String getPassword() {
+    public static String getPassword() {
         return ClickHouseServerForTests.getPassword();
     }
 
-    public String getDatabase() {
+    public static String getDatabase() {
         return ClickHouseServerForTests.getDatabase();
     }
 }
