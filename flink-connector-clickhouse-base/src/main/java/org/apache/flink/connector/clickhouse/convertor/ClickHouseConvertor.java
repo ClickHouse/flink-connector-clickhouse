@@ -7,6 +7,8 @@ import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
+
 
 public class ClickHouseConvertor<InputT> implements ElementConverter<InputT, ClickHousePayload> {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseConvertor.class);
@@ -54,7 +56,7 @@ public class ClickHouseConvertor<InputT> implements ElementConverter<InputT, Cli
                 return new ClickHousePayload(null);
             }
             if (payload.endsWith("\n"))
-                return new ClickHousePayload(payload.getBytes());
+                return new ClickHousePayload(payload.getBytes(StandardCharsets.UTF_8));
             return new ClickHousePayload((payload + "\n").getBytes());
         }
         if (type == Types.POJO) {

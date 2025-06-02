@@ -10,7 +10,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 
 public class ClickHouseAsyncSinkSerializer extends AsyncSinkWriterStateSerializer<ClickHousePayload> {
-    private static final Logger LOG = LoggerFactory.getLogger(AsyncSinkWriterStateSerializer.class);
+    private static final Logger LOG = LoggerFactory.getLogger(ClickHouseAsyncSinkSerializer.class);
 
     @Override
     protected void serializeRequestToStream(ClickHousePayload clickHousePayload, DataOutputStream dataOutputStream) throws IOException {
