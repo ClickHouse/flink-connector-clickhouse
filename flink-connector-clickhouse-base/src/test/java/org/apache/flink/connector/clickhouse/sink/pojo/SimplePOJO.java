@@ -20,7 +20,7 @@ public class SimplePOJO {
     private double doublePrimitive;
     private Double doubleObject;
 
-    public SimplePOJO() {
+    public SimplePOJO(int index) {
         this.bytePrimitive = Byte.MIN_VALUE;
         this.byteObject = Byte.MAX_VALUE;
 
@@ -30,7 +30,7 @@ public class SimplePOJO {
         this.intPrimitive = Integer.MIN_VALUE;
         this.integerObject = Integer.MAX_VALUE;
 
-        this.longPrimitive = Long.MIN_VALUE;
+        this.longPrimitive = index;
         this.longObject = Long.MAX_VALUE;
 
         this.floatPrimitive = Float.MIN_VALUE;

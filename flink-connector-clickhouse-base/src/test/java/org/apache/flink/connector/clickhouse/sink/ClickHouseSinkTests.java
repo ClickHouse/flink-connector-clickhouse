@@ -229,7 +229,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
         List<SimplePOJO> simplePOJOList = new ArrayList<>();
         for (int i = 0; i < EXPECTED_ROWS; i++) {
-            simplePOJOList.add(new SimplePOJO());
+            simplePOJOList.add(new SimplePOJO(i));
         }
         // create from list
         DataStream<SimplePOJO> simplePOJOs = env.fromData(simplePOJOList.toArray(new SimplePOJO[0]));
