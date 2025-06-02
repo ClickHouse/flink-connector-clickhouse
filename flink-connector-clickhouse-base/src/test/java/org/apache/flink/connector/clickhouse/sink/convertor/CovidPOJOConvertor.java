@@ -14,12 +14,12 @@ public class CovidPOJOConvertor extends POJOConvertor<CovidPOJO> {
         Serialize.writeDate(out, input.getLocalDate(), false, false, ClickHouseDataType.Date, false, "date");
         Serialize.writeString(out, input.getLocation_key(), false, false, ClickHouseDataType.String, false, "location_key");
         Serialize.writeInt32(out, input.getNew_confirmed(), false, false, ClickHouseDataType.Int32, false, "new_confirmed");
-        Serialize.writeInt32(out, input.getNew_deceased(), false, false, ClickHouseDataType.Int32, false, "");
-        Serialize.writeInt32(out, input.getNew_recovered(), false, false, ClickHouseDataType.Int32, false, "");
-        Serialize.writeInt32(out, input.getNew_tested(), false, false, ClickHouseDataType.Int32, false, "");
-        Serialize.writeInt32(out, input.getCumulative_confirmed(), false, false, ClickHouseDataType.Int32, false, "");
-        Serialize.writeInt32(out, input.getCumulative_deceased(), false, false, ClickHouseDataType.Int32, false, "");
-        Serialize.writeInt32(out, input.getCumulative_recovered(), false, false, ClickHouseDataType.Int32, false, "");
-        Serialize.writeInt32(out, input.getCumulative_tested(), false, false, ClickHouseDataType.Int32, false, "");
+        Serialize.writeInt32(out, input.getNew_deceased(), false, false, ClickHouseDataType.Int32, false, "new_deceased");
+        Serialize.writeInt32(out, input.getNew_recovered(), false, false, ClickHouseDataType.Int32, false, "new_recovered");
+        Serialize.writeInt32(out, input.getNew_tested(), false, false, ClickHouseDataType.Int32, false, "new_tested");
+        Serialize.writeInt32(out, input.getCumulative_confirmed(), false, false, ClickHouseDataType.Int32, false, "cumulative_confirmed");
+        Serialize.writeInt32(out, input.getCumulative_deceased(), false, false, ClickHouseDataType.Int32, false, "cumulative_deceased");
+        Serialize.writeInt32(out, input.getCumulative_recovered(), false, false, ClickHouseDataType.Int32, false, "cumulative_recovered");
+        Serialize.writeInt32(out, input.getCumulative_tested(), false, false, ClickHouseDataType.Int32, false, "cumulative_tested");
     }
 }
