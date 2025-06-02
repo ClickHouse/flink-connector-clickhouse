@@ -1,17 +1,14 @@
 package org.apache.flink.connector.test.embedded.clickhouse;
 
 import com.clickhouse.client.api.Client;
+import com.clickhouse.client.api.metadata.TableSchema;
 import com.clickhouse.client.api.query.GenericRecord;
-import org.apache.flink.streaming.api.functions.sink.legacy.SinkFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ExecutionException;
-
 import org.testcontainers.clickhouse.ClickHouseContainer;
+
+import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 public class ClickHouseServerForTests {
 
@@ -99,5 +96,10 @@ public class ClickHouseServerForTests {
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
         List<GenericRecord> countResult = client.queryAll(countSql);
         return countResult.get(0).getInteger(1);
+    }
+
+    public static TableSchema getTableSchema(String table) throws ExecutionException, InterruptedException {
+        Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
+        return client.getTableSchema(table, database);
     }
 }

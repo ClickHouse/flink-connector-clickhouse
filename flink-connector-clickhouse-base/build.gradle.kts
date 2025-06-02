@@ -12,14 +12,16 @@ val scalaVersion = "2.13.12"
 
 repositories {
     // Use Maven Central for resolving dependencies.
+    mavenLocal()
     mavenCentral()
 }
 
 extra.apply {
-    set("clickHouseDriverVersion", "0.8.5")
+    set("clickHouseDriverVersion", "0.8.6-SNAPSHOT")
     set("flinkVersion", "2.0.0")
     set("log4jVersion","2.17.2")
     set("testContainersVersion", "1.21.0")
+    set("byteBuddyVersion", "1.17.5")
 }
 
 dependencies {
@@ -28,6 +30,8 @@ dependencies {
 
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
+    implementation("net.bytebuddy:byte-buddy:${project.extra["byteBuddyVersion"]}")
+    implementation("net.bytebuddy:byte-buddy-agent:${project.extra["byteBuddyVersion"]}")
     // This dependency is used by the application.
     implementation(libs.guava)
     implementation("org.scala-lang:scala-library:$scalaVersion")
@@ -39,10 +43,7 @@ dependencies {
     implementation("org.apache.logging.log4j:log4j-core:${project.extra["log4jVersion"]}")
 
     // ClickHouse Client Libraries
-    implementation("com.clickhouse:clickhouse-client:${project.extra["clickHouseDriverVersion"]}")
-    implementation("com.clickhouse:clickhouse-http-client:${project.extra["clickHouseDriverVersion"]}")
-    implementation("com.clickhouse:clickhouse-data:${project.extra["clickHouseDriverVersion"]}")
-    implementation("com.clickhouse:client-v2:${project.extra["clickHouseDriverVersion"]}")
+    implementation("com.clickhouse:client-v2:${project.extra["clickHouseDriverVersion"]}:all")
     // Apache Flink Libraries
     implementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     implementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")

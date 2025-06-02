@@ -7,9 +7,11 @@ import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+
 public class ClickHouseConvertor<InputT> implements ElementConverter<InputT, ClickHousePayload> {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseConvertor.class);
 
+    POJOConvertor<InputT> pojoConvertor = null;
     enum Types {
         STRING,
         POJO,
@@ -30,6 +32,15 @@ public class ClickHouseConvertor<InputT> implements ElementConverter<InputT, Cli
         }
     }
 
+    public ClickHouseConvertor(Class<?> clazz, POJOConvertor<InputT> pojoConvertor) {
+        if (clazz == null) {
+            throw new IllegalArgumentException("clazz must not be not null");
+        } else {
+            type = Types.POJO;
+            this.pojoConvertor = pojoConvertor;
+        }
+    }
+
     @Override
     public ClickHousePayload apply( InputT o, SinkWriter.Context context) {
         if (o == null) {
@@ -47,8 +58,13 @@ public class ClickHouseConvertor<InputT> implements ElementConverter<InputT, Cli
             return new ClickHousePayload((payload + "\n").getBytes());
         }
         if (type == Types.POJO) {
-            // TODO Convert to byte stream
-            return null;
+            // TODO Convert POJO to bytes
+            try {
+                byte[] payload = this.pojoConvertor.convert(o);
+                return new ClickHousePayload(payload);
+            } catch (Exception e) {
+                return new ClickHousePayload(null);
+            }
         }
         throw new IllegalArgumentException("unable to convert " + o + " to " + type);
     }

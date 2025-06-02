@@ -1,6 +1,5 @@
 package org.apache.flink.connector.clickhouse.data;
 
-import org.apache.flink.connector.base.sink.writer.AsyncSinkWriterStateSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
