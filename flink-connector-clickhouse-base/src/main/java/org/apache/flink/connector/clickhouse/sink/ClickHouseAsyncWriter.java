@@ -60,7 +60,6 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
     @Override
     protected void submitRequestEntries(List<ClickHousePayload> requestEntries, ResultHandler<ClickHousePayload> resultHandler) {
         LOG.info("Submitting request entries...");
-        System.out.println("Submitting request entries...");
         AtomicInteger totalSizeSend = new AtomicInteger();
         Client chClient = this.clickHouseClientConfig.createClient();
         String tableName = clickHouseClientConfig.getTableName();
