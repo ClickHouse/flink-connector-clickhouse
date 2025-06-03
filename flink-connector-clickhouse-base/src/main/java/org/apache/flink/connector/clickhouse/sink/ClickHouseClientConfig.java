@@ -15,8 +15,7 @@ public class ClickHouseClientConfig implements Serializable {
     private final String password;
     private final String database;
     private final String tableName;
-//    private List<Class<?>> classToReisterList = null;
-//    private List<TableSchema> tableSchemaList = null;
+    private Boolean supportDefault = null;
 
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName) {
         this.url = url;
@@ -24,8 +23,6 @@ public class ClickHouseClientConfig implements Serializable {
         this.password = password;
         this.database = database;
         this.tableName = tableName;
-//        this.classToReisterList = new ArrayList<>();
-//        this.tableSchemaList = new ArrayList<>();
     }
 
     public Client createClient(String database) {
@@ -36,18 +33,8 @@ public class ClickHouseClientConfig implements Serializable {
                 .setDefaultDatabase(database)
                 .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true")
                 .build();
-//        if (classToReisterList != null) {
-//            for (int index = 0; index < classToReisterList.size(); index++) {
-//                client.register(classToReisterList.get(index), tableSchemaList.get(index));
-//            }
-//        }
         return client;
     }
-
-//    public void registerClass(Class<?> clazz, TableSchema tableSchema) {
-//        classToReisterList.add(clazz);
-//        tableSchemaList.add(tableSchema);
-//    }
 
     public Client createClient() {
         return createClient(this.database);
@@ -55,5 +42,11 @@ public class ClickHouseClientConfig implements Serializable {
 
     public String getTableName() { return tableName; }
 
+    public void setSupportDefault(Boolean supportDefault) {
+        this.supportDefault = supportDefault;
+    }
 
+    public Boolean getSupportDefault() {
+        return supportDefault;
+    }
 }

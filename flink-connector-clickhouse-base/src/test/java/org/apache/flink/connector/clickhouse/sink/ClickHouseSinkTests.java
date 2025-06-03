@@ -137,6 +137,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         env.setParallelism(5);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        clickHouseClientConfig.setSupportDefault(covidTableSchema.hasDefaults());
         ElementConverter<CovidPOJO, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(CovidPOJO.class, covidPOJOConvertor);
 
         ClickHouseAsyncSink<CovidPOJO> covidPOJOSink = new ClickHouseAsyncSink<>(
@@ -149,8 +150,6 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 1000,
                 clickHouseClientConfig
         );
-
-        covidPOJOSink.setClickHouseFormat(ClickHouseFormat.RowBinary);
 
         Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
 
@@ -212,6 +211,8 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         env.setParallelism(5);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
+
         ElementConverter<SimplePOJO, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
 
         ClickHouseAsyncSink<SimplePOJO> simplePOJOSink = new ClickHouseAsyncSink<>(

@@ -5,6 +5,7 @@ import com.clickhouse.client.api.ClientConfigProperties;
 import com.clickhouse.client.api.insert.InsertResponse;
 import com.clickhouse.client.api.insert.InsertSettings;
 import com.clickhouse.data.ClickHouseFormat;
+import com.clickhouse.utils.Utils;
 import org.apache.flink.api.connector.sink2.WriterInitContext;
 import org.apache.flink.connector.base.sink.writer.AsyncSinkWriter;
 import org.apache.flink.connector.base.sink.writer.BufferedRequestState;
@@ -12,6 +13,9 @@ import org.apache.flink.connector.base.sink.writer.ElementConverter;
 import org.apache.flink.connector.base.sink.writer.ResultHandler;
 import org.apache.flink.connector.base.sink.writer.config.AsyncSinkWriterConfiguration;
 import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
+import org.apache.flink.connector.clickhouse.exception.RetriableException;
+import org.apache.flink.metrics.Counter;
+import org.apache.flink.metrics.groups.SinkWriterMetricGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,6 +29,10 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
 
     private final ClickHouseClientConfig clickHouseClientConfig;
     private ClickHouseFormat clickHouseFormat = null;
+
+    private final Counter numBytesSendCounter;
+    private final Counter numRecordsSendCounter;
+    private final Counter numRequestSubmittedCounter;
 
     public ClickHouseAsyncWriter(ElementConverter<InputT, ClickHousePayload> elementConverter,
                                  WriterInitContext context,
@@ -50,6 +58,10 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
               state);
         this.clickHouseClientConfig = clickHouseClientConfig;
         this.clickHouseFormat = clickHouseFormat;
+        final SinkWriterMetricGroup metricGroup = context.metricGroup();
+        this.numBytesSendCounter = metricGroup.getNumBytesSendCounter();
+        this.numRecordsSendCounter = metricGroup.getNumRecordsSendCounter();
+        this.numRequestSubmittedCounter = metricGroup.counter("numRequestSubmitted");
     }
 
     @Override
@@ -59,25 +71,36 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
 
     @Override
     protected void submitRequestEntries(List<ClickHousePayload> requestEntries, ResultHandler<ClickHousePayload> resultHandler) {
+        this.numRequestSubmittedCounter.inc();
         LOG.info("Submitting request entries...");
-        AtomicInteger totalSizeSend = new AtomicInteger();
         Client chClient = this.clickHouseClientConfig.createClient();
         String tableName = clickHouseClientConfig.getTableName();
         // TODO: get from constructor or ClickHousePayload need to think what is the best way
         ClickHouseFormat format = null;
-        if (clickHouseFormat == null) {
-            // this not define lets try to get it from ClickHousePayload in case  of POJO can be RowBinary or RowBinaryWithDefaults
-        } else {
+        if (clickHouseFormat != null) {
             format = clickHouseFormat;
+        } else {
+            // TODO: check if we configured payload to POJO serialization.
+            // this not define lets try to get it from ClickHousePayload in case  of POJO can be RowBinary or RowBinaryWithDefaults
+            Boolean supportDefault = clickHouseClientConfig.getSupportDefault();
+            if (supportDefault != null) {
+                if (supportDefault) format = ClickHouseFormat.RowBinaryWithDefaults;
+                else format = ClickHouseFormat.RowBinary;
+            } else {
+                throw new RuntimeException("ClickHouseFormat was not set ");
+            }
         }
         try {
             CompletableFuture<InsertResponse> response = chClient.insert(tableName, out -> {
                 for (ClickHousePayload requestEntry : requestEntries) {
                     byte[] payload = requestEntry.getPayload();
-                    totalSizeSend.addAndGet(payload.length);
+                    // sum the data that is sent to ClickHouse
+                    this.numBytesSendCounter.inc(payload.length);
                     out.write(payload);
                 }
-                LOG.info("Data that will be send to ClickHouse in bytes {} and the amount of records {}.", totalSizeSend.get(), requestEntries.size());
+                // send the number that is sent to ClickHouse
+                this.numRecordsSendCounter.inc(requestEntries.size());
+                LOG.info("Data that will be send to ClickHouse in bytes {} and the amount of records {}.", numBytesSendCounter.getCount(), requestEntries.size());
                 out.close();
             }, format, new InsertSettings().setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true"));
             response.whenComplete((insertResponse, throwable) -> {
@@ -108,9 +131,16 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
             List<ClickHousePayload> requestEntries,
             ResultHandler<ClickHousePayload> resultHandler,
             Throwable error) {
-        // TODO extract from error if we can retry
-        error.printStackTrace();
-
+        // TODO: extract from error if we can retry
+        try {
+            Utils.handleException(error);
+        } catch (RetriableException e) {
+            LOG.info("Retriable exception occurred while processing request. ", e);
+            // TODO: send data again
+            resultHandler.retryForEntries(requestEntries);
+        }
+        LOG.info("completeExceptionally");
+        resultHandler.completeExceptionally((Exception)error);
     }
 
 }
