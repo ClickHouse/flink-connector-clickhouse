@@ -1,5 +1,5 @@
 ## Getting started
-ClickHouse-JDBC client is an open-source project, and we welcome any contributions from the community. Please share your ideas, contribute to the codebase, and help us maintain up-to-date documentation.
+flink-connector-clickhouse is an open-source project, and we welcome any contributions from the community. Please share your ideas, contribute to the codebase, and help us maintain up-to-date documentation.
 
 ### Create a fork of the repository and clone it
 ```bash
@@ -11,7 +11,7 @@ cd flink-connector-clickhouse
 
   ```bash
   cd flink-connector-clickhouse
-  ./gradle build
+  ./gradlew build
   ```
 
 ## Testing
@@ -25,6 +25,6 @@ Does not require a running ClickHouse server.
 
   ```bash
   cd flink-connector-clickhouse
-  ./gradle test 
+  ./gradlew test 
   ```
 
