@@ -114,7 +114,6 @@ public class Serialize {
     // Method structure write[ClickHouse Type](OutputStream, Java type, ... )
     // Date support
     public static void writeDate(OutputStream out, LocalDate value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        System.out.println("writeDate");
         if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
             SerializerUtils.writeDate(out, value, ZoneId.of("UTC")); // TODO: check
         }
