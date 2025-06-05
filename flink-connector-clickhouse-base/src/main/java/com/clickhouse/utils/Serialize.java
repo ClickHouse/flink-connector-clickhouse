@@ -18,11 +18,11 @@ public class Serialize {
     public static boolean writePrimitiveValuePreamble(OutputStream out, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         // since it is primitive we always have a value that is not null
         if (defaultsSupport) {
+            // Add indicator since the table has default values
             SerializerUtils.writeNonNull(out);
-            if (isNullable) {
-                SerializerUtils.writeNonNull(out);
-            }
-        } else if (isNullable) {
+        }
+        // if the column is Nullable need to add an indicator for nullable
+        if (isNullable) {
             SerializerUtils.writeNonNull(out);
         }
         return true;
