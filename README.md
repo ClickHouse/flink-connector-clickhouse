@@ -4,7 +4,7 @@
 </div>
 
 Table of Contents
-* [About The project](#about-the-project)
+* [About The Project](#about-the-project)
 * [Supported Flink Versions](#supported-flink-versions)
 * [Installation](#installation)
 * [DataStream API](#dataStream-api)
@@ -15,7 +15,7 @@ Table of Contents
     * [Examples](#examples-1)
 * [Contributing](#contributing)
 
-## About the Project
+## About The Project
 
 This is a repo of ClickHouse official Apache Flink Connector supported by the ClickHouse team.
 The Connector supports to main Apache Flink API's 
