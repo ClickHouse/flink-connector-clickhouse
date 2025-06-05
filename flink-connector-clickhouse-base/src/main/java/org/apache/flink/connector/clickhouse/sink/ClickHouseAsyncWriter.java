@@ -93,10 +93,12 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
         try {
             CompletableFuture<InsertResponse> response = chClient.insert(tableName, out -> {
                 for (ClickHousePayload requestEntry : requestEntries) {
-                    byte[] payload = requestEntry.getPayload();
-                    // sum the data that is sent to ClickHouse
-                    this.numBytesSendCounter.inc(payload.length);
-                    out.write(payload);
+                    if (requestEntry.getPayload() != null) {
+                        byte[] payload = requestEntry.getPayload();
+                        // sum the data that is sent to ClickHouse
+                        this.numBytesSendCounter.inc(payload.length);
+                        out.write(payload);
+                    }
                 }
                 // send the number that is sent to ClickHouse
                 this.numRecordsSendCounter.inc(requestEntries.size());

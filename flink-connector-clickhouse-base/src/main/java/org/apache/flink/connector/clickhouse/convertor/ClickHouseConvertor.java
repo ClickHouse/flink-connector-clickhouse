@@ -65,6 +65,7 @@ public class ClickHouseConvertor<InputT> implements ElementConverter<InputT, Cli
                 byte[] payload = this.pojoConvertor.convert(o);
                 return new ClickHousePayload(payload);
             } catch (Exception e) {
+                LOG.error("Failed to convert ClickHouse payload", e);
                 return new ClickHousePayload(null);
             }
         }
