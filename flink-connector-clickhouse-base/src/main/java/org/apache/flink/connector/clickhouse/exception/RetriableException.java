@@ -1,6 +1,8 @@
 package org.apache.flink.connector.clickhouse.exception;
 
 public class RetriableException extends FlinkWriteException {
+    private static final long serialVersionUID = 1L;
+
     public RetriableException(String message) {
         super(message);
     }

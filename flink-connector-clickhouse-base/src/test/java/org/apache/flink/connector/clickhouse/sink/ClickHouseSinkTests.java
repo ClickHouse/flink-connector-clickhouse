@@ -226,8 +226,6 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 clickHouseClientConfig
         );
 
-        simplePOJOSink.setClickHouseFormat(ClickHouseFormat.RowBinary);
-
         List<SimplePOJO> simplePOJOList = new ArrayList<>();
         for (int i = 0; i < EXPECTED_ROWS; i++) {
             simplePOJOList.add(new SimplePOJO(i));

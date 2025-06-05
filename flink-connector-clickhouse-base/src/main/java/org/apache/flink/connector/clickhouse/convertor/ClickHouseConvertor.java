@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 
 public class ClickHouseConvertor<InputT> implements ElementConverter<InputT, ClickHousePayload> {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseConvertor.class);
+    private static final long serialVersionUID = 1L;
 
     POJOConvertor<InputT> pojoConvertor = null;
     enum Types {

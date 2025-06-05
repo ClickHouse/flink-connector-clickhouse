@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Objects;
 
 public class ClickHouseAsyncSink<InputT> extends AsyncSinkBase<InputT, ClickHousePayload> {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseAsyncSink.class);
@@ -41,7 +42,7 @@ public class ClickHouseAsyncSink<InputT> extends AsyncSinkBase<InputT, ClickHous
               maxTimeInBufferMS,
               maxRecordSizeInByte);
 
-        this.clickHouseClientConfig = clickHouseClientConfig;
+        this.clickHouseClientConfig = Objects.requireNonNull(clickHouseClientConfig, "ClickHouse config cannot be null");;
     }
 
     public void setClickHouseFormat(ClickHouseFormat clickHouseFormat) {

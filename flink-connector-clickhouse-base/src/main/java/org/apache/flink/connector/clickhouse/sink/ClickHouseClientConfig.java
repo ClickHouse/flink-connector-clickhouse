@@ -9,6 +9,7 @@ import java.io.Serializable;
 
 public class ClickHouseClientConfig implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseClientConfig.class);
+    private static final long serialVersionUID = 1L;
 
     private final String url;
     private final String username;
