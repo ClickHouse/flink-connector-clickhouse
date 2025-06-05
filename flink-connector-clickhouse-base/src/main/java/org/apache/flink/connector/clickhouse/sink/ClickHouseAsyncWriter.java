@@ -102,7 +102,7 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
                 }
                 // send the number that is sent to ClickHouse
                 this.numRecordsSendCounter.inc(requestEntries.size());
-                LOG.info("Data that will be send to ClickHouse in bytes {} and the amount of records {}.", numBytesSendCounter.getCount(), requestEntries.size());
+                LOG.info("Data that will be sent to ClickHouse in bytes {} and the amount of records {}.", numBytesSendCounter.getCount(), requestEntries.size());
                 out.close();
             }, format, new InsertSettings().setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true"));
             response.whenComplete((insertResponse, throwable) -> {
@@ -111,7 +111,7 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
                 } else {
                     handleSuccessfulRequest(resultHandler, insertResponse);
                 }
-            }).join();
+            });
         } catch (Exception e) {
             LOG.error("Error: ", e);
         }
