@@ -3,6 +3,7 @@ package com.clickhouse.utils;
 import com.clickhouse.client.api.data_formats.internal.SerializerUtils;
 import com.clickhouse.data.ClickHouseDataType;
 import com.clickhouse.data.format.BinaryStreamUtils;
+import org.jline.utils.Log;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -28,6 +29,7 @@ public class Serialize {
         return true;
     }
     public static boolean writeValuePreamble(OutputStream out, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, Object value) throws IOException {
+        Log.debug("writeValuePreamble[defaultsSupport='%s', isNullable='%s', dataType='%s', column='%s', value='%s']");
         if (defaultsSupport) {
             if (value != null) {
                 SerializerUtils.writeNonNull(out);
@@ -49,7 +51,7 @@ public class Serialize {
                 if (dataType == ClickHouseDataType.Array) {
                     SerializerUtils.writeNonNull(out);
                 } else if (dataType != ClickHouseDataType.Dynamic) {
-                    throw new IllegalArgumentException(String.format("An attempt to write null into not nullable column '%s'", column));
+                    throw new IllegalArgumentException(String.format("An attempt to write null into not nullable column '%s' of type '%s'", column, dataType));
                 }
             }
         } else if (isNullable) {
@@ -63,7 +65,7 @@ public class Serialize {
             if (dataType == ClickHouseDataType.Array) {
                 SerializerUtils.writeNonNull(out);
             } else if (dataType != ClickHouseDataType.Dynamic) {
-                throw new IllegalArgumentException(String.format("An attempt to write null into not nullable column '%s'", column));
+                throw new IllegalArgumentException(String.format("An attempt to write null into not nullable column '%s' of type '%s'", column, dataType));
             }
         }
         return true;
