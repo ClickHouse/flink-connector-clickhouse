@@ -11,23 +11,31 @@ import java.io.IOException;
 
 public class ClickHouseAsyncSinkSerializer extends AsyncSinkWriterStateSerializer<ClickHousePayload> {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseAsyncSinkSerializer.class);
-
+    private static final int V1 = 1;
     @Override
     protected void serializeRequestToStream(ClickHousePayload clickHousePayload, DataOutputStream dataOutputStream) throws IOException {
         byte[] bytes = clickHousePayload.getPayload();
-        dataOutputStream.writeInt(bytes.length);
-        dataOutputStream.write(bytes);
+        if (bytes != null) {
+            dataOutputStream.writeInt(bytes.length);
+            dataOutputStream.write(bytes);
+        } else {
+            dataOutputStream.writeInt(-1);
+        }
+
     }
 
     private ClickHousePayload deserializeV1(DataInputStream dataInputStream) throws IOException {
         int len = dataInputStream.readInt();
+        if (len == -1) {
+            return new ClickHousePayload(null);
+        }
         byte[] payload = dataInputStream.readNBytes(len);
         return new ClickHousePayload(payload);
     }
 
     @Override
     protected ClickHousePayload deserializeRequestFromStream(long version, DataInputStream dataInputStream) throws IOException {
-        if (version == 1) {
+        if (version == V1) {
             return deserializeV1(dataInputStream);
         } else {
             throw new IOException("Unsupported version: " + version);
@@ -36,6 +44,6 @@ public class ClickHouseAsyncSinkSerializer extends AsyncSinkWriterStateSerialize
 
     @Override
     public int getVersion() {
-        return 1;
+        return V1;
     }
 }
