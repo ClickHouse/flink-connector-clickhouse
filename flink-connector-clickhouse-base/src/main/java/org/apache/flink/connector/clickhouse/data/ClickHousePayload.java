@@ -7,6 +7,7 @@ import java.io.Serializable;
 
 public class ClickHousePayload implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHousePayload.class);
+    private static final long serialVersionUID = 1L;
 
     private final byte[] payload;
     public ClickHousePayload(byte[] payload) {
