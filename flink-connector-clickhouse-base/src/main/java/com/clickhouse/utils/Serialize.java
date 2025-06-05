@@ -85,7 +85,8 @@ public class Serialize {
         } else if (value instanceof Boolean) {
             return ((Boolean) value) ? 1 : 0;
         } else {
-            throw new IllegalArgumentException("Cannot convert " + value + " to Integer");
+            throw new IllegalArgumentException("Cannot convert object of type " +
+                    value.getClass().getName() + " to Integer: " + value);
         }
     }
 
