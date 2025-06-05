@@ -6,7 +6,8 @@ import org.apache.flink.connector.test.embedded.flink.EmbeddedFlinkClusterForTes
 import org.apache.flink.streaming.api.functions.sink.legacy.SinkFunction;
 import org.apache.flink.streaming.util.TestStreamEnvironment;
 import org.apache.flink.test.util.MiniClusterWithClientResource;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -52,7 +53,7 @@ class DummyFlinkClusterTest extends FlinkClusterTests {
     @Test
     void testClickHouse() throws ExecutionException, InterruptedException {
         String tableName = "clickhouse_test";
-        String createTableSQl = String.format("CREATE TABLE `%s`.`%s` (order_id UInt64) ENGINE = MergeTree ORDER BY tuple(order_id);", ClickHouseServerForTests.getDataBase(), tableName);
+        String createTableSQl = String.format("CREATE TABLE `%s`.`%s` (order_id UInt64) ENGINE = MergeTree ORDER BY tuple(order_id);", getDatabase(), tableName);
         ClickHouseServerForTests.executeSql(createTableSQl);
         int rows = ClickHouseServerForTests.countRows(tableName);
         Assertions.assertEquals(0, rows);

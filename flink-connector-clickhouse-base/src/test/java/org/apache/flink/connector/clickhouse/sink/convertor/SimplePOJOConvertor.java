@@ -1,0 +1,32 @@
+package org.apache.flink.connector.clickhouse.sink.convertor;
+
+import com.clickhouse.data.ClickHouseDataType;
+import com.clickhouse.utils.Serialize;
+import org.apache.flink.connector.clickhouse.convertor.POJOConvertor;
+import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJO;
+
+import java.io.IOException;
+import java.io.OutputStream;
+
+public class SimplePOJOConvertor extends POJOConvertor<SimplePOJO> {
+    @Override
+    public void instrument(OutputStream out, SimplePOJO input) throws IOException {
+        Serialize.writeInt8(out, input.getBytePrimitive(), false, false, ClickHouseDataType.Int8, false, "bytePrimitive");
+        Serialize.writeInt8(out, input.getByteObject(), false, false, ClickHouseDataType.Int8, false, "byteObject");
+
+        Serialize.writeInt16(out, input.getShortPrimitive(), false, false, ClickHouseDataType.Int16, false, "shortPrimitive");
+        Serialize.writeInt16(out, input.getShortObject(), false, false, ClickHouseDataType.Int16, false, "shortObject");
+
+        Serialize.writeInt32(out, input.getIntPrimitive(), false, false, ClickHouseDataType.Int32, false, "intPrimitive");
+        Serialize.writeInt32(out, input.getIntegerObject(), false, false, ClickHouseDataType.Int32, false, "integerObject");
+
+        Serialize.writeInt64(out, input.getLongPrimitive(), false, false, ClickHouseDataType.Int64, false, "longPrimitive");
+        Serialize.writeInt64(out, input.getLongObject(), false, false, ClickHouseDataType.Int64, false, "longObject");
+
+        Serialize.writeFloat32(out, input.getFloatPrimitive(), false, false, ClickHouseDataType.Float32, false, "floatPrimitive");
+        Serialize.writeFloat32(out, input.getFloatObject(), false, false, ClickHouseDataType.Float32, false, "floatObject");
+
+        Serialize.writeFloat64(out, input.getDoublePrimitive(), false, false, ClickHouseDataType.Float64, false, "doublePrimitive");
+        Serialize.writeFloat64(out, input.getDoubleObject(), false, false, ClickHouseDataType.Float64, false, "doubleObject");
+    }
+}
