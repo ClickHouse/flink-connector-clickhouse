@@ -31,6 +31,14 @@ import java.util.List;
 public class ClickHouseSinkTests extends FlinkClusterTests {
 
     static final int EXPECTED_ROWS = 10000;
+    static final int MAX_BATCH_SIZE = 5000;
+    static final int MAX_IN_FLIGHT_REQUESTS = 2;
+    static final int MAX_BUFFERED_REQUESTS = 20000;
+    static final long MAX_BATCH_SIZE_IN_BYTES = 1024 * 1024;
+    static final long MAX_TIME_IN_BUFFER_MS = 5 * 1000;
+    static final long MAX_RECORD_SIZE_IN_BYTES = 1000;
+
+    static final int STREAM_PARALLELISM = 5;
 
     private int executeJob(StreamExecutionEnvironment env, String tableName) throws Exception {
         JobClient jobClient = env.executeAsync("Read GZipped CSV with FileSource");
@@ -72,19 +80,19 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         ClickHouseServerForTests.executeSql(tableSql);
 
         final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
-        env.setParallelism(1);
+        env.setParallelism(STREAM_PARALLELISM);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
         // create sink
         ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
                 convertorString,
-                5000,
-                2,
-                20000,
-                1024 * 1024,
-                5 * 1000,
-                1000,
+                MAX_BATCH_SIZE,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                MAX_TIME_IN_BUFFER_MS,
+                MAX_RECORD_SIZE_IN_BYTES,
                 clickHouseClientConfig
         );
         csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
@@ -128,13 +136,11 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "ORDER BY (location_key, date); ";
         ClickHouseServerForTests.executeSql(tableSql);
 
-
         TableSchema covidTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
-//        POJOConvertor<CovidPOJO> covidPOJOConvertor = POJOSerializable.create().createConvertor(covidTableSchema, CovidPOJO.class);
 
         POJOConvertor<CovidPOJO> covidPOJOConvertor = new CovidPOJOConvertor();
         final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
-        env.setParallelism(5);
+        env.setParallelism(STREAM_PARALLELISM);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         clickHouseClientConfig.setSupportDefault(covidTableSchema.hasDefaults());
@@ -142,12 +148,12 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
         ClickHouseAsyncSink<CovidPOJO> covidPOJOSink = new ClickHouseAsyncSink<>(
                 convertorCovid,
-                5000,
-                2,
-                20000,
-                1024 * 1024,
-                5 * 1000,
-                1000,
+                MAX_BATCH_SIZE,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                MAX_TIME_IN_BUFFER_MS,
+                MAX_RECORD_SIZE_IN_BYTES,
                 clickHouseClientConfig
         );
 
@@ -204,11 +210,10 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
 
         TableSchema simpleTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
-//        POJOConvertor<SimplePOJO> simplePOJOConvertor = POJOSerializable.create().createConvertor(simpleTableSchema, SimplePOJO.class);
         POJOConvertor<SimplePOJO> simplePOJOConvertor = new SimplePOJOConvertor();
 
         final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
-        env.setParallelism(5);
+        env.setParallelism(STREAM_PARALLELISM);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
@@ -217,12 +222,12 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
         ClickHouseAsyncSink<SimplePOJO> simplePOJOSink = new ClickHouseAsyncSink<>(
                 convertorCovid,
-                5000,
-                2,
-                20000,
-                1024 * 1024,
-                5 * 1000,
-                1000,
+                MAX_BATCH_SIZE,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                MAX_TIME_IN_BUFFER_MS,
+                MAX_RECORD_SIZE_IN_BYTES,
                 clickHouseClientConfig
         );
 
