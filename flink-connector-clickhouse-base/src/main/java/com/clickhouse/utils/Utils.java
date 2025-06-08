@@ -1,15 +1,13 @@
 package com.clickhouse.utils;
 
-import com.clickhouse.client.ClickHouseException;
+import com.clickhouse.client.api.ServerException;
 import org.apache.flink.connector.clickhouse.exception.RetriableException;
-import org.apache.flink.connector.clickhouse.sink.ClickHouseAsyncWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
-import java.util.Collection;
 
 public class Utils {
 
@@ -18,18 +16,18 @@ public class Utils {
     private static final String CLICKHOUSE_CLIENT_ERROR_WRITE_TIMEOUT_MSG = "Write timed out after";
 
     /**
-     * This will drill down to the first ClickHouseException in the exception chain
+     * This will drill down to the first ServerException in the exception chain
      *
      * @param e Exception to drill down
-     * @return ClickHouseException or null if none found
+     * @return ServerException or null if none found
      */
-    public static Exception getRootCause(Throwable e, Boolean prioritizeClickHouseException) {
+    public static Exception getRootCause(Throwable e, Boolean prioritizeServerException) {
         if (e == null)
             return null;
 
         Throwable runningException = e;//We have to use Throwable because of the getCause() signature
         while (runningException.getCause() != null &&
-                (!prioritizeClickHouseException || !(runningException instanceof ClickHouseException))) {
+                (!prioritizeServerException || !(runningException instanceof ServerException))) {
             LOG.trace("Found exception: {}", runningException.getLocalizedMessage());
             runningException = runningException.getCause();
         }
@@ -46,13 +44,13 @@ public class Utils {
     public static void handleException(Throwable e) {
         LOG.warn("Deciding how to handle exception: {}", e.getLocalizedMessage());
 
-        //Let's check if we have a ClickHouseException to reference the error code
+        //Let's check if we have a ServerException to reference the error code
         //https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/ErrorCodes.cpp
         Exception rootCause = Utils.getRootCause(e, true);
-        if (rootCause instanceof ClickHouseException) {
-            ClickHouseException clickHouseException = (ClickHouseException) rootCause;
-            LOG.warn("ClickHouseException code: {}", clickHouseException.getErrorCode());
-            switch (clickHouseException.getErrorCode()) {
+        if (rootCause instanceof ServerException) {
+            ServerException clickHouseServerException = (ServerException) rootCause;
+            LOG.warn("ClickHouse Server Exception Code: {}", clickHouseServerException.getCode());
+            switch (clickHouseServerException.getCode()) {
                 case 3: // UNEXPECTED_END_OF_FILE
                 case 107: // FILE_DOESNT_EXIST
                 case 159: // TIMEOUT_EXCEEDED
@@ -70,7 +68,7 @@ public class Utils {
                 case 999: // KEEPER_EXCEPTION
                     throw new RetriableException(e);
                 default:
-                    LOG.error("Error code [{}] wasn't in the acceptable list.", clickHouseException.getErrorCode());
+                    LOG.error("Error code [{}] wasn't in the acceptable list.", clickHouseServerException.getCode());
                     break;
             }
         }

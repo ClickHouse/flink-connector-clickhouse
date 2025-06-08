@@ -22,7 +22,6 @@ import org.slf4j.LoggerFactory;
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, ClickHousePayload> {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseAsyncWriter.class);
@@ -33,6 +32,8 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
     private final Counter numBytesSendCounter;
     private final Counter numRecordsSendCounter;
     private final Counter numRequestSubmittedCounter;
+    private final Counter numOfDroppedBatchesCounter;
+    private final Counter numOfDroppedRecordsCounter;
 
     public ClickHouseAsyncWriter(ElementConverter<InputT, ClickHousePayload> elementConverter,
                                  WriterInitContext context,
@@ -62,6 +63,8 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
         this.numBytesSendCounter = metricGroup.getNumBytesSendCounter();
         this.numRecordsSendCounter = metricGroup.getNumRecordsSendCounter();
         this.numRequestSubmittedCounter = metricGroup.counter("numRequestSubmitted");
+        this.numOfDroppedBatchesCounter = metricGroup.counter("numOfDroppedBatches");
+        this.numOfDroppedRecordsCounter = metricGroup.counter("numOfDroppedRecords");
     }
 
     @Override
@@ -141,7 +144,9 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
             // TODO: send data again
             resultHandler.retryForEntries(requestEntries);
         }
-        LOG.info("completeExceptionally");
+        LOG.info("Dropping request entries. Since It a failure that can not be retried. error {} number of entries drop {}", error.getLocalizedMessage(), requestEntries.size());
+        numOfDroppedBatchesCounter.inc();
+        numOfDroppedRecordsCounter.inc(requestEntries.size());
         resultHandler.completeExceptionally((Exception)error);
     }
 
