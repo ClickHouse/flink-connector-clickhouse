@@ -78,7 +78,12 @@ public class ClickHouseServerForTests {
     public static int getPort() { return port; }
     public static String getUsername() { return username; }
     public static String getPassword() { return password; }
+
     public static String getURL() {
+        return ClickHouseServerForTests.getURL(host, port);
+    }
+
+    public static String getURL(String host, int port) {
         if (isCloud) {
             return "https://" + host + ":" + port + "/";
         } else {

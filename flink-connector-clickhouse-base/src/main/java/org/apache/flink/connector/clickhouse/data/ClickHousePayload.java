@@ -9,10 +9,13 @@ public class ClickHousePayload implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHousePayload.class);
     private static final long serialVersionUID = 1L;
 
+    private int attemptCount = 1;
     private final byte[] payload;
     public ClickHousePayload(byte[] payload) {
         this.payload = payload;
     }
     public byte[] getPayload() { return payload; }
     public int getPayloadLength() { return payload.length; }
+    public int getAttemptCount() { return attemptCount; }
+    public void incrementAttempts() { attemptCount++; }
 }

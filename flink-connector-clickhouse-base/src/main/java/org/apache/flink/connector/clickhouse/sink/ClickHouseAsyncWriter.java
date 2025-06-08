@@ -22,18 +22,58 @@ import org.slf4j.LoggerFactory;
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, ClickHousePayload> {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseAsyncWriter.class);
+    private static final int DEFAULT_MAX_RETRIES = 3;
 
     private final ClickHouseClientConfig clickHouseClientConfig;
     private ClickHouseFormat clickHouseFormat = null;
+    private int numberOfRetries = DEFAULT_MAX_RETRIES;
 
     private final Counter numBytesSendCounter;
     private final Counter numRecordsSendCounter;
     private final Counter numRequestSubmittedCounter;
     private final Counter numOfDroppedBatchesCounter;
     private final Counter numOfDroppedRecordsCounter;
+    private final Counter totalBatchRetriesCounter;
+
+    public ClickHouseAsyncWriter(ElementConverter<InputT, ClickHousePayload> elementConverter,
+                                 WriterInitContext context,
+                                 int maxBatchSize,
+                                 int maxInFlightRequests,
+                                 int maxBufferedRequests,
+                                 long maxBatchSizeInBytes,
+                                 long maxTimeInBufferMS,
+                                 long maxRecordSizeInBytes,
+                                 int numberOfRetries,
+                                 ClickHouseClientConfig clickHouseClientConfig,
+                                 ClickHouseFormat clickHouseFormat,
+                                 Collection<BufferedRequestState<ClickHousePayload>> state) {
+        super(elementConverter,
+                context,
+                AsyncSinkWriterConfiguration.builder()
+                        .setMaxBatchSize(maxBatchSize)
+                        .setMaxBatchSizeInBytes(maxBatchSizeInBytes)
+                        .setMaxInFlightRequests(maxInFlightRequests)
+                        .setMaxBufferedRequests(maxBufferedRequests)
+                        .setMaxTimeInBufferMS(maxTimeInBufferMS)
+                        .setMaxRecordSizeInBytes(maxRecordSizeInBytes)
+                        .build(),
+                state);
+        this.clickHouseClientConfig = clickHouseClientConfig;
+        this.clickHouseFormat = clickHouseFormat;
+        this.numberOfRetries = numberOfRetries;
+        final SinkWriterMetricGroup metricGroup = context.metricGroup();
+        this.numBytesSendCounter = metricGroup.getNumBytesSendCounter();
+        this.numRecordsSendCounter = metricGroup.getNumRecordsSendCounter();
+        this.numRequestSubmittedCounter = metricGroup.counter("numRequestSubmitted");
+        this.numOfDroppedBatchesCounter = metricGroup.counter("numOfDroppedBatches");
+        this.numOfDroppedRecordsCounter = metricGroup.counter("numOfDroppedRecords");
+        this.totalBatchRetriesCounter = metricGroup.counter("totalBatchRetries");
+    }
+
 
     public ClickHouseAsyncWriter(ElementConverter<InputT, ClickHousePayload> elementConverter,
                                  WriterInitContext context,
@@ -46,25 +86,19 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
                                  ClickHouseClientConfig clickHouseClientConfig,
                                  ClickHouseFormat clickHouseFormat,
                                  Collection<BufferedRequestState<ClickHousePayload>> state) {
-        super(elementConverter,
-              context,
-              AsyncSinkWriterConfiguration.builder()
-                    .setMaxBatchSize(maxBatchSize)
-                    .setMaxBatchSizeInBytes(maxBatchSizeInBytes)
-                    .setMaxInFlightRequests(maxInFlightRequests)
-                    .setMaxBufferedRequests(maxBufferedRequests)
-                    .setMaxTimeInBufferMS(maxTimeInBufferMS)
-                    .setMaxRecordSizeInBytes(maxRecordSizeInBytes)
-                    .build(),
-              state);
-        this.clickHouseClientConfig = clickHouseClientConfig;
-        this.clickHouseFormat = clickHouseFormat;
-        final SinkWriterMetricGroup metricGroup = context.metricGroup();
-        this.numBytesSendCounter = metricGroup.getNumBytesSendCounter();
-        this.numRecordsSendCounter = metricGroup.getNumRecordsSendCounter();
-        this.numRequestSubmittedCounter = metricGroup.counter("numRequestSubmitted");
-        this.numOfDroppedBatchesCounter = metricGroup.counter("numOfDroppedBatches");
-        this.numOfDroppedRecordsCounter = metricGroup.counter("numOfDroppedRecords");
+        this(elementConverter,
+             context,
+             maxBatchSize,
+             maxInFlightRequests,
+             maxBufferedRequests,
+             maxBatchSizeInBytes,
+             maxTimeInBufferMS,
+             maxRecordSizeInBytes,
+             DEFAULT_MAX_RETRIES,
+             clickHouseClientConfig,
+             clickHouseFormat,
+             state
+        );
     }
 
     @Override
@@ -141,13 +175,27 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
             Utils.handleException(error);
         } catch (RetriableException e) {
             LOG.info("Retriable exception occurred while processing request. ", e);
-            // TODO: send data again
-            resultHandler.retryForEntries(requestEntries);
+            // Let's try to retry
+            if (requestEntries != null && !requestEntries.isEmpty()) {
+                ClickHousePayload firstElement = requestEntries.get(0);
+                LOG.warn("Retry number [{}] out of [{}]", firstElement.getAttemptCount(), this.numberOfRetries);
+                firstElement.incrementAttempts();
+                if (firstElement.getAttemptCount() <= this.numberOfRetries) {
+                    totalBatchRetriesCounter.inc();
+                    LOG.warn("Retriable exception occurred while processing request. Left attempts {}.", this.numberOfRetries - (firstElement.getAttemptCount() - 1) );
+                    // We are not in retry threshold we can send data again
+                    resultHandler.retryForEntries(requestEntries);
+                    return;
+                } else {
+                    LOG.warn("No attempts left going to drop batch");
+                }
+            }
+
         }
         LOG.info("Dropping request entries. Since It a failure that can not be retried. error {} number of entries drop {}", error.getLocalizedMessage(), requestEntries.size());
         numOfDroppedBatchesCounter.inc();
         numOfDroppedRecordsCounter.inc(requestEntries.size());
-        resultHandler.completeExceptionally((Exception)error);
+        resultHandler.completeExceptionally((Exception) error);
     }
 
 }

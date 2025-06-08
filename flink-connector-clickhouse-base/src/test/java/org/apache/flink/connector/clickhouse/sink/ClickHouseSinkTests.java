@@ -245,6 +245,10 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         Assertions.assertEquals(EXPECTED_ROWS, rows);
     }
 
+    /**
+     * Suppose to drop data on failure. The way we try to generate this use case is by supplying the writer with wrong Format
+     * @throws Exception
+     */
     @Test
     void CSVDataOnFailureDropDataTest() throws Exception {
         String tableName = "csv_failure_covid";
@@ -302,4 +306,67 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         int rows = executeAsyncJob(env, tableName);
         Assertions.assertEquals(EXPECTED_ROWS_ON_FAILURE, rows);
     }
+
+    /**
+     * Suppose to retry and drop data on failure. The way we try to generate this use case is by supplying a different port of ClickHouse server
+     * @throws Exception
+     */
+    @Test
+    void CSVDataOnRetryAndDropDataTest() throws Exception {
+        String tableName = "csv_retry_covid";
+        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
+        ClickHouseServerForTests.executeSql(dropTable);
+        // create table
+        String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
+                "date Date," +
+                "location_key LowCardinality(String)," +
+                "new_confirmed Int32," +
+                "new_deceased Int32," +
+                "new_recovered Int32," +
+                "new_tested Int32," +
+                "cumulative_confirmed Int32," +
+                "cumulative_deceased Int32," +
+                "cumulative_recovered Int32," +
+                "cumulative_tested Int32" +
+                ") " +
+                "ENGINE = MergeTree " +
+                "ORDER BY (location_key, date); ";
+        ClickHouseServerForTests.executeSql(tableSql);
+
+        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        env.setParallelism(STREAM_PARALLELISM);
+
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getIncorrectServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
+        // create sink
+        ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
+                convertorString,
+                MAX_BATCH_SIZE,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                MAX_TIME_IN_BUFFER_MS,
+                MAX_RECORD_SIZE_IN_BYTES,
+                clickHouseClientConfig
+        );
+        csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
+
+        Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
+
+        FileSource<String> source = FileSource
+                .forRecordStreamFormat(new TextLineInputFormat(), filePath)
+                .build();
+        // read csv data from file
+        DataStreamSource<String> lines = env.fromSource(
+                source,
+                WatermarkStrategy.noWatermarks(),
+                "GzipCsvSource"
+        );
+        lines.sinkTo(csvSink);
+        // TODO: make the test smarter by checking the counter of numOfDroppedRecords equals EXPECTED_ROWS
+        int rows = executeAsyncJob(env, tableName);
+        Assertions.assertEquals(EXPECTED_ROWS_ON_FAILURE, rows);
+    }
+
 }

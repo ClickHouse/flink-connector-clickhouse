@@ -67,6 +67,14 @@ public class Utils {
                 case 425: // SYSTEM_ERROR
                 case 999: // KEEPER_EXCEPTION
                     throw new RetriableException(e);
+                case 0:
+                    switch (clickHouseServerException.getTransportProtocolCode()) {
+                        case 400: // Bad request
+                        case 500: // Internal server error
+                            throw new RetriableException(e);
+                        default:
+                            LOG.error("Error code [{}] wasn't in the acceptable list. Transport protocol code [{}]", clickHouseServerException.getCode(), clickHouseServerException.getTransportProtocolCode());
+                    }
                 default:
                     LOG.error("Error code [{}] wasn't in the acceptable list.", clickHouseServerException.getCode());
                     break;

@@ -23,6 +23,10 @@ public class FlinkClusterTests {
         return ClickHouseServerForTests.getURL();
     }
 
+    public static String getIncorrectServerURL() {
+        return ClickHouseServerForTests.getURL(ClickHouseServerForTests.getHost(), ClickHouseServerForTests.getPort() + 1);
+    }
+
     public static String getUsername() {
         return ClickHouseServerForTests.getUsername();
     }
