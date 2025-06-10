@@ -237,4 +237,67 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         int rows = executeJob(env, tableName);
         Assertions.assertEquals(EXPECTED_ROWS, rows);
     }
+
+    @Test
+    void ProductNameTest() throws Exception {
+        String tableName = "product_name_csv_covid";
+        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
+        ClickHouseServerForTests.executeSql(dropTable);
+        // create table
+        String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
+                "date Date," +
+                "location_key LowCardinality(String)," +
+                "new_confirmed Int32," +
+                "new_deceased Int32," +
+                "new_recovered Int32," +
+                "new_tested Int32," +
+                "cumulative_confirmed Int32," +
+                "cumulative_deceased Int32," +
+                "cumulative_recovered Int32," +
+                "cumulative_tested Int32" +
+                ") " +
+                "ENGINE = MergeTree " +
+                "ORDER BY (location_key, date); ";
+        ClickHouseServerForTests.executeSql(tableSql);
+
+        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        env.setParallelism(1);
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
+        // create sink
+        ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
+                convertorString,
+                5000,
+                2,
+                20000,
+                1024 * 1024,
+                5 * 1000,
+                1000,
+                clickHouseClientConfig
+        );
+        csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
+
+        Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
+
+        FileSource<String> source = FileSource
+                .forRecordStreamFormat(new TextLineInputFormat(), filePath)
+                .build();
+        // read csv data from file
+        DataStreamSource<String> lines = env.fromSource(
+                source,
+                WatermarkStrategy.noWatermarks(),
+                "GzipCsvSource"
+        );
+        lines.sinkTo(csvSink);
+        int rows = executeJob(env, tableName);
+        Assertions.assertEquals(EXPECTED_ROWS, rows);
+        ClickHouseServerForTests.executeSql("SYSTEM FLUSH LOGS");
+        // let's wait until data will be available in query log
+        String productName = ClickHouseServerForTests.extractProductName();
+        String compareString = String.format("Flink-ClickHouse-Sink/%s (fv:flink/2.0.0, lv:scala/2.12)", ClickHouseSinkVersion.getVersion());
+
+        boolean isContains = productName.contains(compareString);
+        Assertions.assertTrue(isContains);
+    }
 }

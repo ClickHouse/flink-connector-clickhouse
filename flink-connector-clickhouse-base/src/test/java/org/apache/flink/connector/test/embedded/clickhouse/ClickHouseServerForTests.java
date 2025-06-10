@@ -88,7 +88,11 @@ public class ClickHouseServerForTests {
 
     public static void executeSql(String sql) throws ExecutionException, InterruptedException {
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
-        client.execute(sql).get();
+        try {
+            client.execute(sql).get().close();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static int countRows(String table) throws ExecutionException, InterruptedException {
@@ -96,6 +100,13 @@ public class ClickHouseServerForTests {
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
         List<GenericRecord> countResult = client.queryAll(countSql);
         return countResult.get(0).getInteger(1);
+    }
+
+    public static String extractProductName() {
+        String extractProductName = "SELECT http_user_agent FROM system.query_log WHERE type = 'QueryStart' and query_kind = 'Insert' LIMIT 10";
+        Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
+        List<GenericRecord> userAgentResult = client.queryAll(extractProductName);
+        return userAgentResult.get(0).getString(1);
     }
 
     public static TableSchema getTableSchema(String table) throws ExecutionException, InterruptedException {
