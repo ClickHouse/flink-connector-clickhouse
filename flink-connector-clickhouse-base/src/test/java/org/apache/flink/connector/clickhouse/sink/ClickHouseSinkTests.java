@@ -300,6 +300,6 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         String compareString = String.format("Flink-ClickHouse-Sink/%s (fv:flink/2.0.0, lv:scala/2.12)", ClickHouseSinkVersion.getVersion());
 
         boolean isContains = productName.contains(compareString);
-        Assertions.assertTrue(isContains);
+        Assertions.assertTrue(isContains, "Expected user agent to contain: " + compareString + " but got: " + productName);
     }
 }

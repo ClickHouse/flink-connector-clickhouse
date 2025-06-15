@@ -111,7 +111,7 @@ public class ClickHouseServerForTests {
         if (!userAgentResult.isEmpty()) {
             return userAgentResult.get(0).getString(1);
         }
-        throw new RuntimeException("Quest for system query failed");
+        throw new RuntimeException("Query is returning empty result.");
     }
 
     public static TableSchema getTableSchema(String table) throws ExecutionException, InterruptedException {
