@@ -109,9 +109,6 @@ public class ClickHouseServerForTests {
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
         List<GenericRecord> userAgentResult = client.queryAll(extractProductName);
         if (!userAgentResult.isEmpty()) {
-            System.out.println(databaseName + " " + tableName);
-            System.out.println("http_user_agent" + userAgentResult.get(0).getString("http_user_agent"));
-            System.out.println("tables" + userAgentResult.get(0).getString("tables"));
             return userAgentResult.get(0).getString(1);
         }
         throw new RuntimeException("Query is returning empty result.");
