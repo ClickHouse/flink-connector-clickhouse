@@ -105,10 +105,13 @@ public class ClickHouseServerForTests {
     }
     // http_user_agent
     public static String extractProductName(String databaseName, String tableName) {
-        String extractProductName = String.format("SELECT http_user_agent, tables FROM clusterAllReplicas('default', system.query_log) WHERE type = 'QueryStart' AND query_kind = 'Insert' AND has(databases,'%s') LIMIT 100", databaseName);
+        String extractProductName = String.format("SELECT http_user_agent, tables FROM clusterAllReplicas('default', system.query_log) WHERE type = 'QueryStart' AND query_kind = 'Insert' AND has(databases,'%s') AND has(tables,'%s.%s') LIMIT 100", databaseName, databaseName, tableName);
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
         List<GenericRecord> userAgentResult = client.queryAll(extractProductName);
         if (!userAgentResult.isEmpty()) {
+            System.out.println(databaseName + " " + tableName);
+            System.out.println("http_user_agent" + userAgentResult.get(0).getString("http_user_agent"));
+            System.out.println("tables" + userAgentResult.get(0).getString("tables"));
             return userAgentResult.get(0).getString(1);
         }
         throw new RuntimeException("Query is returning empty result.");
