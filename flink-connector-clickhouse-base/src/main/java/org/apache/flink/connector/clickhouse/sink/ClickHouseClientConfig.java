@@ -21,7 +21,7 @@ public class ClickHouseClientConfig implements Serializable {
     private final String tableName;
     private final String fullProductName;
     private Boolean supportDefault = null;
-    private Map<String, String> options;
+    private final Map<String, String> options;
 
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName) {
         this.url = url;
