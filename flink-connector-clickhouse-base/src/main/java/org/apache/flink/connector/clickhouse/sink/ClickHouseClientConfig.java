@@ -61,6 +61,8 @@ public class ClickHouseClientConfig implements Serializable {
     }
 
     public void setOptions(Map<String, String> options) {
-        this.options = options;
+        if (options != null) {
+            this.options.putAll(options);
+        }
     }
 }
