@@ -275,12 +275,12 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         // create sink
         ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
                 convertorString,
-                5000,
-                2,
-                20000,
-                1024 * 1024,
-                5 * 1000,
-                1000,
+                MAX_BATCH_SIZE,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                MAX_TIME_IN_BUFFER_MS,
+                MAX_RECORD_SIZE_IN_BYTES,
                 clickHouseClientConfig
         );
         csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
@@ -297,7 +297,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "GzipCsvSource"
         );
         lines.sinkTo(csvSink);
-        int rows = executeJob(env, tableName);
+        int rows = executeAsyncJob(env, tableName);
         Assertions.assertEquals(EXPECTED_ROWS, rows);
         ClickHouseServerForTests.executeSql("SYSTEM FLUSH LOGS");
         if (ClickHouseServerForTests.isCloud())
