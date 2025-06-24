@@ -2,10 +2,13 @@ package org.apache.flink.connector.clickhouse.sink;
 
 import com.clickhouse.client.api.Client;
 import com.clickhouse.client.api.ClientConfigProperties;
+import org.apache.flink.runtime.util.EnvironmentInformation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
+import java.util.HashMap;
+import java.util.Map;
 
 public class ClickHouseClientConfig implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseClientConfig.class);
@@ -16,7 +19,9 @@ public class ClickHouseClientConfig implements Serializable {
     private final String password;
     private final String database;
     private final String tableName;
+    private final String fullProductName;
     private Boolean supportDefault = null;
+    private final Map<String, String> options;
 
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName) {
         this.url = url;
@@ -24,6 +29,8 @@ public class ClickHouseClientConfig implements Serializable {
         this.password = password;
         this.database = database;
         this.tableName = tableName;
+        this.fullProductName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s)", ClickHouseSinkVersion.getVersion(), EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion());
+        this.options = new HashMap<>();
     }
 
     public Client createClient(String database) {
@@ -32,7 +39,9 @@ public class ClickHouseClientConfig implements Serializable {
                 .setUsername(username)
                 .setPassword(password)
                 .setDefaultDatabase(database)
+                .setClientName(fullProductName)
                 .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true")
+                .setOptions(options)
                 .build();
         return client;
     }
@@ -49,5 +58,11 @@ public class ClickHouseClientConfig implements Serializable {
 
     public Boolean getSupportDefault() {
         return supportDefault;
+    }
+
+    public void setOptions(Map<String, String> options) {
+        if (options != null) {
+            this.options.putAll(options);
+        }
     }
 }

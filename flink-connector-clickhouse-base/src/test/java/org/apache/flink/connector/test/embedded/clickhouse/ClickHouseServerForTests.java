@@ -91,9 +91,15 @@ public class ClickHouseServerForTests {
         }
     }
 
+    public static boolean isCloud() { return isCloud; }
+
     public static void executeSql(String sql) throws ExecutionException, InterruptedException {
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
-        client.execute(sql).get();
+        try {
+            client.execute(sql).get().close();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static int countRows(String table) throws ExecutionException, InterruptedException {
@@ -101,6 +107,16 @@ public class ClickHouseServerForTests {
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
         List<GenericRecord> countResult = client.queryAll(countSql);
         return countResult.get(0).getInteger(1);
+    }
+    // http_user_agent
+    public static String extractProductName(String databaseName, String tableName) {
+        String extractProductName = String.format("SELECT http_user_agent, tables FROM clusterAllReplicas('default', system.query_log) WHERE type = 'QueryStart' AND query_kind = 'Insert' AND has(databases,'%s') AND has(tables,'%s.%s') LIMIT 100", databaseName, databaseName, tableName);
+        Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
+        List<GenericRecord> userAgentResult = client.queryAll(extractProductName);
+        if (!userAgentResult.isEmpty()) {
+            return userAgentResult.get(0).getString(1);
+        }
+        throw new RuntimeException("Query is returning empty result.");
     }
 
     public static TableSchema getTableSchema(String table) throws ExecutionException, InterruptedException {
