@@ -102,6 +102,20 @@ public class ClickHouseServerForTests {
         }
     }
 
+    public static int countParts(String table) {
+        String countPartsSql = String.format("SELECT count(*) FROM system.parts WHERE table = '%s' and active = 1", table);
+        Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
+        List<GenericRecord> countResult = client.queryAll(countPartsSql);
+        return countResult.get(0).getInteger(1);
+    }
+
+    public static int countMerges(String table) {
+        String countPartsSql = String.format("SELECT count(*) FROM system.merges WHERE table = '%s'", table);
+        Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
+        List<GenericRecord> countResult = client.queryAll(countPartsSql);
+        return countResult.get(0).getInteger(1);
+    }
+
     public static int countRows(String table) throws ExecutionException, InterruptedException {
         String countSql = String.format("SELECT COUNT(*) FROM `%s`.`%s`", database, table);
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);

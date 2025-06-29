@@ -94,7 +94,7 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
              maxBatchSizeInBytes,
              maxTimeInBufferMS,
              maxRecordSizeInBytes,
-             DEFAULT_MAX_RETRIES,
+             clickHouseClientConfig.getNumberOfRetries(),
              clickHouseClientConfig,
              clickHouseFormat,
              state

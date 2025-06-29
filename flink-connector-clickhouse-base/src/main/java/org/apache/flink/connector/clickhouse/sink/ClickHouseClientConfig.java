@@ -14,6 +14,8 @@ public class ClickHouseClientConfig implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseClientConfig.class);
     private static final long serialVersionUID = 1L;
 
+    private static final int DEFAULT_MAX_RETRIES = 3;
+
     private final String url;
     private final String username;
     private final String password;
@@ -22,6 +24,8 @@ public class ClickHouseClientConfig implements Serializable {
     private final String fullProductName;
     private Boolean supportDefault = null;
     private final Map<String, String> options;
+    private transient Client client = null;
+    private int numberOfRetries = DEFAULT_MAX_RETRIES;
 
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName) {
         this.url = url;
@@ -34,16 +38,21 @@ public class ClickHouseClientConfig implements Serializable {
     }
 
     public Client createClient(String database) {
-        Client client = new Client.Builder()
-                .addEndpoint(url)
-                .setUsername(username)
-                .setPassword(password)
-                .setDefaultDatabase(database)
-                .setClientName(fullProductName)
-                .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true")
-                .setOptions(options)
-                .build();
-        return client;
+        if (this.client == null) {
+            Client client = new Client.Builder()
+                    .addEndpoint(url)
+                    .setUsername(username)
+                    .setPassword(password)
+                    .setDefaultDatabase(database)
+                    .setClientName(fullProductName)
+                    .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true")
+                    .setOptions(options)
+                    .build();
+            this.client = client;
+            return client;
+        } else {
+            return this.client;
+        }
     }
 
     public Client createClient() {
@@ -64,5 +73,13 @@ public class ClickHouseClientConfig implements Serializable {
         if (options != null) {
             this.options.putAll(options);
         }
+    }
+
+    public void setNumberOfRetries(int numberOfRetries) {
+        this.numberOfRetries = numberOfRetries;
+    }
+
+    public int getNumberOfRetries() {
+        return numberOfRetries;
     }
 }

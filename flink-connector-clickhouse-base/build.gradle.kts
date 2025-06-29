@@ -12,12 +12,13 @@ val scalaVersion = "2.13.12"
 
 repositories {
     // Use Maven Central for resolving dependencies.
-    mavenLocal()
+//    mavenLocal()
+    maven("https://s01.oss.sonatype.org/content/groups/staging/")
     mavenCentral()
 }
 
 extra.apply {
-    set("clickHouseDriverVersion", "0.8.6")
+    set("clickHouseDriverVersion", "0.9.0-SNAPSHOT")
     set("flinkVersion", "2.0.0")
     set("log4jVersion","2.17.2")
     set("testContainersVersion", "1.21.0")
@@ -91,7 +92,7 @@ sourceSets {
 // Apply a specific Java toolchain to ease working on different environments.
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(11)
+        languageVersion = JavaLanguageVersion.of(17)
     }
 }
 
