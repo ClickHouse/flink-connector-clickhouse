@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests.countMerges;
+import static org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests.isCloud;
 
 public class ClickHouseSinkTests extends FlinkClusterTests {
 
@@ -445,7 +446,9 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
     */
     @Test
     void SimplePOJODataTooManyPartsTest() throws Exception {
-        // TODO: needs to be extended to all types
+        // this test is not running on cloud
+        if (isCloud())
+            return;
         String tableName = "simple_too_many_parts_pojo";
 
         String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
