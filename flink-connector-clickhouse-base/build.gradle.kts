@@ -4,11 +4,14 @@
  */
 
 plugins {
+    `maven-publish`
     scala
     java
+    id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
 val scalaVersion = "2.13.12"
+val sinkVersion = "0.0.1"
 
 repositories {
     // Use Maven Central for resolving dependencies.
@@ -92,7 +95,7 @@ sourceSets {
 // Apply a specific Java toolchain to ease working on different environments.
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
+        languageVersion = JavaLanguageVersion.of(11)
     }
 }
 
@@ -128,4 +131,29 @@ tasks.register<JavaExec>("runScalaTests") {
         "-oD", // show durations
         "-s", "org.apache.flink.connector.clickhouse.test.scala.ClickHouseSinkTests"
     )
+}
+
+tasks.shadowJar {
+    archiveClassifier.set("all")
+
+    dependencies {
+        exclude(dependency("org.apache.flink:.*"))
+    }
+    mergeServiceFiles()
+}
+
+tasks.jar {
+    enabled = false
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            //from(components["java"])
+            artifact(tasks.shadowJar)
+            groupId = "org.apache.flink.connector"
+            artifactId = "clickhouse"
+            version = sinkVersion
+        }
+    }
 }
