@@ -48,7 +48,6 @@ public class Utils {
         if (rootCause instanceof ServerException) {
             ServerException serverException = (ServerException) rootCause;
             LOG.warn("ClickHouse Server Exception Code: {} isRetryable: {}", serverException.getCode(), serverException.isRetryable());
-            System.out.println("ClickHouse Server Exception Code: " + serverException.getCode());
             if (serverException.isRetryable()) {
                 throw new RetriableException(e);
             }
