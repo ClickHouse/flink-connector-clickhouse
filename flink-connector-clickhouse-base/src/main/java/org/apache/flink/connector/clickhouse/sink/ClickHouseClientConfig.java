@@ -59,7 +59,9 @@ public class ClickHouseClientConfig implements Serializable {
         return createClient(this.database);
     }
 
-    public String getTableName() { return tableName; }
+    public String getTableName() {
+        return tableName;
+    }
 
     public void setSupportDefault(Boolean supportDefault) {
         this.supportDefault = supportDefault;
