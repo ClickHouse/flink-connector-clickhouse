@@ -192,7 +192,7 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
             }
 
         }
-        LOG.info("Dropping request entries. Since It a failure that can not be retried. error {} number of entries drop {}", error.getLocalizedMessage(), requestEntries.size());
+        LOG.info("Dropping {} request entries due to non-retryable failure: {}", requestEntries.size(), error.getLocalizedMessage());
         numOfDroppedBatchesCounter.inc();
         numOfDroppedRecordsCounter.inc(requestEntries.size());
         resultHandler.completeExceptionally((Exception) error);
