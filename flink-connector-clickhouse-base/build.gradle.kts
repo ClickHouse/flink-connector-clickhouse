@@ -4,20 +4,24 @@
  */
 
 plugins {
+    `maven-publish`
     scala
     java
+    id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
 val scalaVersion = "2.13.12"
+val sinkVersion = "0.0.1"
 
 repositories {
     // Use Maven Central for resolving dependencies.
-    mavenLocal()
+//    mavenLocal()
+    maven("https://s01.oss.sonatype.org/content/groups/staging/") // Temporary until we have a Java Client release
     mavenCentral()
 }
 
 extra.apply {
-    set("clickHouseDriverVersion", "0.8.6")
+    set("clickHouseDriverVersion", "0.9.0-SNAPSHOT") // Temporary until we have a Java Client release
     set("flinkVersion", "2.0.0")
     set("log4jVersion","2.17.2")
     set("testContainersVersion", "1.21.0")
@@ -127,4 +131,29 @@ tasks.register<JavaExec>("runScalaTests") {
         "-oD", // show durations
         "-s", "org.apache.flink.connector.clickhouse.test.scala.ClickHouseSinkTests"
     )
+}
+
+tasks.shadowJar {
+    archiveClassifier.set("all")
+
+    dependencies {
+        exclude(dependency("org.apache.flink:.*"))
+    }
+    mergeServiceFiles()
+}
+
+tasks.jar {
+    enabled = false
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            //from(components["java"])
+            artifact(tasks.shadowJar)
+            groupId = "org.apache.flink.connector"
+            artifactId = "clickhouse"
+            version = sinkVersion
+        }
+    }
 }

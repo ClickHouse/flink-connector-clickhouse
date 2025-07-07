@@ -78,7 +78,12 @@ public class ClickHouseServerForTests {
     public static int getPort() { return port; }
     public static String getUsername() { return username; }
     public static String getPassword() { return password; }
+
     public static String getURL() {
+        return ClickHouseServerForTests.getURL(host, port);
+    }
+
+    public static String getURL(String host, int port) {
         if (isCloud) {
             return "https://" + host + ":" + port + "/";
         } else {
@@ -95,6 +100,20 @@ public class ClickHouseServerForTests {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public static int countParts(String table) {
+        String countPartsSql = String.format("SELECT count(*) FROM system.parts WHERE table = '%s' and active = 1", table);
+        Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
+        List<GenericRecord> countResult = client.queryAll(countPartsSql);
+        return countResult.get(0).getInteger(1);
+    }
+
+    public static int countMerges(String table) {
+        String countPartsSql = String.format("SELECT count(*) FROM system.merges WHERE table = '%s'", table);
+        Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
+        List<GenericRecord> countResult = client.queryAll(countPartsSql);
+        return countResult.get(0).getInteger(1);
     }
 
     public static int countRows(String table) throws ExecutionException, InterruptedException {

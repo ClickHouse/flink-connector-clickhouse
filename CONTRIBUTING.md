@@ -14,6 +14,12 @@ cd flink-connector-clickhouse
   ./gradlew build
   ```
 
+### Publish locally 
+  ```bash
+  cd flink-connector-clickhouse
+  ./gradlew publishToMavenLocal
+  ```
+
 ## Testing
 
 ### Tooling
