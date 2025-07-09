@@ -36,10 +36,7 @@ dependencies {
 
     implementation("net.bytebuddy:byte-buddy:${project.extra["byteBuddyVersion"]}")
     implementation("net.bytebuddy:byte-buddy-agent:${project.extra["byteBuddyVersion"]}")
-    // This dependency is used by the application.
-    implementation(libs.guava)
-    implementation("org.scala-lang:scala-library:$scalaVersion")
-    implementation("org.scala-lang:scala-compiler:$scalaVersion")
+
     // logger
     implementation("org.apache.logging.log4j:log4j-slf4j-impl:${project.extra["log4jVersion"]}")
     implementation("org.apache.logging.log4j:log4j-api:${project.extra["log4jVersion"]}")
