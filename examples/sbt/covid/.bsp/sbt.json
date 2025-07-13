@@ -1,0 +1,1 @@
+{"name":"sbt","version":"1.11.2","bspVersion":"2.1.0-M1","languages":["scala"],"argv":["/Users/mzitnik/.gradle/jdks/adoptium-17-aarch64-hotspot-mac/Contents/Home/bin/java","-Xms100m","-Xmx100m","-classpath","/Users/mzitnik/Library/Application Support/JetBrains/IntelliJIdea2024.3/plugins/Scala/launcher/sbt-launch.jar","-Dsbt.script=/opt/homebrew/bin/sbt","xsbt.boot.Boot","-bsp"]}
