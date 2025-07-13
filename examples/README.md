@@ -64,12 +64,12 @@ ORDER BY (location_key, date);
 
 ### Submit Flink Job
 
-After you have created `covid-1.0-SNAPSHOT.jar` you can submit job to a flink cluster or standalone using `./bin/flink run`
+After you have created java `covid-1.0-SNAPSHOT.jar` or scala `covid.jar` you can submit job to a flink cluster or standalone using `./bin/flink run`
 
 ```bash
 # Run the application
 ./bin/flink run \
-  /path/to/your/covid-1.0-SNAPSHOT.jar \
+  /path/to/your/generated/jar \
   -input "/path/to/epidemiology.csv" \
   -url "/url/clickhouse" \
   -username "default" \
