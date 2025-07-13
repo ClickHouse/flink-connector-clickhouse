@@ -1,9 +1,26 @@
+<div align="center">
+<p><img src="https://github.com/ClickHouse/clickhouse-js/blob/a332672bfb70d54dfd27ae1f8f5169a6ffeea780/.static/logo.svg" width="200px" align="center"></p>
+<h1>ClickHouse Flink Connector</h1>
+</div>
+
+Table of Contents
+* [Covid Flink Example](#covid-flink-application-example)
+* [Build Application](#build-covid-application)
+  * [Build Connector](#build-clickhouse-flink-connector)
+  * [Java Application](#java-covid-app)
+  * [Scala Application](#scala-covid-app)
+* [Running Example](#running-the-example)
+  * [Download Data](#download-covid-data)
+  * [Create table](#create-a-destination-covid-table)
+  * [Submit Flink](#submit-flink-job)
+
 # Covid Flink Application example
 
 Read covid data from a file and insert into ClickHouse
 
 ### Build Covid Application
 
+#### Build ClickHouse Flink Connector
 If you wish to build the connector locally run before building the example
 ```bash
 ./gradlew publishToMavenLocal
