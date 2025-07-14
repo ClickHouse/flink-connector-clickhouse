@@ -17,7 +17,7 @@ val sinkVersion = "0.0.1"
 
 repositories {
     // Use Maven Central for resolving dependencies.
-//    mavenLocal()
+    // mavenLocal()
     maven("https://s01.oss.sonatype.org/content/groups/staging/") // Temporary until we have a Java Client release
     mavenCentral()
 }
@@ -153,7 +153,7 @@ publishing {
         create<MavenPublication>("maven") {
             artifact(tasks.shadowJar)
             groupId = "com.clickhouse.flink"
-            artifactId = "connector"
+            artifactId = "flink-connector-clickhouse"
             version = sinkVersion
             pom {
                 name.set("ClickHouse Flink Connector")
@@ -204,8 +204,8 @@ signing {
     val signingPassword = System.getenv("SIGNING_PASSWORD")
     if (signingKey != null && signingPassword != null) {
         useInMemoryPgpKeys(signingKey, signingPassword)
+        sign(publishing.publications["maven"])
     }
-    sign(publishing.publications["maven"])
 }
 
 nmcp {
