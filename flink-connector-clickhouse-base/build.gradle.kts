@@ -199,14 +199,14 @@ publishing {
     }
 }
 
-//signing {
-//    val signingKey = System.getenv("SIGNING_PASSWORD")
-//    val signingPassword = System.getenv("SIGNING_KEY")
-//    if (signingKey != null && signingPassword != null) {
-//        useInMemoryPgpKeys(signingKey, signingPassword)
-//    }
-//    sign(publishing.publications["maven"])
-//}
+signing {
+    val signingKey = System.getenv("SIGNING_KEY")
+    val signingPassword = System.getenv("SIGNING_PASSWORD")
+    if (signingKey != null && signingPassword != null) {
+        useInMemoryPgpKeys(signingKey, signingPassword)
+    }
+    sign(publishing.publications["maven"])
+}
 
 nmcp {
     publish("maven") {
