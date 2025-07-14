@@ -7,6 +7,8 @@ plugins {
     `maven-publish`
     scala
     java
+    signing
+    id("com.gradleup.nmcp") version "0.0.8"
     id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
@@ -149,11 +151,67 @@ tasks.jar {
 publishing {
     publications {
         create<MavenPublication>("maven") {
-            //from(components["java"])
             artifact(tasks.shadowJar)
-            groupId = "org.apache.flink.connector"
-            artifactId = "clickhouse"
+            groupId = "com.clickhouse.flink"
+            artifactId = "connector"
             version = sinkVersion
+            pom {
+                name.set("ClickHouse Flink Connector")
+                description.set("Official Apache Flink connector for ClickHouse")
+                url.set("https://github.com/ClickHouse/flink-connector-clickhouse")
+
+                licenses {
+                    license {
+                        name.set("The Apache License, Version 2.0")
+                        url.set("https://github.com/ClickHouse/flink-connector-clickhouse/blob/main/LICENSE")
+                    }
+                }
+
+                developers {
+                    developer {
+                        id.set("mzitnik")
+                        name.set("Mark Zitnik")
+                        email.set("mark@clickhouse.com")
+                    }
+                    developer {
+                        id.set("BentsiLeviav")
+                        name.set("Bentsi Leviav")
+                        email.set("bentsi.leviav@clickhouse.com")
+                    }
+                }
+
+                scm {
+                    connection.set("git@github.com:ClickHouse/flink-connector-clickhouse.git")
+                    url.set("https://github.com/ClickHouse/flink-connector-clickhouse")
+                }
+
+                organization {
+                    name.set("ClickHouse")
+                    url.set("https://clickhouse.com")
+                }
+
+                issueManagement {
+                    system.set("GitHub Issues")
+                    url.set("https://github.com/ClickHouse/flink-connector-clickhouse/issues")
+                }
+            }
         }
+    }
+}
+
+//signing {
+//    val signingKey = System.getenv("SIGNING_PASSWORD")
+//    val signingPassword = System.getenv("SIGNING_KEY")
+//    if (signingKey != null && signingPassword != null) {
+//        useInMemoryPgpKeys(signingKey, signingPassword)
+//    }
+//    sign(publishing.publications["maven"])
+//}
+
+nmcp {
+    publish("maven") {
+        username = System.getenv("NMCP_USERNAME")
+        password = System.getenv("NMCP_PASSWORD")
+        publicationType = "AUTOMATIC"
     }
 }
