@@ -144,6 +144,12 @@ tasks.shadowJar {
     mergeServiceFiles()
 }
 
+val shadowSourcesJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("all-sources")
+    from(sourceSets.main.get().allSource)
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
 tasks.jar {
     enabled = false
 }
@@ -155,6 +161,9 @@ publishing {
             groupId = "com.clickhouse.flink"
             artifactId = "flink-connector-clickhouse"
             version = sinkVersion
+
+            artifact(shadowSourcesJar)
+
             pom {
                 name.set("ClickHouse Flink Connector")
                 description.set("Official Apache Flink connector for ClickHouse")
