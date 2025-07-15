@@ -9,7 +9,7 @@ import org.apache.flink.test.util.MiniClusterWithClientResource;
 public class EmbeddedFlinkClusterForTests {
 
     static MiniClusterWithClientResource flinkCluster = null;
-    static int REST_PORT = getFromEnvOrDefault("REST_PORT", 8081);
+    static int REST_PORT = getFromEnvOrDefault("REST_PORT", 9091);
     static int NUM_TASK_SLOTS = getFromEnvOrDefault("NUM_TASK_SLOTS", 2);
     static int NUM_TASK_SLOTS_PER_TASK = getFromEnvOrDefault("NUM_TASK_SLOTS_PER_TASK" , 2);
     static int NUM_TASK_MANAGERS = getFromEnvOrDefault("NUM_TASK_MANAGERS",3);
