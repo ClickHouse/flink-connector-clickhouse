@@ -10,7 +10,7 @@ jobs:
       matrix:
         clickhouse: [ "23.7", "24.3", "latest", "cloud" ]
         flink: [ "1.17.2", "1.18.1", "1.19.3", "1.20.2"]
-    name: Apache Flink 1.17+ ClickHouse Connector tests with ClickHouse ${{ matrix.clickhouse }}
+    name: Apache Flink ${{ matrix.flink }} ClickHouse Connector tests with ClickHouse ${{ matrix.clickhouse }}
     steps:
       - name: Check for Cloud Credentials
         id: check-cloud-credentials
