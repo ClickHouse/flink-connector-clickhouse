@@ -13,7 +13,7 @@ plugins {
 }
 
 val scalaVersion = "2.13.12"
-val sinkVersion = "0.0.1"
+val sinkVersion: String by rootProject.extra
 
 repositories {
     // Use Maven Central for resolving dependencies.
