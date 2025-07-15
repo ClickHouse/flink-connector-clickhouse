@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version"
+        required: true
+jobs:
+  release:
+    name: Build and Publish ClickHouse Flink Connector
+    runs-on: ubuntu-latest
+    permissions: write-all
+    steps:
+      - uses: actions/checkout@v3
+        if: env.SKIP_STEP != 'true'
+      - name: Set up JDK 17
+        if: env.SKIP_STEP != 'true'
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'adopt'
+          architecture: x64
+      - name: Build shadowJar
+        if: env.SKIP_STEP != 'true'
+        uses: gradle/gradle-build-action@v2
+        with:
+          arguments: shadowJar shadowSourcesJar
+      - name: Deploy ClickHouse Flink Connector
+        if: env.SKIP_STEP != 'true'
+        uses: gradle/gradle-build-action@v2
+        env:
+          NMCP_USERNAME: ${{ secrets.NMCP_USERNAME }}
+          NMCP_PASSWORD: ${{ secrets.NMCP_PASSWORD }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        with:
+          arguments: publishMavenPublicationToCentralPortal
