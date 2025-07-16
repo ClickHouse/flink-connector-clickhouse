@@ -75,7 +75,6 @@ subprojects {
             "-s", "org.apache.flink.connector.clickhouse.test.scala.ClickHouseSinkTests"
         )
     }
-
 }
 
 //sourceSets {

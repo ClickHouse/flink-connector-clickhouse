@@ -115,7 +115,7 @@ publishing {
         create<MavenPublication>("maven") {
             artifact(tasks.shadowJar)
             groupId = "com.clickhouse.flink"
-            artifactId = "flink-connector-clickhouse"
+            artifactId = "flink-connector-clickhouse-2.0.0"
             version = sinkVersion
 
             artifact(shadowSourcesJar)
