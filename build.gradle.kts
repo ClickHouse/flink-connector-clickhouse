@@ -55,6 +55,27 @@ subprojects {
     tasks.compileTestJava {
         options.encoding = "UTF-8"
     }
+
+    tasks.withType<ScalaCompile> {
+        scalaCompileOptions.apply {
+            encoding = "UTF-8"
+            isDeprecation = true
+            additionalParameters = listOf("-feature", "-unchecked")
+        }
+    }
+
+
+    tasks.register<JavaExec>("runScalaTests") {
+        group = "verification"
+        mainClass.set("org.scalatest.tools.Runner")
+        classpath = sourceSets["test"].runtimeClasspath
+        args = listOf(
+            "-R", "build/classes/scala/test",
+            "-oD", // show durations
+            "-s", "org.apache.flink.connector.clickhouse.test.scala.ClickHouseSinkTests"
+        )
+    }
+
 }
 
 //sourceSets {

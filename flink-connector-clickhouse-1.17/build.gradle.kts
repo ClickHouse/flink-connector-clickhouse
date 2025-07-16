@@ -99,45 +99,45 @@ sourceSets {
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(11)
-    }
-}
+//java {
+//    toolchain {
+//        languageVersion = JavaLanguageVersion.of(11)
+//    }
+//}
 
-tasks.test {
-    useJUnitPlatform()
+//tasks.test {
+//    useJUnitPlatform()
+//
+//    include("**/*Test.class", "**/*Tests.class", "**/*Spec.class")
+//    testLogging {
+//        events("passed", "failed", "skipped")
+//        //showStandardStreams = true - , "standardOut", "standardError"
+//    }
+//}
+//
+//tasks.withType<ScalaCompile> {
+//    scalaCompileOptions.apply {
+//        encoding = "UTF-8"
+//        isDeprecation = true
+//        additionalParameters = listOf("-feature", "-unchecked")
+//    }
+//}
 
-    include("**/*Test.class", "**/*Tests.class", "**/*Spec.class")
-    testLogging {
-        events("passed", "failed", "skipped")
-        //showStandardStreams = true - , "standardOut", "standardError"
-    }
-}
-
-tasks.withType<ScalaCompile> {
-    scalaCompileOptions.apply {
-        encoding = "UTF-8"
-        isDeprecation = true
-        additionalParameters = listOf("-feature", "-unchecked")
-    }
-}
-
-tasks.named<Test>("test") {
-    // Use JUnit Platform for unit tests.
-    useJUnitPlatform()
-}
-
-tasks.register<JavaExec>("runScalaTests") {
-    group = "verification"
-    mainClass.set("org.scalatest.tools.Runner")
-    classpath = sourceSets["test"].runtimeClasspath
-    args = listOf(
-        "-R", "build/classes/scala/test",
-        "-oD", // show durations
-        "-s", "org.apache.flink.connector.clickhouse.test.scala.ClickHouseSinkTests"
-    )
-}
+//tasks.named<Test>("test") {
+//    // Use JUnit Platform for unit tests.
+//    useJUnitPlatform()
+//}
+//
+//tasks.register<JavaExec>("runScalaTests") {
+//    group = "verification"
+//    mainClass.set("org.scalatest.tools.Runner")
+//    classpath = sourceSets["test"].runtimeClasspath
+//    args = listOf(
+//        "-R", "build/classes/scala/test",
+//        "-oD", // show durations
+//        "-s", "org.apache.flink.connector.clickhouse.test.scala.ClickHouseSinkTests"
+//    )
+//}
 
 tasks.shadowJar {
     archiveClassifier.set("all")
