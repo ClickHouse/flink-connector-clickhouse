@@ -3,7 +3,9 @@ package com.clickhouse.utils;
 import com.clickhouse.client.api.data_formats.internal.SerializerUtils;
 import com.clickhouse.data.ClickHouseDataType;
 import com.clickhouse.data.format.BinaryStreamUtils;
-import org.jline.utils.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -14,8 +16,10 @@ import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
-public class Serialize {
 
+
+public class Serialize {
+    private static final Logger LOG = LoggerFactory.getLogger(Serialize.class);
     public static boolean writePrimitiveValuePreamble(OutputStream out, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         // since it is primitive we always have a value that is not null
         if (defaultsSupport) {
@@ -29,7 +33,7 @@ public class Serialize {
         return true;
     }
     public static boolean writeValuePreamble(OutputStream out, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, Object value) throws IOException {
-        Log.debug("writeValuePreamble[defaultsSupport='%s', isNullable='%s', dataType='%s', column='%s', value='%s']");
+        LOG.debug("writeValuePreamble[defaultsSupport='%s', isNullable='%s', dataType='%s', column='%s', value='%s']");
         if (defaultsSupport) {
             if (value != null) {
                 SerializerUtils.writeNonNull(out);

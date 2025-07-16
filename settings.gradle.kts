@@ -9,7 +9,5 @@ plugins {
 }
 
 rootProject.name = "flink-connector-clickhouse"
-
-include("flink-connector-clickhouse-2.0.0")
-include("flink-connector-clickhouse-1.17")
+include("flink-connector-clickhouse-base", "flink-connector-clickhouse-2.0.0", "flink-connector-clickhouse-1.17")
 

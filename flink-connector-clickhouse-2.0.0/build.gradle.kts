@@ -31,10 +31,6 @@ extra.apply {
 }
 
 dependencies {
-    // Use JUnit Jupiter for testing.
-    testImplementation(libs.junit.jupiter)
-
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
     implementation("net.bytebuddy:byte-buddy:${project.extra["byteBuddyVersion"]}")
     implementation("net.bytebuddy:byte-buddy-agent:${project.extra["byteBuddyVersion"]}")
@@ -53,8 +49,9 @@ dependencies {
     // Apache Flink Libraries
     implementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     implementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
+    implementation(project(":flink-connector-clickhouse-base"))
 
-
+    testImplementation(project(":flink-connector-clickhouse-base"))
     testImplementation("org.apache.flink:flink-connector-files:${project.extra["flinkVersion"]}")
     testImplementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     testImplementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
@@ -93,13 +90,13 @@ sourceSets {
         }
     }
 }
-
-// Apply a specific Java toolchain to ease working on different environments.
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(11)
-    }
-}
+//
+//// Apply a specific Java toolchain to ease working on different environments.
+//java {
+//    toolchain {
+//        languageVersion = JavaLanguageVersion.of(11)
+//    }
+//}
 
 tasks.test {
     useJUnitPlatform()
@@ -119,10 +116,10 @@ tasks.withType<ScalaCompile> {
     }
 }
 
-tasks.named<Test>("test") {
-    // Use JUnit Platform for unit tests.
-    useJUnitPlatform()
-}
+//tasks.named<Test>("test") {
+//    // Use JUnit Platform for unit tests.
+//    useJUnitPlatform()
+//}
 
 tasks.register<JavaExec>("runScalaTests") {
     group = "verification"

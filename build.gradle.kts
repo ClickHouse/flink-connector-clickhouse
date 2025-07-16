@@ -1,6 +1,5 @@
 plugins {
     `maven-publish`
-    scala
     java
     signing
     id("com.gradleup.nmcp") version "0.0.8"
@@ -15,7 +14,7 @@ val junitVersion by extra("5.8.2")
 
 allprojects {
     group = "org.apache.flink"
-    version = "1.0.0"
+    version = sinkVersion
 
     repositories {
         mavenCentral()
@@ -26,32 +25,53 @@ subprojects {
     apply(plugin = "java-library")
     apply(plugin = "maven-publish")
 
-    dependencies {
-        testImplementation("org.junit.jupiter:junit-jupiter:$junitVersion")
-    }
-
     java {
         toolchain {
             languageVersion.set(JavaLanguageVersion.of(11))
         }
     }
+
+    dependencies {
+        // Use JUnit Jupiter for testing.
+//        testImplementation(libs.junit.jupiter)
+        testImplementation("org.junit.jupiter:junit-jupiter:$junitVersion")
+        testImplementation("org.junit.jupiter:junit-jupiter-engine:$junitVersion")
+    }
+
+    tasks.test {
+        useJUnitPlatform()
+
+        include("**/*Test.class", "**/*Tests.class", "**/*Spec.class")
+        testLogging {
+            events("passed", "failed", "skipped")
+            //showStandardStreams = true - , "standardOut", "standardError"
+        }
+    }
+
+    tasks.compileJava {
+        options.encoding = "UTF-8"
+    }
+
+    tasks.compileTestJava {
+        options.encoding = "UTF-8"
+    }
 }
 
-sourceSets {
-    main {
-        scala {
-            srcDirs("src/main/scala")
-        }
-        java {
-            srcDirs("src/main/java")
-        }
-    }
-    test {
-        scala {
-            srcDirs("src/test/scala")
-        }
-        java {
-            srcDirs("src/test/java")
-        }
-    }
-}
+//sourceSets {
+//    main {
+//        scala {
+//            srcDirs("src/main/scala")
+//        }
+//        java {
+//            srcDirs("src/main/java")
+//        }
+//    }
+//    test {
+//        scala {
+//            srcDirs("src/test/scala")
+//        }
+//        java {
+//            srcDirs("src/test/java")
+//        }
+//    }
+//}

@@ -49,7 +49,9 @@ dependencies {
     implementation("org.apache.logging.log4j:log4j-api:${project.extra["log4jVersion"]}")
     implementation("org.apache.logging.log4j:log4j-1.2-api:${project.extra["log4jVersion"]}")
     implementation("org.apache.logging.log4j:log4j-core:${project.extra["log4jVersion"]}")
+    implementation(project(":flink-connector-clickhouse-base"))
 
+    testImplementation(project(":flink-connector-clickhouse-base"))
     // ClickHouse Client Libraries
     implementation("com.clickhouse:client-v2:${project.extra["clickHouseDriverVersion"]}:all")
     // Apache Flink Libraries
