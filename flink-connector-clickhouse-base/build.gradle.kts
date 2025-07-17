@@ -5,7 +5,6 @@
 
 plugins {
     `maven-publish`
-    scala
     java
     signing
     id("com.gradleup.nmcp") version "0.0.8"
@@ -13,12 +12,11 @@ plugins {
 }
 
 val scalaVersion = "2.13.12"
-val sinkVersion = "0.0.1"
+val sinkVersion: String by rootProject.extra
 
 repositories {
-    // Use Maven Central for resolving dependencies.
-    // mavenLocal()
     maven("https://s01.oss.sonatype.org/content/groups/staging/") // Temporary until we have a Java Client release
+    // Use Maven Central for resolving dependencies.
     mavenCentral()
 }
 
@@ -33,15 +31,8 @@ extra.apply {
 dependencies {
     // Use JUnit Jupiter for testing.
     testImplementation(libs.junit.jupiter)
-
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
-    implementation("net.bytebuddy:byte-buddy:${project.extra["byteBuddyVersion"]}")
-    implementation("net.bytebuddy:byte-buddy-agent:${project.extra["byteBuddyVersion"]}")
-    // This dependency is used by the application.
-    implementation(libs.guava)
-    implementation("org.scala-lang:scala-library:$scalaVersion")
-    implementation("org.scala-lang:scala-compiler:$scalaVersion")
     // logger
     implementation("org.apache.logging.log4j:log4j-slf4j-impl:${project.extra["log4jVersion"]}")
     implementation("org.apache.logging.log4j:log4j-api:${project.extra["log4jVersion"]}")
@@ -50,44 +41,15 @@ dependencies {
 
     // ClickHouse Client Libraries
     implementation("com.clickhouse:client-v2:${project.extra["clickHouseDriverVersion"]}:all")
-    // Apache Flink Libraries
-    implementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
-    implementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
-
-
-    testImplementation("org.apache.flink:flink-connector-files:${project.extra["flinkVersion"]}")
-    testImplementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
-    testImplementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
-    testImplementation("org.apache.flink:flink-clients:${project.extra["flinkVersion"]}")
-    testImplementation("org.apache.flink:flink-runtime:${project.extra["flinkVersion"]}")
-    // logger
-    testImplementation("org.apache.logging.log4j:log4j-slf4j-impl:${project.extra["log4jVersion"]}")
-    testImplementation("org.apache.logging.log4j:log4j-api:${project.extra["log4jVersion"]}")
-    testImplementation("org.apache.logging.log4j:log4j-1.2-api:${project.extra["log4jVersion"]}")
-    testImplementation("org.apache.logging.log4j:log4j-core:${project.extra["log4jVersion"]}")
-    // flink tests
-    testImplementation("org.apache.flink:flink-test-utils:${project.extra["flinkVersion"]}")
-    //
-    testImplementation("org.testcontainers:testcontainers:${project.extra["testContainersVersion"]}")
-    testImplementation("org.testcontainers:clickhouse:${project.extra["testContainersVersion"]}")
-    testImplementation("org.scalatest:scalatest_2.13:3.2.19")
-    testRuntimeOnly("org.scalatestplus:junit-4-13_2.13:3.2.18.0")
-//    testRuntimeOnly("org.pegdown:pegdown:1.6.0") // sometimes required by ScalaTest
 }
 
 sourceSets {
     main {
-        scala {
-            srcDirs("src/main/scala")
-        }
         java {
             srcDirs("src/main/java")
         }
     }
     test {
-        scala {
-            srcDirs("src/test/scala")
-        }
         java {
             srcDirs("src/test/java")
         }
@@ -95,132 +57,132 @@ sourceSets {
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(11)
-    }
-}
+//java {
+//    toolchain {
+//        languageVersion = JavaLanguageVersion.of(11)
+//    }
+//}
 
-tasks.test {
-    useJUnitPlatform()
-
-    include("**/*Test.class", "**/*Tests.class", "**/*Spec.class")
-    testLogging {
-        events("passed", "failed", "skipped")
-        //showStandardStreams = true - , "standardOut", "standardError"
-    }
-}
-
-tasks.withType<ScalaCompile> {
-    scalaCompileOptions.apply {
-        encoding = "UTF-8"
-        isDeprecation = true
-        additionalParameters = listOf("-feature", "-unchecked")
-    }
-}
-
-tasks.named<Test>("test") {
-    // Use JUnit Platform for unit tests.
-    useJUnitPlatform()
-}
-
-tasks.register<JavaExec>("runScalaTests") {
-    group = "verification"
-    mainClass.set("org.scalatest.tools.Runner")
-    classpath = sourceSets["test"].runtimeClasspath
-    args = listOf(
-        "-R", "build/classes/scala/test",
-        "-oD", // show durations
-        "-s", "org.apache.flink.connector.clickhouse.test.scala.ClickHouseSinkTests"
-    )
-}
-
-tasks.shadowJar {
-    archiveClassifier.set("all")
-
-    dependencies {
-        exclude(dependency("org.apache.flink:.*"))
-    }
-    mergeServiceFiles()
-}
-
-val shadowSourcesJar by tasks.registering(Jar::class) {
-    archiveClassifier.set("all-sources")
-    from(sourceSets.main.get().allSource)
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
-tasks.jar {
-    enabled = false
-}
-
-publishing {
-    publications {
-        create<MavenPublication>("maven") {
-            artifact(tasks.shadowJar)
-            groupId = "com.clickhouse.flink"
-            artifactId = "flink-connector-clickhouse"
-            version = sinkVersion
-
-            artifact(shadowSourcesJar)
-
-            pom {
-                name.set("ClickHouse Flink Connector")
-                description.set("Official Apache Flink connector for ClickHouse")
-                url.set("https://github.com/ClickHouse/flink-connector-clickhouse")
-
-                licenses {
-                    license {
-                        name.set("The Apache License, Version 2.0")
-                        url.set("https://github.com/ClickHouse/flink-connector-clickhouse/blob/main/LICENSE")
-                    }
-                }
-
-                developers {
-                    developer {
-                        id.set("mzitnik")
-                        name.set("Mark Zitnik")
-                        email.set("mark@clickhouse.com")
-                    }
-                    developer {
-                        id.set("BentsiLeviav")
-                        name.set("Bentsi Leviav")
-                        email.set("bentsi.leviav@clickhouse.com")
-                    }
-                }
-
-                scm {
-                    connection.set("git@github.com:ClickHouse/flink-connector-clickhouse.git")
-                    url.set("https://github.com/ClickHouse/flink-connector-clickhouse")
-                }
-
-                organization {
-                    name.set("ClickHouse")
-                    url.set("https://clickhouse.com")
-                }
-
-                issueManagement {
-                    system.set("GitHub Issues")
-                    url.set("https://github.com/ClickHouse/flink-connector-clickhouse/issues")
-                }
-            }
-        }
-    }
-}
-
-signing {
-    val signingKey = System.getenv("SIGNING_KEY")
-    val signingPassword = System.getenv("SIGNING_PASSWORD")
-    if (signingKey != null && signingPassword != null) {
-        useInMemoryPgpKeys(signingKey, signingPassword)
-        sign(publishing.publications["maven"])
-    }
-}
-
-nmcp {
-    publish("maven") {
-        username = System.getenv("NMCP_USERNAME")
-        password = System.getenv("NMCP_PASSWORD")
-        publicationType = "AUTOMATIC"
-    }
-}
+//tasks.test {
+//    useJUnitPlatform()
+//
+//    include("**/*Test.class", "**/*Tests.class", "**/*Spec.class")
+//    testLogging {
+//        events("passed", "failed", "skipped")
+//        //showStandardStreams = true - , "standardOut", "standardError"
+//    }
+//}
+//
+//tasks.withType<ScalaCompile> {
+//    scalaCompileOptions.apply {
+//        encoding = "UTF-8"
+//        isDeprecation = true
+//        additionalParameters = listOf("-feature", "-unchecked")
+//    }
+//}
+//
+//tasks.named<Test>("test") {
+//    // Use JUnit Platform for unit tests.
+//    useJUnitPlatform()
+//}
+//
+//tasks.register<JavaExec>("runScalaTests") {
+//    group = "verification"
+//    mainClass.set("org.scalatest.tools.Runner")
+//    classpath = sourceSets["test"].runtimeClasspath
+//    args = listOf(
+//        "-R", "build/classes/scala/test",
+//        "-oD", // show durations
+//        "-s", "org.apache.flink.connector.clickhouse.test.scala.ClickHouseSinkTests"
+//    )
+//}
+//
+//tasks.shadowJar {
+//    archiveClassifier.set("all")
+//
+//    dependencies {
+//        exclude(dependency("org.apache.flink:.*"))
+//    }
+//    mergeServiceFiles()
+//}
+//
+//val shadowSourcesJar by tasks.registering(Jar::class) {
+//    archiveClassifier.set("all-sources")
+//    from(sourceSets.main.get().allSource)
+//    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+//}
+//
+//tasks.jar {
+//    enabled = false
+//}
+//
+//publishing {
+//    publications {
+//        create<MavenPublication>("maven") {
+//            artifact(tasks.shadowJar)
+//            groupId = "com.clickhouse.flink"
+//            artifactId = "flink-connector-clickhouse"
+//            version = sinkVersion
+//
+//            artifact(shadowSourcesJar)
+//
+//            pom {
+//                name.set("ClickHouse Flink Connector")
+//                description.set("Official Apache Flink connector for ClickHouse")
+//                url.set("https://github.com/ClickHouse/flink-connector-clickhouse")
+//
+//                licenses {
+//                    license {
+//                        name.set("The Apache License, Version 2.0")
+//                        url.set("https://github.com/ClickHouse/flink-connector-clickhouse/blob/main/LICENSE")
+//                    }
+//                }
+//
+//                developers {
+//                    developer {
+//                        id.set("mzitnik")
+//                        name.set("Mark Zitnik")
+//                        email.set("mark@clickhouse.com")
+//                    }
+//                    developer {
+//                        id.set("BentsiLeviav")
+//                        name.set("Bentsi Leviav")
+//                        email.set("bentsi.leviav@clickhouse.com")
+//                    }
+//                }
+//
+//                scm {
+//                    connection.set("git@github.com:ClickHouse/flink-connector-clickhouse.git")
+//                    url.set("https://github.com/ClickHouse/flink-connector-clickhouse")
+//                }
+//
+//                organization {
+//                    name.set("ClickHouse")
+//                    url.set("https://clickhouse.com")
+//                }
+//
+//                issueManagement {
+//                    system.set("GitHub Issues")
+//                    url.set("https://github.com/ClickHouse/flink-connector-clickhouse/issues")
+//                }
+//            }
+//        }
+//    }
+//}
+//
+//signing {
+//    val signingKey = System.getenv("SIGNING_KEY")
+//    val signingPassword = System.getenv("SIGNING_PASSWORD")
+//    if (signingKey != null && signingPassword != null) {
+//        useInMemoryPgpKeys(signingKey, signingPassword)
+//        sign(publishing.publications["maven"])
+//    }
+//}
+//
+//nmcp {
+//    publish("maven") {
+//        username = System.getenv("NMCP_USERNAME")
+//        password = System.getenv("NMCP_PASSWORD")
+//        publicationType = "AUTOMATIC"
+//    }
+//}
