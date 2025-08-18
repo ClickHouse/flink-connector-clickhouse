@@ -28,9 +28,7 @@ If you wish to build the connector locally run before building the example
 
 #### Java Covid App
 
-From project directory run this will create a `covid-1.0-SNAPSHOT.jar` can be found in target folder
-
-Build Covid Java App
+From the project directory, run the following command, which will create  a `covid-1.0-SNAPSHOT.jar` artifact that can be found in your target folder
 
 ```bash
 mvn clean package -DskipTests
@@ -81,7 +79,7 @@ ORDER BY (location_key, date);
 
 ### Submit Flink Job
 
-After you have created java `covid-1.0-SNAPSHOT.jar` or scala `covid.jar` you can submit job to a flink cluster or standalone using `./bin/flink run`
+With the Java `covid-1.0-SNAPSHOT.jar` or Scala `covid.jar` built, you can now submit the job to your Flink cluster (or standalone instance) 
 
 ```bash
 # Run the application

@@ -20,6 +20,24 @@ object Main extends App {
   private val MAX_TIME_IN_BUFFER_MS = 5 * 1000L
   private val MAX_RECORD_SIZE_IN_BYTES = 1000L
 
+  /*
+		Create covid table before running the example
+		CREATE TABLE `default`.`covid` (
+							date Date,
+                            location_key LowCardinality(String),
+                            new_confirmed Int32,
+                            new_deceased Int32,
+                            new_recovered Int32,
+                            new_tested Int32,
+                            cumulative_confirmed Int32,
+                            cumulative_deceased Int32,
+                            cumulative_recovered Int32,
+                            cumulative_tested Int32
+                            )
+                            ENGINE = MergeTree
+                            ORDER BY (location_key, date);
+	 */
+
   val parameters: ParameterTool = ParameterTool.fromArgs(args)
   val fileFullName = parameters.get("input")
   val url = parameters.get("url")

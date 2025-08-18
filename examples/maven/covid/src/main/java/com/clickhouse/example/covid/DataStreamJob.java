@@ -54,7 +54,6 @@ public class DataStreamJob {
 	static final long MAX_RECORD_SIZE_IN_BYTES = 1000;
 
 	/*
-
 		Create covid table before running the example
 
 		CREATE TABLE `default`.`covid` (
