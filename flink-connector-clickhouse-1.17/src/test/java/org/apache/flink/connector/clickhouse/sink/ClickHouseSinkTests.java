@@ -86,7 +86,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                             "ORDER BY (location_key, date); ";
         ClickHouseServerForTests.executeSql(tableSql);
 
-        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(STREAM_PARALLELISM);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
@@ -146,7 +146,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         TableSchema covidTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
 
         POJOConvertor<CovidPOJO> covidPOJOConvertor = new CovidPOJOConvertor();
-        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(STREAM_PARALLELISM);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
@@ -219,7 +219,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         TableSchema simpleTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
         POJOConvertor<SimplePOJO> simplePOJOConvertor = new SimplePOJOConvertor();
 
-        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(STREAM_PARALLELISM);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
@@ -243,7 +243,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
             simplePOJOList.add(new SimplePOJO(i));
         }
         // create from list
-        DataStream<SimplePOJO> simplePOJOs = env.fromData(simplePOJOList.toArray(new SimplePOJO[0]));
+        DataStream<SimplePOJO> simplePOJOs = env.fromElements(simplePOJOList.toArray(new SimplePOJO[0]));
         // send to a sink
         simplePOJOs.sinkTo(simplePOJOSink);
         int rows = executeAsyncJob(env, tableName, 10, EXPECTED_ROWS);
@@ -252,6 +252,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
     @Test
     void ProductNameTest() throws Exception {
+        String flinkVersion = System.getenv("FLINK_VERSION") != null ? System.getenv("FLINK_VERSION") : "1.17.2";
         String tableName = "product_name_csv_covid";
         String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
         ClickHouseServerForTests.executeSql(dropTable);
@@ -272,7 +273,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "ORDER BY (location_key, date); ";
         ClickHouseServerForTests.executeSql(tableSql);
 
-        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(1);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
@@ -308,8 +309,8 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         if (ClickHouseServerForTests.isCloud())
             Thread.sleep(5000);
         // let's wait until data will be available in query log
-        String productName = ClickHouseServerForTests.extractProductName(ClickHouseServerForTests.getDatabase(), tableName, "Flink-ClickHouse-Sink");
-        String compareString = String.format("Flink-ClickHouse-Sink/%s (fv:flink/2.0.0, lv:scala/2.12)", ClickHouseSinkVersion.getVersion());
+        String productName = ClickHouseServerForTests.extractProductName(ClickHouseServerForTests.getDatabase(), tableName);
+        String compareString = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/2.12)", ClickHouseSinkVersion.getVersion(), flinkVersion);
 
         boolean isContains = productName.contains(compareString);
         Assertions.assertTrue(isContains, "Expected user agent to contain: " + compareString + " but got: " + productName);
@@ -341,7 +342,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "ORDER BY (location_key, date); ";
         ClickHouseServerForTests.executeSql(tableSql);
 
-        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(STREAM_PARALLELISM);
 
 
@@ -403,7 +404,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "ORDER BY (location_key, date); ";
         ClickHouseServerForTests.executeSql(tableSql);
 
-        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(STREAM_PARALLELISM);
 
 
@@ -477,7 +478,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         TableSchema simpleTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
         POJOConvertor<SimplePOJO> simplePOJOConvertor = new SimplePOJOConvertor();
 
-        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(STREAM_PARALLELISM);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
@@ -502,7 +503,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
             simplePOJOList.add(new SimplePOJO(i));
         }
         // create from list
-        DataStream<SimplePOJO> simplePOJOs = env.fromData(simplePOJOList.toArray(new SimplePOJO[0]));
+        DataStream<SimplePOJO> simplePOJOs = env.fromElements(simplePOJOList.toArray(new SimplePOJO[0]));
         // send to a sink
         simplePOJOs.sinkTo(simplePOJOSink);
         int rows = executeAsyncJob(env, tableName, 100, EXPECTED_ROWS);
