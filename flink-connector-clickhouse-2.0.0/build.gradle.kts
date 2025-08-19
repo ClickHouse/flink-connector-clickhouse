@@ -21,6 +21,7 @@ repositories {
 
 extra.apply {
     set("clickHouseDriverVersion", "0.9.1")
+    set("flinkVersion", "2.0.0")
     set("log4jVersion","2.17.2")
     set("testContainersVersion", "1.21.0")
     set("byteBuddyVersion", "1.17.5")
