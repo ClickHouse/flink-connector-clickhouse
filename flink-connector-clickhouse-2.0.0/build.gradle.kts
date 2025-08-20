@@ -21,7 +21,6 @@ repositories {
 }
 
 extra.apply {
-    set("clickHouseDriverVersion", "0.9.1")
     set("flinkVersion", "2.0.0")
     set("log4jVersion","2.17.2")
     set("testContainersVersion", "1.21.0")
@@ -43,7 +42,7 @@ dependencies {
     implementation("org.apache.logging.log4j:log4j-core:${project.extra["log4jVersion"]}")
 
     // ClickHouse Client Libraries
-    implementation("com.clickhouse:client-v2:${project.extra["clickHouseDriverVersion"]}:all")
+    implementation("com.clickhouse:client-v2:${clickhouseVersion}:all")
     // Apache Flink Libraries
     implementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     implementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
@@ -90,9 +89,11 @@ sourceSets {
 }
 
 tasks.shadowJar {
+    dependsOn(":flink-connector-clickhouse-base:classes")
     archiveClassifier.set("all")
 
     dependencies {
+        include(project(":flink-connector-clickhouse-base"))
         exclude(dependency("org.apache.flink:.*"))
     }
     mergeServiceFiles()

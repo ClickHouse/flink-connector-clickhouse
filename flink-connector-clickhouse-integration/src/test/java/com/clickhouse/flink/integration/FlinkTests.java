@@ -20,7 +20,7 @@ public class FlinkTests {
     static String flinkVersion = "latest";
     @BeforeAll
     public static void setUp() throws Exception {
-        flinkVersion = System.getenv("FLINK_VERSION");
+        flinkVersion = (System.getenv("FLINK_VERSION") != null ? System.getenv("FLINK_VERSION") : "latest");
         System.out.println("FLINK_VERSION: " + flinkVersion);
         ClickHouseServerForTests.setUp(false);
     }
@@ -112,6 +112,7 @@ public class FlinkTests {
             Thread.sleep(2000);
         }
         int count = ClickHouseServerForTests.countRows(tableName);
+        System.out.println(count);
         Assert.assertEquals(100000, count);
     }
 }

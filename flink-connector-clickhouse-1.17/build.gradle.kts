@@ -23,7 +23,6 @@ repositories {
 val flinkVersion = System.getenv("FLINK_VERSION") ?: "1.17.2"
 
 extra.apply {
-    set("clickHouseDriverVersion", "0.9.1")
     set("flinkVersion", flinkVersion)
     set("log4jVersion","2.17.2")
     set("testContainersVersion", "1.21.0")
@@ -97,9 +96,12 @@ sourceSets {
 }
 
 tasks.shadowJar {
+    dependsOn(":flink-connector-clickhouse-base:classes")
+
     archiveClassifier.set("all")
 
     dependencies {
+        include(project(":flink-connector-clickhouse-base"))
         exclude(dependency("org.apache.flink:.*"))
     }
     mergeServiceFiles()
