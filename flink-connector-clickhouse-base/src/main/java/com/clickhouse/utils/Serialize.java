@@ -16,8 +16,6 @@ import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
-
-
 public class Serialize {
     private static final Logger LOG = LoggerFactory.getLogger(Serialize.class);
     public static boolean writePrimitiveValuePreamble(OutputStream out, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {

@@ -21,6 +21,13 @@ gradle-app.setting
 !gradle-wrapper.jar
 
 ##############################
+## Sbt
+##############################
+project/project/
+project/target/
+target/
+
+##############################
 ## IntelliJ
 ##############################
 out/

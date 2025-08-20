@@ -17,15 +17,13 @@ val sinkVersion: String by rootProject.extra
 val clickhouseVersion: String by rootProject.extra // Temporary until we have a Java Client release
 
 repositories {
-    // Use Maven Central for resolving dependencies.
-    // mavenLocal()
-    maven("https://central.sonatype.com/repository/maven-snapshots/") // Temporary until we have a Java Client release
     mavenCentral()
 }
 
 val flinkVersion = System.getenv("FLINK_VERSION") ?: "1.17.2"
 
 extra.apply {
+    set("clickHouseDriverVersion", "0.9.1")
     set("flinkVersion", flinkVersion)
     set("log4jVersion","2.17.2")
     set("testContainersVersion", "1.21.0")

@@ -17,13 +17,12 @@ val sinkVersion: String by rootProject.extra
 val clickhouseVersion: String by rootProject.extra // Temporary until we have a Java Client release
 
 repositories {
-    maven("https://central.sonatype.com/repository/maven-snapshots/") // Temporary until we have a Java Client release
     // Use Maven Central for resolving dependencies.
     mavenCentral()
 }
 
 extra.apply {
-    set("flinkVersion", "2.0.0")
+    set("clickHouseDriverVersion", "0.9.1")
     set("log4jVersion","2.17.2")
     set("testContainersVersion", "1.21.0")
     set("byteBuddyVersion", "1.17.5")
