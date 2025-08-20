@@ -16,16 +16,13 @@ val scalaVersion = "2.13.12"
 val sinkVersion: String by rootProject.extra
 
 repositories {
-    // Use Maven Central for resolving dependencies.
-    // mavenLocal()
-    maven("https://s01.oss.sonatype.org/content/groups/staging/") // Temporary until we have a Java Client release
     mavenCentral()
 }
 
 val flinkVersion = System.getenv("FLINK_VERSION") ?: "1.17.2"
 
 extra.apply {
-    set("clickHouseDriverVersion", "0.9.0-SNAPSHOT") // Temporary until we have a Java Client release
+    set("clickHouseDriverVersion", "0.9.1")
     set("flinkVersion", flinkVersion)
     set("log4jVersion","2.17.2")
     set("testContainersVersion", "1.21.0")

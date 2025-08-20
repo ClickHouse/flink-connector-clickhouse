@@ -34,3 +34,9 @@ Does not require a running ClickHouse server.
   ./gradlew test 
   ```
 
+if you want to run scala unit tests
+
+  ```bash
+  cd flink-connector-clickhouse
+  ./gradlew clean runScalaTests
+  ```
