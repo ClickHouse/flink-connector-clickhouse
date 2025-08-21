@@ -1,0 +1,40 @@
+name: Integration Tests CI (Java)
+
+on: [push]
+
+jobs:
+  test-integration-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        clickhouse: [ "23.7", "24.3", "latest", "cloud" ]
+        flink: [ "1.17.2", "1.18.1", "1.19.3", "1.20.2", "latest"]
+    steps:
+      - name: Set up JDK 21
+        if: env.SKIP_STEP != 'true'
+        uses: actions/setup-java@v3
+        with:
+          java-version: '21'
+          distribution: 'adopt'
+          architecture: x64
+      - name: Publish locally base
+        if: env.SKIP_STEP != 'true'
+        uses: gradle/gradle-build-action@v2
+        with:
+          arguments: :flink-connector-clickhouse-base:publishToMavenLocal
+      - name: Publish locally base
+        if: env.SKIP_STEP != 'true'
+        uses: gradle/gradle-build-action@v2
+        with:
+          arguments: :flink-connector-clickhouse-1.17:publishToMavenLocal
+      - name: Publish locally base
+        if: env.SKIP_STEP != 'true'
+        uses: gradle/gradle-build-action@v2
+        with:
+          arguments: :flink-connector-clickhouse-2.0.0:publishToMavenLocal
+
+
+
+
+
