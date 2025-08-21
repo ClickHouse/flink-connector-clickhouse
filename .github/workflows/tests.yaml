@@ -23,7 +23,7 @@ jobs:
         shell: bash
       - uses: actions/checkout@v3
         if: env.SKIP_STEP != 'true'
-      - name: Set up JDK 21
+      - name: Set up JDK 11
         if: env.SKIP_STEP != 'true'
         uses: actions/setup-java@v3
         with:
@@ -59,7 +59,7 @@ jobs:
         shell: bash
       - uses: actions/checkout@v3
         if: env.SKIP_STEP != 'true'
-      - name: Set up JDK 21
+      - name: Set up JDK 11
         if: env.SKIP_STEP != 'true'
         uses: actions/setup-java@v3
         with:
