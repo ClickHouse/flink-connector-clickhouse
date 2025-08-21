@@ -8,6 +8,7 @@ plugins {
     scala
     java
     signing
+    `java-test-fixtures`
     id("com.gradleup.nmcp") version "0.0.8"
     id("com.github.johnrengelman.shadow") version "8.1.1"
 }
@@ -46,9 +47,8 @@ dependencies {
     implementation("org.apache.logging.log4j:log4j-api:${project.extra["log4jVersion"]}")
     implementation("org.apache.logging.log4j:log4j-1.2-api:${project.extra["log4jVersion"]}")
     implementation("org.apache.logging.log4j:log4j-core:${project.extra["log4jVersion"]}")
-    implementation(project(":flink-connector-clickhouse-base"))
 
-    testImplementation(project(":flink-connector-clickhouse-base"))
+    implementation(project(":flink-connector-clickhouse-base"))
     // ClickHouse Client Libraries
     implementation("com.clickhouse:client-v2:${clickhouseVersion}:all")
     // Apache Flink Libraries
@@ -96,12 +96,9 @@ sourceSets {
 }
 
 tasks.shadowJar {
-    dependsOn(":flink-connector-clickhouse-base:classes")
-
     archiveClassifier.set("all")
 
     dependencies {
-        include(project(":flink-connector-clickhouse-base"))
         exclude(dependency("org.apache.flink:.*"))
     }
     mergeServiceFiles()
@@ -114,7 +111,7 @@ val shadowSourcesJar by tasks.registering(Jar::class) {
 }
 
 tasks.jar {
-    enabled = false
+    enabled = true
 }
 
 publishing {

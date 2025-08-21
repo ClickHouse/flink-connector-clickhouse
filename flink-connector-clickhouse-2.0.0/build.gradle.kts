@@ -48,7 +48,6 @@ dependencies {
     implementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
     implementation(project(":flink-connector-clickhouse-base"))
 
-    testImplementation(project(":flink-connector-clickhouse-base"))
     testImplementation("org.apache.flink:flink-connector-files:${project.extra["flinkVersion"]}")
     testImplementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     testImplementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
@@ -89,11 +88,8 @@ sourceSets {
 }
 
 tasks.shadowJar {
-    dependsOn(":flink-connector-clickhouse-base:classes")
     archiveClassifier.set("all")
-
     dependencies {
-        include(project(":flink-connector-clickhouse-base"))
         exclude(dependency("org.apache.flink:.*"))
     }
     mergeServiceFiles()
@@ -103,10 +99,6 @@ val shadowSourcesJar by tasks.registering(Jar::class) {
     archiveClassifier.set("all-sources")
     from(sourceSets.main.get().allSource)
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
-tasks.jar {
-    enabled = false
 }
 
 publishing {

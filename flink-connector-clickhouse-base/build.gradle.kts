@@ -106,92 +106,92 @@ sourceSets {
 //    )
 //}
 //
-tasks.shadowJar {
-    archiveClassifier.set("all")
+//tasks.shadowJar {
+//    archiveClassifier.set("all")
+//
+//    dependencies {
+//        exclude(dependency("org.apache.flink:.*"))
+//    }
+//    mergeServiceFiles()
+//}
 
-    dependencies {
-        exclude(dependency("org.apache.flink:.*"))
-    }
-    mergeServiceFiles()
-}
+//val shadowSourcesJar by tasks.registering(Jar::class) {
+//    archiveClassifier.set("all-sources")
+//    from(sourceSets.main.get().allSource)
+//    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+//}
 
-val shadowSourcesJar by tasks.registering(Jar::class) {
-    archiveClassifier.set("all-sources")
-    from(sourceSets.main.get().allSource)
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
+//tasks.jar {
+//    enabled = false
+//}
 
-tasks.jar {
-    enabled = false
-}
-
-publishing {
-    publications {
-        create<MavenPublication>("maven") {
-            artifact(tasks.shadowJar)
-            groupId = "com.clickhouse.flink"
-            artifactId = "flink-connector-clickhouse-base"
-            version = sinkVersion
-
-            artifact(shadowSourcesJar)
-
-            pom {
-                name.set("ClickHouse Flink Connector")
-                description.set("Official Apache Flink connector for ClickHouse")
-                url.set("https://github.com/ClickHouse/flink-connector-clickhouse")
-
-                licenses {
-                    license {
-                        name.set("The Apache License, Version 2.0")
-                        url.set("https://github.com/ClickHouse/flink-connector-clickhouse/blob/main/LICENSE")
-                    }
-                }
-
-                developers {
-                    developer {
-                        id.set("mzitnik")
-                        name.set("Mark Zitnik")
-                        email.set("mark@clickhouse.com")
-                    }
-                    developer {
-                        id.set("BentsiLeviav")
-                        name.set("Bentsi Leviav")
-                        email.set("bentsi.leviav@clickhouse.com")
-                    }
-                }
-
-                scm {
-                    connection.set("git@github.com:ClickHouse/flink-connector-clickhouse.git")
-                    url.set("https://github.com/ClickHouse/flink-connector-clickhouse")
-                }
-
-                organization {
-                    name.set("ClickHouse")
-                    url.set("https://clickhouse.com")
-                }
-
-                issueManagement {
-                    system.set("GitHub Issues")
-                    url.set("https://github.com/ClickHouse/flink-connector-clickhouse/issues")
-                }
-            }
-        }
-    }
-}
-
-signing {
-    val signingKey = System.getenv("SIGNING_KEY")
-    val signingPassword = System.getenv("SIGNING_PASSWORD")
-    if (signingKey != null && signingPassword != null) {
-        useInMemoryPgpKeys(signingKey, signingPassword)
-        sign(publishing.publications["maven"])
-    }
-}
-
-nmcp {
-    publish("maven") {
-        username = System.getenv("NMCP_USERNAME")
-        password = System.getenv("NMCP_PASSWORD")
-        publicationType = "AUTOMATIC"
-    }
-}
+//publishing {
+//    publications {
+//        create<MavenPublication>("maven") {
+//            artifact(tasks.shadowJar)
+//            groupId = "com.clickhouse.flink"
+//            artifactId = "flink-connector-clickhouse-base"
+//            version = sinkVersion
+//
+//            artifact(shadowSourcesJar)
+//
+//            pom {
+//                name.set("ClickHouse Flink Connector")
+//                description.set("Official Apache Flink connector for ClickHouse")
+//                url.set("https://github.com/ClickHouse/flink-connector-clickhouse")
+//
+//                licenses {
+//                    license {
+//                        name.set("The Apache License, Version 2.0")
+//                        url.set("https://github.com/ClickHouse/flink-connector-clickhouse/blob/main/LICENSE")
+//                    }
+//                }
+//
+//                developers {
+//                    developer {
+//                        id.set("mzitnik")
+//                        name.set("Mark Zitnik")
+//                        email.set("mark@clickhouse.com")
+//                    }
+//                    developer {
+//                        id.set("BentsiLeviav")
+//                        name.set("Bentsi Leviav")
+//                        email.set("bentsi.leviav@clickhouse.com")
+//                    }
+//                }
+//
+//                scm {
+//                    connection.set("git@github.com:ClickHouse/flink-connector-clickhouse.git")
+//                    url.set("https://github.com/ClickHouse/flink-connector-clickhouse")
+//                }
+//
+//                organization {
+//                    name.set("ClickHouse")
+//                    url.set("https://clickhouse.com")
+//                }
+//
+//                issueManagement {
+//                    system.set("GitHub Issues")
+//                    url.set("https://github.com/ClickHouse/flink-connector-clickhouse/issues")
+//                }
+//            }
+//        }
+//    }
+//}
+//
+//signing {
+//    val signingKey = System.getenv("SIGNING_KEY")
+//    val signingPassword = System.getenv("SIGNING_PASSWORD")
+//    if (signingKey != null && signingPassword != null) {
+//        useInMemoryPgpKeys(signingKey, signingPassword)
+//        sign(publishing.publications["maven"])
+//    }
+//}
+//
+//nmcp {
+//    publish("maven") {
+//        username = System.getenv("NMCP_USERNAME")
+//        password = System.getenv("NMCP_PASSWORD")
+//        publicationType = "AUTOMATIC"
+//    }
+//}
