@@ -18,17 +18,26 @@ jobs:
           java-version: '21'
           distribution: 'adopt'
           architecture: x64
+      - name: Check for Cloud Credentials
+        id: check-cloud-credentials
+        run: |
+          if [[ "${{ matrix.clickhouse }}" == "cloud" && (-z "${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}" || -z "${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}") ]]; then
+            echo "SKIP_STEP=true" >> $GITHUB_ENV
+          else
+            echo "SKIP_STEP=false" >> $GITHUB_ENV
+          fi
+        shell: bash
       - name: Publish locally base
         if: env.SKIP_STEP != 'true'
         uses: gradle/gradle-build-action@v2
         with:
           arguments: :flink-connector-clickhouse-base:publishToMavenLocal --info --stacktrace --continue
-      - name: Publish locally base
+      - name: Publish locally flink-connector-clickhouse-1.17
         if: env.SKIP_STEP != 'true'
         uses: gradle/gradle-build-action@v2
         with:
           arguments: :flink-connector-clickhouse-1.17:publishToMavenLocal --info --stacktrace --continue
-      - name: Publish locally base
+      - name: Publish locally flink-connector-clickhouse-2.0.0
         if: env.SKIP_STEP != 'true'
         uses: gradle/gradle-build-action@v2
         with:
