@@ -22,17 +22,17 @@ jobs:
         if: env.SKIP_STEP != 'true'
         uses: gradle/gradle-build-action@v2
         with:
-          arguments: :flink-connector-clickhouse-base:publishToMavenLocal
+          arguments: :flink-connector-clickhouse-base:publishToMavenLocal --info --stacktrace --continue
       - name: Publish locally base
         if: env.SKIP_STEP != 'true'
         uses: gradle/gradle-build-action@v2
         with:
-          arguments: :flink-connector-clickhouse-1.17:publishToMavenLocal
+          arguments: :flink-connector-clickhouse-1.17:publishToMavenLocal --info --stacktrace --continue
       - name: Publish locally base
         if: env.SKIP_STEP != 'true'
         uses: gradle/gradle-build-action@v2
         with:
-          arguments: :flink-connector-clickhouse-2.0.0:publishToMavenLocal
+          arguments: :flink-connector-clickhouse-2.0.0:publishToMavenLocal --info --stacktrace --continue
 
 
 
