@@ -27,7 +27,7 @@ jobs:
         if: env.SKIP_STEP != 'true'
         uses: actions/setup-java@v3
         with:
-          java-version: '21'
+          java-version: '11'
           distribution: 'adopt'
           architecture: x64
       - name: Setup and execute Gradle 'test' task
