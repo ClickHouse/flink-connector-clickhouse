@@ -44,7 +44,10 @@ jobs:
         uses: gradle/gradle-build-action@v2
         with:
           arguments: :flink-connector-clickhouse-2.0.0:publishToMavenLocal --info --stacktrace --continue
-
+      - name: Generate Flink Covid App example
+        if: env.SKIP_STEP != 'true'
+        working-directory: ./examples/maven/covid
+        run: mvn clean install
 
 
 
