@@ -86,6 +86,8 @@ public class ClickHouseServerForTests {
     }
 
     public static Network getNetwork() {
+        if (isCloud())
+            return Network.newNetwork();
         return db.getNetwork();
     }
 
