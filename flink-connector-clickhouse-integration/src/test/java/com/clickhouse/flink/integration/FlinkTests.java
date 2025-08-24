@@ -15,8 +15,7 @@ import java.nio.file.Paths;
 import java.util.List;
 
 public class FlinkTests {
-
-            // "/Users/mzitnik/clickhouse/dev/integrations/flink-connector-clickhouse/examples/maven/covid/target/covid-1.0-SNAPSHOT.jar";
+    static int NUMBERS_OF_RECORDS = 100000;
     static String flinkVersion = "latest";
     @BeforeAll
     public static void setUp() throws Exception {
@@ -101,10 +100,7 @@ public class FlinkTests {
                 .withFlinkVersion(flinkVersion);
 
         Cluster cluster = builder.build();
-        System.out.println(cluster.getDashboardPort());
-        System.out.println(cluster.getDashboardUrl());
         String jarId = cluster.uploadJar(jarLocation);
-        System.out.println(jarId);
         List<String> jars = cluster.listAllJars();
         String jobId = cluster.runJob(jars.get(0),
                 "com.clickhouse.example.covid.DataStreamJob",
@@ -125,15 +121,12 @@ public class FlinkTests {
         String state = cluster.jobStatus(jobId);
         while (state.equalsIgnoreCase("RUNNING")) {
             state = cluster.jobStatus(jobId);
-            System.out.println(state);
             int count = ClickHouseServerForTests.countRows(tableName);
-            if (count ==  100000)
+            if (count ==  NUMBERS_OF_RECORDS)
                 break;
-            System.out.println(count);
             Thread.sleep(2000);
         }
         int count = ClickHouseServerForTests.countRows(tableName);
-        System.out.println(count);
-        Assert.assertEquals(100000, count);
+        Assert.assertEquals(NUMBERS_OF_RECORDS, count);
     }
 }
