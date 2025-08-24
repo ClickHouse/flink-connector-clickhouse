@@ -35,6 +35,32 @@ The Connector supports to main Apache Flink API's
 
 ## Installation
 
+### For Flink 2.0.0+
+
+Maven 
+
+```xml
+<dependency>
+    <groupId>com.clickhouse.flink</groupId>
+    <artifactId>flink-connector-clickhouse-2.0.0</artifactId>
+    <version>0.0.1</version>
+    <type>pom</type>
+</dependency>
+```
+
+### For Flink 1.17+ 
+
+Maven 
+
+```xml
+<dependency>
+    <groupId>com.clickhouse.flink</groupId>
+    <artifactId>flink-connector-clickhouse-1.17</artifactId>
+    <version>0.0.1</version>
+    <type>pom</type>
+</dependency>
+```
+
 ## DataStream API
 
 ### Snippet
