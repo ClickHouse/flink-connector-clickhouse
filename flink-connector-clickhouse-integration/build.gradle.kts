@@ -8,7 +8,6 @@ plugins {
     java
     signing
     id("com.gradleup.nmcp") version "0.0.8"
-//    id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
 val scalaVersion = "2.13.12"
