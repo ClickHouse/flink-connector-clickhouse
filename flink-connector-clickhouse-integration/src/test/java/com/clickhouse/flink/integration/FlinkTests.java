@@ -59,7 +59,7 @@ public class FlinkTests {
         String root = getRoot();
         String exampleSubFolder = exampleSubFolder(flinkVersion);
         String jarLocation = String.format("%s/examples/maven/%s/covid/target/covid-1.0-SNAPSHOT.jar", root, exampleSubFolder);
-        String dataFile = "100k_epidemiology.csv";
+        String dataFile = "100k_epidemiology.csv.gz";
         String tableName = "covid";
 
         String dataFileLocation = getResourcePath(dataFile);
