@@ -1,3 +1,5 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
 /*
  *  This file is the build file of flink-connector-clickhouse-base submodule
  * 
@@ -10,7 +12,7 @@ plugins {
     signing
     `java-test-fixtures`
     id("com.gradleup.nmcp") version "0.0.8"
-    id("com.github.johnrengelman.shadow") version "8.1.1"
+    id("com.gradleup.shadow") version "9.0.2"
 }
 
 val scalaVersion = "2.13.12"
@@ -95,11 +97,12 @@ sourceSets {
     }
 }
 
-tasks.shadowJar {
+tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("all")
-
     dependencies {
-        exclude(dependency("org.apache.flink:.*"))
+        include(dependency("org.apache.flink.connector.clickhouse:.*"))
+        include(project(":flink-connector-clickhouse-base"))
+        include(dependency("com.clickhouse:client-v2:${clickhouseVersion}:all"))
     }
     mergeServiceFiles()
 }
@@ -110,9 +113,9 @@ val shadowSourcesJar by tasks.registering(Jar::class) {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
-tasks.jar {
-    enabled = true
-}
+//tasks.jar {
+//    enabled = true
+//}
 
 publishing {
     publications {

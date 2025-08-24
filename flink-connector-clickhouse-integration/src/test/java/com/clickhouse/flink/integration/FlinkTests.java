@@ -16,7 +16,7 @@ import java.util.List;
 
 public class FlinkTests {
 
-    String jarLocation = "/Users/mzitnik/clickhouse/dev/integrations/flink-connector-clickhouse/examples/maven/covid/target/covid-1.0-SNAPSHOT.jar";
+            // "/Users/mzitnik/clickhouse/dev/integrations/flink-connector-clickhouse/examples/maven/covid/target/covid-1.0-SNAPSHOT.jar";
     static String flinkVersion = "latest";
     @BeforeAll
     public static void setUp() throws Exception {
@@ -30,6 +30,24 @@ public class FlinkTests {
         ClickHouseServerForTests.tearDown();
     }
 
+    private String getRoot() throws Exception {
+        String PWD = System.getenv("PWD");
+        if (PWD != null)
+            return PWD;
+        String GITHUB_WORKSPACE = System.getenv("GITHUB_WORKSPACE");
+        if (GITHUB_WORKSPACE != null)
+            return GITHUB_WORKSPACE;
+        else
+            new RuntimeException("Can not get root path");
+        return null;
+    }
+
+    private String exampleSubFolder(String flinkVersion) {
+        if (flinkVersion.equalsIgnoreCase("latest") || flinkVersion.startsWith("2.0"))
+            return "flink-v2";
+        return "flink-v1.7";
+    }
+
     private String getResourcePath(String resourceName) throws URISyntaxException {
         URI resourceUri = getClass().getResource("/data/" + resourceName).toURI();
         Path resourcePath = Paths.get(resourceUri);
@@ -39,6 +57,9 @@ public class FlinkTests {
 
     @Test
     void testFlinkCluster() throws Exception {
+        String root = getRoot();
+        String exampleSubFolder = exampleSubFolder(flinkVersion);
+        String jarLocation = String.format("%s/examples/maven/%s/covid/target/covid-1.0-SNAPSHOT.jar", root, exampleSubFolder);
         String dataFile = "100k_epidemiology.csv";
         String tableName = "covid";
 
