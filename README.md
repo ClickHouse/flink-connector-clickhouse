@@ -24,6 +24,15 @@ The Connector supports to main Apache Flink API's
 
 ## Supported Flink Versions
 
+| Version | Dependency                       | ClickHouse Client Version |
+|---------|----------------------------------|---------------------------|
+| latest  | flink-connector-clickhouse-2.0.0 | 0.9.1                     |
+| 2.0.0   | flink-connector-clickhouse-2.0.0 | 0.9.1                     |
+| 1.20.2  | flink-connector-clickhouse-1.17  | 0.9.1                     |
+| 1.19.3  | flink-connector-clickhouse-1.17  | 0.9.1                     |
+| 1.18.1  | flink-connector-clickhouse-1.17  | 0.9.1                     |
+| 1.17.2  | flink-connector-clickhouse-1.17  | 0.9.1                     |
+
 ## Installation
 
 ## DataStream API
