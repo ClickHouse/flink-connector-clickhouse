@@ -6,6 +6,7 @@
 Table of Contents
 * [About The Project](#about-the-project)
 * [Supported Flink Versions](#supported-flink-versions)
+* [Supported ClickHouse Types](#supported-clickHouse-types)
 * [Installation](#installation)
 * [DataStream API](#dataStream-api)
     * [Snippets](#snippets)
@@ -32,6 +33,17 @@ The Connector supports to main Apache Flink API's
 | 1.19.3  | flink-connector-clickhouse-1.17  | 0.9.1                     |
 | 1.18.1  | flink-connector-clickhouse-1.17  | 0.9.1                     |
 | 1.17.2  | flink-connector-clickhouse-1.17  | 0.9.1                     |
+
+## Supported ClickHouse Types
+
+| Java Type     | ClickHouse Type | Supported |
+|---------------|-----------------|-----------|
+| byte/Byte     | Int8            | ✅         |
+| short/Short   | Int16           | ✅         |
+| int/Integer   | Int32           | ✅         |
+| long/Long     | Int64           | ✅         |
+| float/Float   | Float           | ✅         |
+| double/Double | Double          | ✅         |
 
 ## Installation
 
