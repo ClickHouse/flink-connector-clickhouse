@@ -65,8 +65,48 @@ Maven
 
 ### Snippet
 
-### Example
+Configure ClickHouseClient 
 
+```java
+ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
+```
+If you are planning to insert RAW CSV data as is 
+
+Create ElementConverter 
+
+```java
+ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
+```
+
+Create Sink it is important to set format using `setClickHouseFormat`  
+
+```java
+ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
+				convertorString,
+				MAX_BATCH_SIZE,
+				MAX_IN_FLIGHT_REQUESTS,
+				MAX_BUFFERED_REQUESTS,
+				MAX_BATCH_SIZE_IN_BYTES,
+				MAX_TIME_IN_BUFFER_MS,
+				MAX_RECORD_SIZE_IN_BYTES,
+				clickHouseClientConfig
+		);
+
+csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
+```
+
+And after that just wire your DataStream with Sink
+
+```java
+data.sinkTo(csvSink);
+```
+
+
+
+
+
+
+### Example
 
 ## Table API
 
