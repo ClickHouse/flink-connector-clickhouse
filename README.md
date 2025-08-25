@@ -6,7 +6,6 @@
 Table of Contents
 * [About The Project](#about-the-project)
 * [Supported Flink Versions](#supported-flink-versions)
-* [Supported ClickHouse Types](#supported-clickHouse-types)
 * [Installation](#installation)
 * [DataStream API](#dataStream-api)
     * [Snippets](#snippets)
@@ -14,6 +13,10 @@ Table of Contents
 * [Table API](#table-api)
     * [Artifacts](#artifacts-1)
     * [Examples](#examples-1)
+* [Supported ClickHouse Types](#supported-clickHouse-types)
+* [Configuration Options](#configuration-options)
+  * [Client Configuration](#client-configuration)
+  * [Sink Configuration](#sink-configuration)
 * [Contributing](#contributing)
 
 ## About The Project
@@ -33,17 +36,6 @@ The Connector supports to main Apache Flink API's
 | 1.19.3  | flink-connector-clickhouse-1.17  | 0.9.1                     |
 | 1.18.1  | flink-connector-clickhouse-1.17  | 0.9.1                     |
 | 1.17.2  | flink-connector-clickhouse-1.17  | 0.9.1                     |
-
-## Supported ClickHouse Types
-
-| Java Type     | ClickHouse Type | Supported |
-|---------------|-----------------|-----------|
-| byte/Byte     | Int8            | ✅         |
-| short/Short   | Int16           | ✅         |
-| int/Integer   | Int32           | ✅         |
-| long/Long     | Int64           | ✅         |
-| float/Float   | Float           | ✅         |
-| double/Double | Double          | ✅         |
 
 ## Installation
 
@@ -113,11 +105,6 @@ And after that just wire your DataStream with Sink
 data.sinkTo(csvSink);
 ```
 
-
-
-
-
-
 ### Example
 
 ## Table API
@@ -125,6 +112,43 @@ data.sinkTo(csvSink);
 ### Snippet
 
 ### Example
+
+
+## Supported ClickHouse Types
+
+| Java Type     | ClickHouse Type | Supported |
+|---------------|-----------------|-----------|
+| byte/Byte     | Int8            | ✅         |
+| short/Short   | Int16           | ✅         |
+| int/Integer   | Int32           | ✅         |
+| long/Long     | Int64           | ✅         |
+| float/Float   | Float           | ✅         |
+| double/Double | Double          | ✅         |
+
+## Configuration Options
+
+### Client configuration
+
+| Parameters    | Description                  | Default Value |
+|---------------|------------------------------|----------|
+| url           | fully qualified URL          | N/A         |
+| username      | ClickHouse database username | N/A        |
+| password      | ClickHouse database password | N/A        |
+| database      | ClickHouse database name     | N/A        |
+| table         | ClickHouse table name        | N/A        |
+
+### Sink configuration
+
+Our Sink is build on top Flink `AsyncSinkBase`  
+
+| Parameters    | Description                                                                           | Default Value |
+|---------------|---------------------------------------------------------------------------------------|----------|
+| maxBatchSize           | Maximum number of records inserted in a single batch                                  | N/A         |
+| maxInFlightRequests      | The maximum number of in flight requests allowed before the sink applies backpressure | N/A        |
+| maxBufferedRequests      | The maximum number of records that may be buffered in the sink before backpressure is applied                                                          | N/A        |
+| maxBatchSizeInBytes      | The maximum size (in bytes) a batch may become. All batches sent will be smaller than or equal to this size                                                              | N/A        |
+| maxTimeInBufferMS         | The maximum time a record may stay in the sink before being flushed                                                                 | N/A        |
+| maxRecordSizeInBytes         | The maximum record size that the sink will accept, records larger than this will be automatically rejected                                                                 | N/A        |
 
 ## Compatibility
 
