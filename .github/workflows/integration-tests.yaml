@@ -1,6 +1,11 @@
 name: Integration Tests CI (Java)
 
-on: [push]
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - 'examples'
 
 jobs:
   test-integration-tests:
