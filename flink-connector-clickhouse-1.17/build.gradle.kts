@@ -1,8 +1,10 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
 /*
- *  This file is the build file of flink-connector-clickhouse-base submodule
- * 
+ * Build configuration for Flink 1.17+ ClickHouse Connector
+ *
+ * This module provides Apache Flink 1.17+ compatibility for the ClickHouse connector.
+ * It depends on the flink-connector-clickhouse-base module for shared functionality.
  */
 
 plugins {
