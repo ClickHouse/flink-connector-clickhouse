@@ -17,7 +17,7 @@ plugins {
 
 val scalaVersion = "2.13.12"
 val sinkVersion: String by rootProject.extra
-val clickhouseVersion: String by rootProject.extra // Temporary until we have a Java Client release
+val clickhouseVersion: String by rootProject.extra
 
 repositories {
     mavenCentral()
@@ -75,7 +75,6 @@ dependencies {
     testImplementation("org.testcontainers:clickhouse:${project.extra["testContainersVersion"]}")
     testImplementation("org.scalatest:scalatest_2.13:3.2.19")
     testRuntimeOnly("org.scalatestplus:junit-4-13_2.13:3.2.18.0")
-//    testRuntimeOnly("org.pegdown:pegdown:1.6.0") // sometimes required by ScalaTest
 }
 
 sourceSets {
@@ -112,10 +111,6 @@ val shadowSourcesJar by tasks.registering(Jar::class) {
     from(sourceSets.main.get().allSource)
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
-
-//tasks.jar {
-//    enabled = true
-//}
 
 publishing {
     publications {
