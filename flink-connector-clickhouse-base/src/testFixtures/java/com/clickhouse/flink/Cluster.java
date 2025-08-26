@@ -5,6 +5,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import okhttp3.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.images.builder.Transferable;
@@ -18,6 +20,7 @@ import java.util.List;
 
 public class Cluster {
 
+    private static final Logger LOG = LoggerFactory.getLogger(Cluster.class);
     private static final int INTERNAL_REST_PORT = 8081;
     private static final int INTERNAL_JOB_MANAGER_RCP_PORT = 6123;
 
@@ -77,6 +80,8 @@ public class Cluster {
         MountableFile mountableFile = MountableFile.forHostPath(sourcePath + dataFilename);
         String dataFileInContainer = String.format("%s/%s", targetPath, dataFilename);
         String flinkImageTag = String.format("flink:%s", flinkVersion);
+        LOG.info("Using flink image tag: {}", flinkImageTag);
+        LOG.info("Data file location in container: {}", dataFileInContainer);
         DockerImageName FLINK_IMAGE = DockerImageName.parse(flinkImageTag);
         containerJobManager = new GenericContainer<>(FLINK_IMAGE)
                 .withCommand("jobmanager")
@@ -100,7 +105,9 @@ public class Cluster {
             containerTaskManagerList.add(containerTaskManager);
         }
 
+        LOG.info("Starting JobManager");
         containerJobManager.start();
+        LOG.info("Using task managers: {} and starting taskManagers", containerTaskManagerList.size());
         for (int i = 0; i < taskManagers; i++) {
             containerTaskManagerList.get(i).start();
         }
@@ -137,18 +144,17 @@ public class Cluster {
                 .post(requestBody).build();
         Response response = client.newCall(request).execute();
         if (!response.isSuccessful()) {
-            System.err.println("Unexpected code " + response);
+            LOG.error("uploadJar failed code: {}", response.code());
             return null;
         } else {
             Gson gson = new Gson();
-            System.out.println("Upload successful!");
             String responseBody = response.body().string();
             JsonObject jsonObject = gson.fromJson(responseBody, JsonObject.class);
-            if (jsonObject.has("status") &
-                jsonObject.get("status").getAsString().equalsIgnoreCase("success") &
+            if (jsonObject.has("status") &&
+                jsonObject.get("status").getAsString().equalsIgnoreCase("success") &&
                 jsonObject.has("filename") ) {
                 String filename = jsonObject.get("filename").getAsString();
-                System.out.println("filename: " + filename);
+                LOG.info("Uploading jar file: {}", filename);
                 return filename;
             }
             return null;
@@ -165,12 +171,11 @@ public class Cluster {
                 .build();
         Response response = client.newCall(request).execute();
         if (!response.isSuccessful()) {
-            System.err.println("Unexpected code " + response);
+            LOG.error("listAllJars failed code: {}", response.code());
             return null;
         } else {
             Gson gson = new Gson();
             String responseBody = response.body().string();
-            System.out.println(responseBody);
             JsonObject jsonObject = gson.fromJson(responseBody, JsonObject.class);
             List<String> jars = new ArrayList<>();
             if (jsonObject.has("files")) {
@@ -178,7 +183,7 @@ public class Cluster {
                 for (JsonElement element : jsonArray) {
                     if (element.getAsJsonObject().has("id")) {
                         jars.add(element.getAsJsonObject().get("id").getAsString());
-                        System.out.println("id: " + element.getAsJsonObject().get("id").getAsString());
+                        LOG.info("listAllJars successful: {}", element.getAsJsonObject().get("id").getAsString());
                     }
             }
 
@@ -205,17 +210,15 @@ public class Cluster {
 
         Response response = client.newCall(request).execute();
         if (!response.isSuccessful()) {
-            System.err.println("Unexpected code " + response);
+            LOG.error("runJob failed code: {}", response.code());
             return null;
         } else {
             Gson gson = new Gson();
-            System.out.println("Upload successful!");
             String responseBody = response.body().string();
-            System.out.println(responseBody);
             JsonObject jsonObject = gson.fromJson(responseBody, JsonObject.class);
             if (jsonObject.has("jobid") ) {
                 String jobid = jsonObject.get("jobid").getAsString();
-                System.out.println("jobid: " + jobid);
+                LOG.info("runJob successful jobid: {}", jobid);
                 return jobid;
             }
             return null;
@@ -230,17 +233,15 @@ public class Cluster {
                 .build();
         Response response = client.newCall(request).execute();
         if (!response.isSuccessful()) {
-            System.err.println("Unexpected code " + response);
+            LOG.error("jobStatus response code: {}", response.code());
             return null;
         } else {
             Gson gson = new Gson();
-            System.out.println("Upload successful!");
             String responseBody = response.body().string();
-            System.out.println(responseBody);
             JsonObject jsonObject = gson.fromJson(responseBody, JsonObject.class);
             if (jsonObject.has("state")) {
                 String state = jsonObject.get("state").getAsString();
-                System.out.println("state: " + state);
+                LOG.info("jobStatus state: {}", state);
                 return state;
             }
             return null;
@@ -248,7 +249,12 @@ public class Cluster {
     }
 
     public void tearDown() {
-
+        if (containerTaskManagerList != null) {
+            containerTaskManagerList.forEach(GenericContainer::stop);
+        }
+        if (containerJobManager != null) {
+            containerJobManager.stop();
+        }
     }
 
 }

@@ -128,5 +128,7 @@ public class FlinkTests {
         }
         int count = ClickHouseServerForTests.countRows(tableName);
         Assert.assertEquals(NUMBERS_OF_RECORDS, count);
+        // destroy cluster
+        cluster.tearDown();
     }
 }
