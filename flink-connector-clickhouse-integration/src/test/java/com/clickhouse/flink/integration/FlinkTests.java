@@ -37,8 +37,7 @@ public class FlinkTests {
         if (GITHUB_WORKSPACE != null)
             return GITHUB_WORKSPACE;
         else
-            new RuntimeException("Can not get root path");
-        return null;
+            throw new RuntimeException("Can not get root path");
     }
 
     private String exampleSubFolder(String flinkVersion) {
