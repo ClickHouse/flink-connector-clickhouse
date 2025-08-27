@@ -1,7 +1,7 @@
 /*
- *  This file is the build file of flink-connector-clickhouse-base submodule
- * 
- */
+`* Build configuration for flink-connector-clickhouse-integrations module
+ * Contains integration tests for the Flink-ClickHouse connector
+  */
 
 plugins {
     `maven-publish`
