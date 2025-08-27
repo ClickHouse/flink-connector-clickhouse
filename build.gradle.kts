@@ -3,13 +3,12 @@ plugins {
     java
     signing
     id("com.gradleup.nmcp") version "0.0.8"
-    id("com.github.johnrengelman.shadow") version "8.1.1"
-
+    id("com.gradleup.shadow") version "9.0.2"
 }
 
 val sinkVersion by extra("0.0.1")
 val flinkVersion by extra("1.18.0")
-val clickhouseVersion by extra("0.4.6")
+val clickhouseVersion by extra("0.9.1")
 val junitVersion by extra("5.8.2")
 
 allprojects {
@@ -76,22 +75,3 @@ subprojects {
         )
     }
 }
-
-//sourceSets {
-//    main {
-//        scala {
-//            srcDirs("src/main/scala")
-//        }
-//        java {
-//            srcDirs("src/main/java")
-//        }
-//    }
-//    test {
-//        scala {
-//            srcDirs("src/test/scala")
-//        }
-//        java {
-//            srcDirs("src/test/java")
-//        }
-//    }
-//}

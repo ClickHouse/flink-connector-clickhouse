@@ -1,6 +1,10 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
 /*
- *  This file is the build file of flink-connector-clickhouse-base submodule
- * 
+ * Build configuration for Flink 1.17+ ClickHouse Connector
+ *
+ * This module provides Apache Flink 1.17+ compatibility for the ClickHouse connector.
+ * It depends on the flink-connector-clickhouse-base module for shared functionality.
  */
 
 plugins {
@@ -8,12 +12,14 @@ plugins {
     scala
     java
     signing
+    `java-test-fixtures`
     id("com.gradleup.nmcp") version "0.0.8"
-    id("com.github.johnrengelman.shadow") version "8.1.1"
+    id("com.gradleup.shadow") version "9.0.2"
 }
 
 val scalaVersion = "2.13.12"
 val sinkVersion: String by rootProject.extra
+val clickhouseVersion: String by rootProject.extra
 
 repositories {
     mavenCentral()
@@ -22,7 +28,6 @@ repositories {
 val flinkVersion = System.getenv("FLINK_VERSION") ?: "1.17.2"
 
 extra.apply {
-    set("clickHouseDriverVersion", "0.9.1")
     set("flinkVersion", flinkVersion)
     set("log4jVersion","2.17.2")
     set("testContainersVersion", "1.21.0")
@@ -46,11 +51,10 @@ dependencies {
     implementation("org.apache.logging.log4j:log4j-api:${project.extra["log4jVersion"]}")
     implementation("org.apache.logging.log4j:log4j-1.2-api:${project.extra["log4jVersion"]}")
     implementation("org.apache.logging.log4j:log4j-core:${project.extra["log4jVersion"]}")
-    implementation(project(":flink-connector-clickhouse-base"))
 
-    testImplementation(project(":flink-connector-clickhouse-base"))
+    implementation(project(":flink-connector-clickhouse-base"))
     // ClickHouse Client Libraries
-    implementation("com.clickhouse:client-v2:${project.extra["clickHouseDriverVersion"]}:all")
+    implementation("com.clickhouse:client-v2:${clickhouseVersion}:all")
     // Apache Flink Libraries
     implementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     implementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
@@ -73,7 +77,6 @@ dependencies {
     testImplementation("org.testcontainers:clickhouse:${project.extra["testContainersVersion"]}")
     testImplementation("org.scalatest:scalatest_2.13:3.2.19")
     testRuntimeOnly("org.scalatestplus:junit-4-13_2.13:3.2.18.0")
-//    testRuntimeOnly("org.pegdown:pegdown:1.6.0") // sometimes required by ScalaTest
 }
 
 sourceSets {
@@ -95,11 +98,12 @@ sourceSets {
     }
 }
 
-tasks.shadowJar {
+tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("all")
-
     dependencies {
-        exclude(dependency("org.apache.flink:.*"))
+        include(dependency("org.apache.flink.connector.clickhouse:.*"))
+        include(project(":flink-connector-clickhouse-base"))
+        include(dependency("com.clickhouse:client-v2:${clickhouseVersion}:all"))
     }
     mergeServiceFiles()
 }
@@ -108,10 +112,6 @@ val shadowSourcesJar by tasks.registering(Jar::class) {
     archiveClassifier.set("all-sources")
     from(sourceSets.main.get().allSource)
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
-tasks.jar {
-    enabled = false
 }
 
 publishing {

@@ -1,6 +1,10 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
 /*
- *  This file is the build file of flink-connector-clickhouse-base submodule
- * 
+ * Build configuration for Flink 2.0.0 ClickHouse Connector
+ *
+ * This module provides Apache Flink 2.0.0 compatibility for the ClickHouse connector.
+ * It depends on the flink-connector-clickhouse-base module for shared functionality.
  */
 
 plugins {
@@ -9,18 +13,18 @@ plugins {
     java
     signing
     id("com.gradleup.nmcp") version "0.0.8"
-    id("com.github.johnrengelman.shadow") version "8.1.1"
+    id("com.gradleup.shadow") version "9.0.2"
 }
 
 val scalaVersion = "2.13.12"
 val sinkVersion: String by rootProject.extra
+val clickhouseVersion: String by rootProject.extra // Temporary until we have a Java Client release
 
 repositories {
     mavenCentral()
 }
 
 extra.apply {
-    set("clickHouseDriverVersion", "0.9.1")
     set("flinkVersion", "2.0.0")
     set("log4jVersion","2.17.2")
     set("testContainersVersion", "1.21.0")
@@ -28,6 +32,10 @@ extra.apply {
 }
 
 dependencies {
+    // Use JUnit Jupiter for testing.
+    testImplementation(libs.junit.jupiter)
+
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
     implementation("net.bytebuddy:byte-buddy:${project.extra["byteBuddyVersion"]}")
     implementation("net.bytebuddy:byte-buddy-agent:${project.extra["byteBuddyVersion"]}")
@@ -42,13 +50,12 @@ dependencies {
     implementation("org.apache.logging.log4j:log4j-core:${project.extra["log4jVersion"]}")
 
     // ClickHouse Client Libraries
-    implementation("com.clickhouse:client-v2:${project.extra["clickHouseDriverVersion"]}:all")
+    implementation("com.clickhouse:client-v2:${clickhouseVersion}:all")
     // Apache Flink Libraries
     implementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     implementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
     implementation(project(":flink-connector-clickhouse-base"))
 
-    testImplementation(project(":flink-connector-clickhouse-base"))
     testImplementation("org.apache.flink:flink-connector-files:${project.extra["flinkVersion"]}")
     testImplementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     testImplementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
@@ -88,11 +95,12 @@ sourceSets {
     }
 }
 
-tasks.shadowJar {
+tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("all")
-
     dependencies {
-        exclude(dependency("org.apache.flink:.*"))
+        include(dependency("org.apache.flink.connector.clickhouse:.*"))
+        include(project(":flink-connector-clickhouse-base"))
+        include(dependency("com.clickhouse:client-v2:${clickhouseVersion}:all"))
     }
     mergeServiceFiles()
 }
@@ -101,10 +109,6 @@ val shadowSourcesJar by tasks.registering(Jar::class) {
     archiveClassifier.set("all-sources")
     from(sourceSets.main.get().allSource)
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
-tasks.jar {
-    enabled = false
 }
 
 publishing {
