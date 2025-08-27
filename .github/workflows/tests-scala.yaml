@@ -5,6 +5,7 @@ on: [push]
 jobs:
   test-flink-17:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -42,6 +43,7 @@ jobs:
           arguments: :flink-connector-clickhouse-1.17:runScalaTests
   test-flink-2:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
