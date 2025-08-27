@@ -15,7 +15,6 @@ val sinkVersion: String by rootProject.extra
 val clickhouseVersion: String by rootProject.extra // Temporary until we have a Java Client release
 
 repositories {
-    maven("https://central.sonatype.com/repository/maven-snapshots/") // Temporary until we have a Java Client release
     // Use Maven Central for resolving dependencies.
     mavenCentral()
 }
