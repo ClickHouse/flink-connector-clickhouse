@@ -116,6 +116,8 @@ Different versions for Flink
 - [Flink 1.17+](examples/maven/flink-v1.7/covid)
 - [Flink 2.0.0+](examples/maven/flink-v2/covid)
 
+For more detailed instructions, see the [Example Guide](examples#readme)
+
 ## Table API
 
 Table API is planned for a future release. This section will be updated once available.
