@@ -106,6 +106,8 @@ And after that just wire your DataStream with Sink
 data.sinkTo(csvSink);
 ```
 
+More examples and snippets can be found in our tests [flink-connector-clickhouse-1.17](flink-connector-clickhouse-1.17/src/test/java/org/apache/flink/connector/clickhouse/sink) and [flink-connector-clickhouse-2.0.0](flink-connector-clickhouse-2.0.0/src/test/java/org/apache/flink/connector/clickhouse/sink) 
+
 ### Example
 
 ## Table API
@@ -113,7 +115,6 @@ data.sinkTo(csvSink);
 ### Snippet
 
 ### Example
-
 
 ## Supported ClickHouse Types
 
