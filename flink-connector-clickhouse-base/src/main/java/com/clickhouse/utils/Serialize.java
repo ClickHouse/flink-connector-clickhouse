@@ -182,4 +182,11 @@ public class Serialize {
         }
     }
 
+    // Boolean
+    public static void writeBoolean(OutputStream out, Boolean value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            BinaryStreamUtils.writeBoolean(out, value);
+        }
+    }
+
 }

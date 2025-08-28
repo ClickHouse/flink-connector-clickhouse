@@ -210,6 +210,9 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "floatObject Float," +
                 "doublePrimitive Double," +
                 "doubleObject Double," +
+                "booleanPrimitive Boolean," +
+                "booleanObject Boolean," +
+                "str String," +
                 ") " +
                 "ENGINE = MergeTree " +
                 "ORDER BY (longPrimitive); ";
@@ -468,6 +471,9 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "floatObject Float," +
                 "doublePrimitive Double," +
                 "doubleObject Double," +
+                "booleanPrimitive Boolean," +
+                "booleanObject Boolean," +
+                "str String," +
                 ") " +
                 "ENGINE = MergeTree " +
                 "ORDER BY (longPrimitive) " +

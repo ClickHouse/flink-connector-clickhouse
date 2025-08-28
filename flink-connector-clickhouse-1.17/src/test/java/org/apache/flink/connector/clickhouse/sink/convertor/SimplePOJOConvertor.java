@@ -28,5 +28,11 @@ public class SimplePOJOConvertor extends POJOConvertor<SimplePOJO> {
 
         Serialize.writeFloat64(out, input.getDoublePrimitive(), false, false, ClickHouseDataType.Float64, false, "doublePrimitive");
         Serialize.writeFloat64(out, input.getDoubleObject(), false, false, ClickHouseDataType.Float64, false, "doubleObject");
+
+        Serialize.writeBoolean(out, input.isBooleanPrimitive(), false, false, ClickHouseDataType.Bool, false, "booleanPrimitive");
+        Serialize.writeBoolean(out, input.getBooleanObject(), false, false, ClickHouseDataType.Bool, false, "booleanObject");
+
+        Serialize.writeString(out, input.getStr(), false, false, ClickHouseDataType.String, false, "String");
+
     }
 }

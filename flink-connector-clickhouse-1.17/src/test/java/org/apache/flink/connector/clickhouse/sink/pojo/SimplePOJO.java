@@ -20,6 +20,11 @@ public class SimplePOJO {
     private double doublePrimitive;
     private Double doubleObject;
 
+    private boolean booleanPrimitive;
+    private Boolean booleanObject;
+
+    private String str;
+
     public SimplePOJO(int index) {
         this.bytePrimitive = Byte.MIN_VALUE;
         this.byteObject = Byte.MAX_VALUE;
@@ -38,6 +43,11 @@ public class SimplePOJO {
 
         this.doublePrimitive = Double.MIN_VALUE;
         this.doubleObject = Double.MAX_VALUE;
+
+        this.booleanPrimitive = true;
+        this.booleanObject = Boolean.FALSE;
+
+        this.str = "str" + longPrimitive;
     }
 
     public byte getBytePrimitive() {
@@ -87,4 +97,10 @@ public class SimplePOJO {
     public Double getDoubleObject() {
         return doubleObject;
     }
+
+    public boolean isBooleanPrimitive() { return booleanPrimitive; }
+
+    public Boolean getBooleanObject() { return booleanObject; }
+
+    public String getStr() { return str; }
 }
