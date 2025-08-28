@@ -117,16 +117,16 @@ data.sinkTo(csvSink);
 
 ## Supported ClickHouse Types
 
-| Java Type       | ClickHouse Type | Supported |
-|-----------------|-----------------|-----------|
-| byte/Byte       | Int8            | ✅         |
-| short/Short     | Int16           | ✅         |
-| int/Integer     | Int32           | ✅         |
-| long/Long       | Int64           | ✅         |
-| float/Float     | Float           | ✅         |
-| double/Double   | Double          | ✅         |
-| boolean/Boolean | Boolean         | ✅         |
-| String          | String          | ✅         |
+| Java Type       | ClickHouse Type | Supported | Serialize Method       |
+|-----------------|-----------------|-----------|------------------------| 
+| byte/Byte       | Int8            | ✅         | Serialize.writeInt8    |
+| short/Short     | Int16           | ✅         | Serialize.writeInt16   |
+| int/Integer     | Int32           | ✅         | Serialize.writeInt32   |
+| long/Long       | Int64           | ✅         | Serialize.writeInt64   |
+| float/Float     | Float           | ✅         | Serialize.writeFloat32 |
+| double/Double   | Double          | ✅         | Serialize.writeFloat64 |
+| boolean/Boolean | Boolean         | ✅         | Serialize.writeBoolean |
+| String          | String          | ✅         | Serialize.writeString  |
 
 ## Configuration Options
 
