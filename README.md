@@ -23,9 +23,9 @@ Table of Contents
 ## About The Project
 
 This is a repo of ClickHouse official Apache Flink Connector supported by the ClickHouse team.
-The Connector supports to main Apache Flink API's 
+The connector supports two main Apache Flink APIs: 
 - DataStreamAPI
-- Table API
+- Table API (This feature is not implemented yet and is planned for a future release)
 
 ## Supported Flink Versions
 
@@ -77,13 +77,13 @@ ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(url, 
 ```
 If you are planning to insert RAW CSV data as is 
 
-Create ElementConverter 
+Create an ElementConverter 
 
 ```java
 ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
 ```
 
-Create Sink it is important to set format using `setClickHouseFormat`  
+Create the sink and set the format using `setClickHouseFormat`  
 
 ```java
 ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
@@ -100,7 +100,7 @@ ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
 csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
 ```
 
-And after that just wire your DataStream with Sink
+Finally, connect your DataStream to the sink.
 
 ```java
 data.sinkTo(csvSink);
@@ -110,7 +110,15 @@ More examples and snippets can be found in our tests [flink-connector-clickhouse
 
 ### Example
 
+We have created maven based example for easy start with ClickHouse Sink 
+Different versions for Flink 
+
+- [Flink 1.17+](examples/maven/flink-v1.7/covid)
+- [Flink 2.0.0+](examples/maven/flink-v2/covid)
+
 ## Table API
+
+Table API is planned for a future release. This section will be updated once available.
 
 ### Snippet
 
@@ -143,7 +151,7 @@ More examples and snippets can be found in our tests [flink-connector-clickhouse
 
 ### Sink configuration
 
-Our Sink is build on top Flink `AsyncSinkBase`  
+Our Sink is built on top of Flink’s `AsyncSinkBase`  
 
 | Parameters    | Description                                                                           | Default Value |
 |---------------|---------------------------------------------------------------------------------------|----------|
@@ -163,7 +171,7 @@ Our Sink is build on top Flink `AsyncSinkBase`
 
 - All projects in this repo are tested with all [active LTS versions](https://github.com/ClickHouse/ClickHouse/pulls?q=is%3Aopen+is%3Apr+label%3Arelease) of ClickHouse.
 - [Support policy](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md#security-change-log-and-support)
-- We recommend to upgrade connector continuously to not miss security fixes and new improvements
+- We recommend upgrading the connector continuously to not miss security fixes and new improvements
   - If you have an issue with migration - create and issue and we will respond!
 
 ## Contributing
