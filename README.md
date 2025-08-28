@@ -17,6 +17,7 @@ Table of Contents
 * [Configuration Options](#configuration-options)
   * [Client Configuration](#client-configuration)
   * [Sink Configuration](#sink-configuration)
+* [Limitations](#limitations)
 * [Contributing](#contributing)
 
 ## About The Project
@@ -149,6 +150,11 @@ Our Sink is build on top Flink `AsyncSinkBase`
 | maxBatchSizeInBytes      | The maximum size (in bytes) a batch may become. All batches sent will be smaller than or equal to this size                                                              | N/A        |
 | maxTimeInBufferMS         | The maximum time a record may stay in the sink before being flushed                                                                 | N/A        |
 | maxRecordSizeInBytes         | The maximum record size that the sink will accept, records larger than this will be automatically rejected                                                                 | N/A        |
+
+## Limitations 
+
+* Currently the sink does not support exactly-once semantics 
+
 
 ## Compatibility
 
