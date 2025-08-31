@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
+import java.math.BigInteger;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -165,6 +166,20 @@ public class Serialize {
     public static void writeInt64(OutputStream out, Long value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
             BinaryStreamUtils.writeInt64(out, convertToInteger(value));
+        }
+    }
+
+    // Int128
+    public static void writeInt128(OutputStream out, BigInteger value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            BinaryStreamUtils.writeInt128(out, SerializerUtils.convertToBigInteger(value));
+        }
+    }
+
+    // Int256
+    public static void writeInt256(OutputStream out, BigInteger value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            BinaryStreamUtils.writeInt256(out, SerializerUtils.convertToBigInteger(value));
         }
     }
 
