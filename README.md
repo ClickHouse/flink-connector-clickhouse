@@ -138,10 +138,39 @@ Planned for a future release — a complete end-to-end example will be added onc
 | short/Short     | Int16           | ✅         | Serialize.writeInt16   |
 | int/Integer     | Int32           | ✅         | Serialize.writeInt32   |
 | long/Long       | Int64           | ✅         | Serialize.writeInt64   |
+| BigInteger      | Int128          | ❌         | N/A                    |
+| BigInteger      | Int256          | ❌         | N/A                    |
+| byte/Byte       | UInt8           | ❌         | N/A                    |
+| short/Short     | UInt16          | ❌         | N/A                    |
+| int/Integer     | UInt32          | ❌         | N/A                    |
+| long/Long       | UInt64          | ❌         | N/A                    |
+| BigInteger      | UInt128         | ❌         | N/A                    |
+| BigInteger      | UInt256         | ❌         | N/A                    |
+| BigDecimal      | BigDecimal      | ❌         | N/A                    |
+| BigDecimal      | BigDecimal      | ❌         | N/A                    |
+| BigDecimal      | BigDecimal      | ❌         | N/A                    |
+| BigDecimal      | BigDecimal      | ❌         | N/A                    |
 | float/Float     | Float           | ✅         | Serialize.writeFloat32 |
 | double/Double   | Double          | ✅         | Serialize.writeFloat64 |
 | boolean/Boolean | Boolean         | ✅         | Serialize.writeBoolean |
 | String          | String          | ✅         | Serialize.writeString  |
+| String          | FixedString     | ❌         | N/A                    |
+| LocalDate       | Date            | ❌         | N/A                    |
+| LocalDate       | Date32          | ❌         | N/A                    |
+| LocalDateTime   | DateTime        | ❌         | N/A                    |
+| LocalDateTime   | DateTime64      | ❌         | N/A                    |
+| int/Integer     | Time            | ❌         | N/A                    |
+| long/Long       | Time64          | ❌         | N/A                    |
+| byte/Byte       | Enum8           | ✅         | Serialize.writeInt8    |
+| int/Integer     | Enum16          | ✅         | Serialize.writeInt16   |
+| String          | JSON            | ❌         | N/A                    |
+| Array<Type>     | Array<Type>     | ❌         | N/A                    |
+| Map<Type,Type>  | Map<Type,Type>  | ❌         | N/A                    |
+| Tuple<Type,..>  | Map<T1,T2,..>   | ❌         | N/A                    |
+| Map<Type,Type>  | Map<Type,Type>  | ❌         | N/A                    |
+| Object          | Variant         | ❌         | N/A                    |
+
+* For date operation need to provide ZoneId. 
 
 ## Configuration Options
 
