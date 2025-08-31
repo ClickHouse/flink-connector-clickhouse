@@ -124,7 +124,11 @@ Table API is planned for a future release. This section will be updated once ava
 
 ### Snippet
 
+Planned for a future release — this section will provide a usage snippet for configuring the Table API.
+
 ### Example
+
+Planned for a future release — a complete end-to-end example will be added once the Table API becomes available.
 
 ## Supported ClickHouse Types
 
