@@ -166,9 +166,8 @@ Planned for a future release — a complete end-to-end example will be added onc
 | int/Integer     | Enum16          | ✅         | Serialize.writeInt16    |
 | String          | JSON            | ❌         | N/A                     |
 | Array<Type>     | Array<Type>     | ❌         | N/A                     |
-| Map<Type,Type>  | Map<Type,Type>  | ❌         | N/A                     |
+| Map<K,V>        | Map<K,V>        | ❌         | N/A                     |
 | Tuple<Type,..>  | Map<T1,T2,..>   | ❌         | N/A                     |
-| Map<Type,Type>  | Map<Type,Type>  | ❌         | N/A                     |
 | Object          | Variant         | ❌         | N/A                     |
 
 * For date operation need to provide ZoneId. 
