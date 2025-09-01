@@ -14,7 +14,7 @@ libraryDependencies ++= Seq(
   "org.apache.flink" % "flink-streaming-java" % flinkVersion % "provided",
   "org.apache.flink" % "flink-clients" % flinkVersion % "provided",
   "org.apache.flink" % "flink-connector-files" % "2.0.0" % "provided",
-  "org.apache.flink.connector" % "clickhouse" % "1.0.0" classifier "all"
+  "org.apache.flink.connector" % "clickhouse" % "0.1.0" classifier "all"
 )
 
 assembly / assemblyJarName := "covid.jar"
