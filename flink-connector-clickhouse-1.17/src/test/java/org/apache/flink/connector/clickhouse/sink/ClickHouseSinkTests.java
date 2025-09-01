@@ -314,7 +314,8 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         if (ClickHouseServerForTests.isCloud())
             Thread.sleep(5000);
         // let's wait until data will be available in query log
-        String productName = ClickHouseServerForTests.extractProductName(ClickHouseServerForTests.getDatabase(), tableName);
+        String startWith = String.format("Flink-ClickHouse-Sink/%s", ClickHouseSinkVersion.getVersion());
+        String productName = ClickHouseServerForTests.extractProductName(ClickHouseServerForTests.getDatabase(), tableName, startWith);
         String compareString = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/2.12)", ClickHouseSinkVersion.getVersion(), flinkVersion);
 
         boolean isContains = productName.contains(compareString);
