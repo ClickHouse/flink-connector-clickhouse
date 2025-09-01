@@ -304,11 +304,16 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         lines.sinkTo(csvSink);
         int rows = executeAsyncJob(env, tableName, 10, EXPECTED_ROWS);
         Assertions.assertEquals(EXPECTED_ROWS, rows);
-        ClickHouseServerForTests.executeSql("SYSTEM FLUSH LOGS");
         if (ClickHouseServerForTests.isCloud())
-            Thread.sleep(5000);
+            ClickHouseServerForTests.executeSql("SYSTEM FLUSH LOGS ON CLUSTER 'default'");
+        else
+            ClickHouseServerForTests.executeSql("SYSTEM FLUSH LOGS");
+
+        if (ClickHouseServerForTests.isCloud())
+            Thread.sleep(10000);
         // let's wait until data will be available in query log
-        String productName = ClickHouseServerForTests.extractProductName(ClickHouseServerForTests.getDatabase(), tableName, "Flink-ClickHouse-Sink");
+        String startWith = String.format("Flink-ClickHouse-Sink/%s", ClickHouseSinkVersion.getVersion());
+        String productName = ClickHouseServerForTests.extractProductName(ClickHouseServerForTests.getDatabase(), tableName, startWith);
         String compareString = String.format("Flink-ClickHouse-Sink/%s (fv:flink/2.0.0, lv:scala/2.12)", ClickHouseSinkVersion.getVersion());
         boolean isContains = productName.contains(compareString);
         Assertions.assertTrue(isContains, "Expected user agent to contain: " + compareString + " but got: " + productName);

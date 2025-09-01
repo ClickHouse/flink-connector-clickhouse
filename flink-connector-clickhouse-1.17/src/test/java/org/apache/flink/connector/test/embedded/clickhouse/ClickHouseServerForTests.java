@@ -123,8 +123,8 @@ public class ClickHouseServerForTests {
         return countResult.get(0).getInteger(1);
     }
     // http_user_agent
-    public static String extractProductName(String databaseName, String tableName) {
-        String extractProductName = String.format("SELECT http_user_agent, tables FROM clusterAllReplicas('default', system.query_log) WHERE type = 'QueryStart' AND query_kind = 'Insert' AND has(databases,'%s') AND has(tables,'%s.%s') LIMIT 100", databaseName, databaseName, tableName);
+    public static String extractProductName(String databaseName, String tableName, String startWith) {
+        String extractProductName = String.format("SELECT http_user_agent, tables FROM clusterAllReplicas('default', system.query_log) WHERE type = 'QueryStart' AND query_kind = 'Insert' AND has(databases,'%s') AND has(tables,'%s.%s') and startsWith(http_user_agent, '%s') LIMIT 100", databaseName, databaseName, tableName, startWith);
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
         List<GenericRecord> userAgentResult = client.queryAll(extractProductName);
         if (!userAgentResult.isEmpty()) {

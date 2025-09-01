@@ -310,11 +310,16 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         lines.sinkTo(csvSink);
         int rows = executeAsyncJob(env, tableName, 10, EXPECTED_ROWS);
         Assertions.assertEquals(EXPECTED_ROWS, rows);
-        ClickHouseServerForTests.executeSql("SYSTEM FLUSH LOGS");
         if (ClickHouseServerForTests.isCloud())
-            Thread.sleep(5000);
+            ClickHouseServerForTests.executeSql("SYSTEM FLUSH LOGS ON CLUSTER 'default'");
+        else
+            ClickHouseServerForTests.executeSql("SYSTEM FLUSH LOGS");
+
+        if (ClickHouseServerForTests.isCloud())
+            Thread.sleep(10000);
         // let's wait until data will be available in query log
-        String productName = ClickHouseServerForTests.extractProductName(ClickHouseServerForTests.getDatabase(), tableName);
+        String startWith = String.format("Flink-ClickHouse-Sink/%s", ClickHouseSinkVersion.getVersion());
+        String productName = ClickHouseServerForTests.extractProductName(ClickHouseServerForTests.getDatabase(), tableName, startWith);
         String compareString = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/2.12)", ClickHouseSinkVersion.getVersion(), flinkVersion);
 
         boolean isContains = productName.contains(compareString);
