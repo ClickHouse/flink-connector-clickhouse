@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
+import java.math.BigInteger;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -168,6 +169,20 @@ public class Serialize {
         }
     }
 
+    // Int128
+    public static void writeInt128(OutputStream out, BigInteger value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            BinaryStreamUtils.writeInt128(out, SerializerUtils.convertToBigInteger(value));
+        }
+    }
+
+    // Int256
+    public static void writeInt256(OutputStream out, BigInteger value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            BinaryStreamUtils.writeInt256(out, SerializerUtils.convertToBigInteger(value));
+        }
+    }
+
     // Float32
     public static void writeFloat32(OutputStream out, Float value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
@@ -179,6 +194,13 @@ public class Serialize {
     public static void writeFloat64(OutputStream out, Double value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
             BinaryStreamUtils.writeFloat64(out,  value);
+        }
+    }
+
+    // Boolean
+    public static void writeBoolean(OutputStream out, Boolean value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            BinaryStreamUtils.writeBoolean(out, value);
         }
     }
 

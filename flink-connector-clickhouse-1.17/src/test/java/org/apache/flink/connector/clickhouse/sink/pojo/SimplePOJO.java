@@ -1,5 +1,7 @@
 package org.apache.flink.connector.clickhouse.sink.pojo;
 
+import java.math.BigInteger;
+
 public class SimplePOJO {
 
     private byte bytePrimitive;
@@ -20,6 +22,14 @@ public class SimplePOJO {
     private double doublePrimitive;
     private Double doubleObject;
 
+    private boolean booleanPrimitive;
+    private Boolean booleanObject;
+
+    private String str;
+
+    private BigInteger bigInteger128;
+    private BigInteger bigInteger256;
+
     public SimplePOJO(int index) {
         this.bytePrimitive = Byte.MIN_VALUE;
         this.byteObject = Byte.MAX_VALUE;
@@ -38,6 +48,14 @@ public class SimplePOJO {
 
         this.doublePrimitive = Double.MIN_VALUE;
         this.doubleObject = Double.MAX_VALUE;
+
+        this.booleanPrimitive = true;
+        this.booleanObject = Boolean.FALSE;
+
+        this.str = "str" + longPrimitive;
+
+        this.bigInteger128 = BigInteger.valueOf(longPrimitive);
+        this.bigInteger256 = BigInteger.valueOf(longPrimitive);
     }
 
     public byte getBytePrimitive() {
@@ -87,4 +105,14 @@ public class SimplePOJO {
     public Double getDoubleObject() {
         return doubleObject;
     }
+
+    public boolean isBooleanPrimitive() { return booleanPrimitive; }
+
+    public Boolean getBooleanObject() { return booleanObject; }
+
+    public String getStr() { return str; }
+
+    public BigInteger getBigInteger128() { return bigInteger128; }
+
+    public BigInteger getBigInteger256() { return bigInteger256; }
 }
