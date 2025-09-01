@@ -6,7 +6,7 @@ plugins {
     id("com.gradleup.shadow") version "9.0.2"
 }
 
-val sinkVersion by extra("0.0.1")
+val sinkVersion by extra("1.0.0")
 val flinkVersion by extra("1.18.0")
 val clickhouseVersion by extra("0.9.1")
 val junitVersion by extra("5.8.2")
