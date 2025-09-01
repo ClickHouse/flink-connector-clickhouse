@@ -306,7 +306,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         Assertions.assertEquals(EXPECTED_ROWS, rows);
         ClickHouseServerForTests.executeSql("SYSTEM FLUSH LOGS");
         if (ClickHouseServerForTests.isCloud())
-            Thread.sleep(5000);
+            Thread.sleep(10000);
         // let's wait until data will be available in query log
         String startWith = String.format("Flink-ClickHouse-Sink/%s", ClickHouseSinkVersion.getVersion());
         String productName = ClickHouseServerForTests.extractProductName(ClickHouseServerForTests.getDatabase(), tableName, startWith);
