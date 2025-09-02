@@ -215,7 +215,11 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "booleanPrimitive Boolean," +
                 "booleanObject Boolean," +
                 "str String," +
-                "fixedStr FixedString(10)" +
+                "fixedStr FixedString(10)," +
+                "v_date Date," +
+                "v_date32 Date32," +
+                "v_dateTime DateTime," +
+                "v_dateTime64 DateTime64," +
                 ") " +
                 "ENGINE = MergeTree " +
                 "ORDER BY (longPrimitive); ";
@@ -484,7 +488,11 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "booleanPrimitive Boolean," +
                 "booleanObject Boolean," +
                 "str String," +
-                "fixedStr FixedString(10)" +
+                "fixedStr FixedString(10)," +
+                "v_date Date," +
+                "v_date32 Date32," +
+                "v_dateTime DateTime," +
+                "v_dateTime64 DateTime64," +
                 ") " +
                 "ENGINE = MergeTree " +
                 "ORDER BY (longPrimitive) " +

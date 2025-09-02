@@ -1,6 +1,8 @@
 package org.apache.flink.connector.clickhouse.sink.pojo;
 
 import java.math.BigInteger;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 public class SimplePOJO {
 
@@ -32,6 +34,11 @@ public class SimplePOJO {
     private BigInteger bigInteger128;
     private BigInteger bigInteger256;
 
+    private LocalDate date;
+    private LocalDate date32;
+    private LocalDateTime dateTime;
+    private LocalDateTime dateTime64;
+
     public SimplePOJO(int index) {
         this.bytePrimitive = Byte.MIN_VALUE;
         this.byteObject = Byte.MAX_VALUE;
@@ -60,6 +67,10 @@ public class SimplePOJO {
         this.bigInteger128 = BigInteger.valueOf(longPrimitive);
         this.bigInteger256 = BigInteger.valueOf(longPrimitive);
 
+        this.date = LocalDate.ofEpochDay(0);
+        this.date32 = LocalDate.ofEpochDay(0);
+        this.dateTime = LocalDateTime.now();
+        this.dateTime64 = LocalDateTime.now();
 
     }
 
@@ -122,4 +133,13 @@ public class SimplePOJO {
     public BigInteger getBigInteger256() { return bigInteger256; }
 
     public String getFixedStr() { return fixedStr; }
+
+    public LocalDate getDate() { return date; }
+
+    public LocalDate getDate32() { return date32; }
+
+    public LocalDateTime getDateTime() { return dateTime; }
+
+    public LocalDateTime getDateTime64() { return dateTime64; }
+
 }

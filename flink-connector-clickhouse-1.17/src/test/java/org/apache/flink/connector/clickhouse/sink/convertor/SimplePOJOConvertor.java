@@ -38,5 +38,10 @@ public class SimplePOJOConvertor extends POJOConvertor<SimplePOJO> {
         Serialize.writeString(out, input.getStr(), false, false, ClickHouseDataType.String, false, "str");
         Serialize.writeFixedString(out, input.getFixedStr(), false, false, ClickHouseDataType.FixedString, false, 10, "fixedStr");
 
+        Serialize.writeDate(out, input.getDate(), false, false, ClickHouseDataType.Date, false, "v_date");
+        Serialize.writeDate32(out, input.getDate32(), false, false, ClickHouseDataType.Date32, false, "v_date32");
+        Serialize.writeTimeDate(out, input.getDateTime(), false, false, ClickHouseDataType.DateTime, false, "v_dateTime");
+        Serialize.writeTimeDate64(out, input.getDateTime64(), false, false, ClickHouseDataType.DateTime64, false, "v_dateTime64", 1);
+
     }
 }

@@ -12,6 +12,7 @@ import java.io.OutputStream;
 import java.lang.reflect.Method;
 import java.math.BigInteger;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.HashMap;
@@ -125,6 +126,43 @@ public class Serialize {
     public static void writeDate(OutputStream out, ZonedDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
             SerializerUtils.writeDate(out, value, ZoneId.of("UTC")); // TODO: check
+        }
+    }
+
+    public static void writeDate32(OutputStream out, LocalDate value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            SerializerUtils.writeDate32(out, value, ZoneId.of("UTC")); // TODO: check
+        }
+    }
+
+    public static void writeDate32(OutputStream out, ZonedDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            SerializerUtils.writeDate32(out, value, ZoneId.of("UTC")); // TODO: check
+        }
+    }
+
+    // Support for DateTime section
+    public static void writeTimeDate(OutputStream out, LocalDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            SerializerUtils.writeDateTime(out, value, ZoneId.of("UTC")); // TODO: check
+        }
+    }
+
+    public static void writeTimeDate(OutputStream out, ZonedDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            SerializerUtils.writeDateTime(out, value, ZoneId.of("UTC")); // TODO: check
+        }
+    }
+
+    public static void writeTimeDate64(OutputStream out, LocalDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, int scale) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            SerializerUtils.writeDateTime64(out, value, scale, ZoneId.of("UTC")); // TODO: check
+        }
+    }
+
+    public static void writeTimeDate64(OutputStream out, ZonedDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, int scale) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            SerializerUtils.writeDateTime64(out, value, scale, ZoneId.of("UTC")); // TODO: check
         }
     }
 
