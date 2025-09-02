@@ -135,6 +135,7 @@ public class Serialize {
         }
     }
 
+    // Add a boundary check before inserting
     public static void writeFixedString(OutputStream out, String value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, int size, String column) throws IOException {
         if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
             BinaryStreamUtils.writeFixedString(out, convertToString(value), size);

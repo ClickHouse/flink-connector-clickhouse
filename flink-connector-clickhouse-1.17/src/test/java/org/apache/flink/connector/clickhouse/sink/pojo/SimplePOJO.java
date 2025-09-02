@@ -27,6 +27,8 @@ public class SimplePOJO {
 
     private String str;
 
+    private String fixedStr;
+
     private BigInteger bigInteger128;
     private BigInteger bigInteger256;
 
@@ -53,9 +55,12 @@ public class SimplePOJO {
         this.booleanObject = Boolean.FALSE;
 
         this.str = "str" + longPrimitive;
+        this.fixedStr = (str + "_FixedString").substring(0, 10);
 
         this.bigInteger128 = BigInteger.valueOf(longPrimitive);
         this.bigInteger256 = BigInteger.valueOf(longPrimitive);
+
+
     }
 
     public byte getBytePrimitive() {
@@ -115,4 +120,6 @@ public class SimplePOJO {
     public BigInteger getBigInteger128() { return bigInteger128; }
 
     public BigInteger getBigInteger256() { return bigInteger256; }
+
+    public String getFixedStr() { return fixedStr; }
 }

@@ -35,7 +35,8 @@ public class SimplePOJOConvertor extends POJOConvertor<SimplePOJO> {
         Serialize.writeBoolean(out, input.isBooleanPrimitive(), false, false, ClickHouseDataType.Bool, false, "booleanPrimitive");
         Serialize.writeBoolean(out, input.getBooleanObject(), false, false, ClickHouseDataType.Bool, false, "booleanObject");
 
-        Serialize.writeString(out, input.getStr(), false, false, ClickHouseDataType.String, false, "String");
+        Serialize.writeString(out, input.getStr(), false, false, ClickHouseDataType.String, false, "str");
+        Serialize.writeFixedString(out, input.getFixedStr(), false, false, ClickHouseDataType.FixedString, false, 10, "fixedStr");
 
     }
 }
