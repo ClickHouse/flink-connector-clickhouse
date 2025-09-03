@@ -1,5 +1,6 @@
 package org.apache.flink.connector.clickhouse.sink.pojo;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -32,6 +33,12 @@ public class SimplePOJO {
 
     private BigInteger uint128Object;
     private BigInteger uint256Object;
+
+    private BigDecimal bigDecimal;
+    private BigDecimal bigDecimal32;
+    private BigDecimal bigDecimal64;
+    private BigDecimal bigDecimal128;
+    private BigDecimal bigDecimal256;
 
     private float floatPrimitive;
     private Float floatObject;
@@ -81,6 +88,12 @@ public class SimplePOJO {
 
         this.uint128Object = BigInteger.valueOf(index);
         this.uint256Object = BigInteger.valueOf(index);
+
+        this.bigDecimal = new BigDecimal(index);
+        this.bigDecimal32 = new BigDecimal(index);
+        this.bigDecimal64 = new BigDecimal(index);
+        this.bigDecimal128 = new BigDecimal(index);
+        this.bigDecimal256 = new BigDecimal(index);
 
         this.floatPrimitive = Float.MIN_VALUE;
         this.floatObject = Float.MAX_VALUE;
@@ -155,6 +168,16 @@ public class SimplePOJO {
     public BigInteger getUint128Object() { return uint128Object; }
 
     public BigInteger getUint256Object() { return uint256Object; }
+
+    public BigDecimal getBigDecimal() { return bigDecimal; }
+
+    public BigDecimal getBigDecimal32() { return bigDecimal32; }
+
+    public BigDecimal getBigDecimal64() { return bigDecimal64; }
+
+    public BigDecimal getBigDecimal128() { return bigDecimal128; }
+
+    public BigDecimal getBigDecimal256() { return bigDecimal256; }
 
     public float getFloatPrimitive() {
         return floatPrimitive;

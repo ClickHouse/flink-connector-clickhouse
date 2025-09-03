@@ -146,11 +146,11 @@ Planned for a future release — a complete end-to-end example will be added onc
 | long/Long       | UInt64          | ✅         | Serialize.writeUInt64      |
 | BigInteger      | UInt128         | ✅         | Serialize.writeUInt128     |
 | BigInteger      | UInt256         | ✅         | Serialize.writeUInt256     |
-| BigDecimal      | Decimal         | ❌         | N/A                        |
-| BigDecimal      | Decimal32       | ❌         | N/A                        |
-| BigDecimal      | Decimal64       | ❌         | N/A                        |
-| BigDecimal      | Decimal128      | ❌         | N/A                        |
-| BigDecimal      | Decimal256      | ❌         | N/A                        |
+| BigDecimal      | Decimal         | ✅         | Serialize.writeDecimal     |
+| BigDecimal      | Decimal32       | ✅         | Serialize.writeDecimal     |
+| BigDecimal      | Decimal64       | ✅         | Serialize.writeDecimal     |
+| BigDecimal      | Decimal128      | ✅         | Serialize.writeDecimal     |
+| BigDecimal      | Decimal256      | ✅         | Serialize.writeDecimal     |
 | float/Float     | Float           | ✅         | Serialize.writeFloat32     |
 | double/Double   | Double          | ✅         | Serialize.writeFloat64     |
 | boolean/Boolean | Boolean         | ✅         | Serialize.writeBoolean     |

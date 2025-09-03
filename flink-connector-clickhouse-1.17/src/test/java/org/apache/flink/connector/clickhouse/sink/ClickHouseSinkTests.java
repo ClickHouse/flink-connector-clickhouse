@@ -218,6 +218,11 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "uint64Object UInt64," +
                 "uint128Object UInt128," +
                 "uint256Object UInt256," +
+                "decimal Decimal," +
+                "decimal32 Decimal32(9)," +
+                "decimal64 Decimal64(18)," +
+                "decimal128 Decimal128(38)," +
+                "decimal256 Decimal256(76)," +
                 "floatPrimitive Float," +
                 "floatObject Float," +
                 "doublePrimitive Double," +
@@ -501,6 +506,11 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "uint64Object UInt64," +
                 "uint128Object UInt128," +
                 "uint256Object UInt256," +
+                "decimal Decimal," +
+                "decimal32 Decimal32(9)," +
+                "decimal64 Decimal64(18)," +
+                "decimal128 Decimal128(38)," +
+                "decimal256 Decimal256(76)," +
                 "floatPrimitive Float," +
                 "floatObject Float," +
                 "doublePrimitive Double," +
