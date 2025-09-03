@@ -170,7 +170,8 @@ Planned for a future release — a complete end-to-end example will be added onc
 | Tuple<Type,..>  | Map<T1,T2,..>   | ❌         | N/A                        |
 | Object          | Variant         | ❌         | N/A                        |
 
-* For date operation need to provide ZoneId. 
+* A ZoneId must also be provided when performing date operations. 
+* Precision and scale must also be provided when performing decimal operations. 
 
 ## Configuration Options
 
