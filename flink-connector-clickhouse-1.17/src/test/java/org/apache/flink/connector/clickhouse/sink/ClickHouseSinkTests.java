@@ -506,7 +506,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "uint64Object UInt64," +
                 "uint128Object UInt128," +
                 "uint256Object UInt256," +
-                "decimal Decimal(10,5)" +
+                "decimal Decimal(10,5)," +
                 "decimal32 Decimal32(9)," +
                 "decimal64 Decimal64(18)," +
                 "decimal128 Decimal128(38)," +
