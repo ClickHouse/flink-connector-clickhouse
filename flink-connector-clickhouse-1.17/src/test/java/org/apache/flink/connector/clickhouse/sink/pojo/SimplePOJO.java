@@ -18,6 +18,21 @@ public class SimplePOJO {
     private long longPrimitive;
     private Long longObject;
 
+    private int uint8Primitive;
+    private Integer uint8Object;
+
+    private int uint16Primitive;
+    private Integer uint16Object;
+
+    private long uint32Primitive;
+    private Long uint32Object;
+
+    private long uint64Primitive;
+    private Long uint64Object;
+
+    private BigInteger uint128Object;
+    private BigInteger uint256Object;
+
     private float floatPrimitive;
     private Float floatObject;
 
@@ -51,6 +66,21 @@ public class SimplePOJO {
 
         this.longPrimitive = index;
         this.longObject = Long.MAX_VALUE;
+
+        this.uint8Primitive = Byte.MAX_VALUE;
+        this.uint8Object = (int)Byte.MAX_VALUE;
+
+        this.uint16Primitive = Short.MAX_VALUE;
+        this.uint16Object = (int)Short.MAX_VALUE;
+
+        this.uint32Primitive = Integer.MAX_VALUE;
+        this.uint32Object = (long)Integer.MAX_VALUE;
+
+        this.uint64Primitive = Long.MAX_VALUE;
+        this.uint64Object = Long.MAX_VALUE;
+
+        this.uint128Object = BigInteger.valueOf(index);
+        this.uint256Object = BigInteger.valueOf(index);
 
         this.floatPrimitive = Float.MIN_VALUE;
         this.floatObject = Float.MAX_VALUE;
@@ -105,6 +135,26 @@ public class SimplePOJO {
     public Long getLongObject() {
         return longObject;
     }
+
+    public int getUint8Primitive() { return uint8Primitive; }
+
+    public Integer getUint8Object() { return uint8Object; }
+
+    public int getUint16Primitive() { return uint16Primitive; }
+
+    public Integer getUint16Object() { return uint16Object; }
+
+    public long getUint32Primitive() { return uint32Primitive; }
+
+    public Long getUint32Object() { return uint32Object; }
+
+    public long getUint64Primitive() { return uint64Primitive; }
+
+    public Long getUint64Object() { return uint64Object; }
+
+    public BigInteger getUint128Object() { return uint128Object; }
+
+    public BigInteger getUint256Object() { return uint256Object; }
 
     public float getFloatPrimitive() {
         return floatPrimitive;
