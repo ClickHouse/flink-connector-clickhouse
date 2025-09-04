@@ -164,6 +164,7 @@ Planned for a future release — a complete end-to-end example will be added onc
 | long/Long       | Time64          | ❌         | N/A                        |
 | byte/Byte       | Enum8           | ✅         | Serialize.writeInt8        |
 | int/Integer     | Enum16          | ✅         | Serialize.writeInt16       |
+| java.util.UUID  | UUID            | ✅         | Serialize.writeIntUUID     |
 | String          | JSON            | ❌         | N/A                        |
 | Array<Type>     | Array<Type>     | ❌         | N/A                        |
 | Map<K,V>        | Map<K,V>        | ❌         | N/A                        |

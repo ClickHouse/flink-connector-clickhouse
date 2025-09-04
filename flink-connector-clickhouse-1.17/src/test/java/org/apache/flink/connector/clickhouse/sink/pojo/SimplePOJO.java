@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 public class SimplePOJO {
 
@@ -61,6 +62,8 @@ public class SimplePOJO {
     private LocalDateTime dateTime;
     private LocalDateTime dateTime64;
 
+    private UUID uuid;
+
     public SimplePOJO(int index) {
         this.bytePrimitive = Byte.MIN_VALUE;
         this.byteObject = Byte.MAX_VALUE;
@@ -115,6 +118,7 @@ public class SimplePOJO {
         this.dateTime = LocalDateTime.now();
         this.dateTime64 = LocalDateTime.now();
 
+        this.uuid = UUID.randomUUID();
     }
 
     public byte getBytePrimitive() {
@@ -214,5 +218,7 @@ public class SimplePOJO {
     public LocalDateTime getDateTime() { return dateTime; }
 
     public LocalDateTime getDateTime64() { return dateTime64; }
+
+    public UUID getUuid() { return uuid; }
 
 }
