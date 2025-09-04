@@ -10,12 +10,15 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 public class Serialize {
     private static final Logger LOG = LoggerFactory.getLogger(Serialize.class);
@@ -128,6 +131,43 @@ public class Serialize {
         }
     }
 
+    public static void writeDate32(OutputStream out, LocalDate value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            SerializerUtils.writeDate32(out, value, ZoneId.of("UTC")); // TODO: check
+        }
+    }
+
+    public static void writeDate32(OutputStream out, ZonedDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            SerializerUtils.writeDate32(out, value, ZoneId.of("UTC")); // TODO: check
+        }
+    }
+
+    // Support for DateTime section
+    public static void writeTimeDate(OutputStream out, LocalDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            SerializerUtils.writeDateTime(out, value, ZoneId.of("UTC")); // TODO: check
+        }
+    }
+
+    public static void writeTimeDate(OutputStream out, ZonedDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            SerializerUtils.writeDateTime(out, value, ZoneId.of("UTC")); // TODO: check
+        }
+    }
+
+    public static void writeTimeDate64(OutputStream out, LocalDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, int scale) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            SerializerUtils.writeDateTime64(out, value, scale, ZoneId.of("UTC")); // TODO: check
+        }
+    }
+
+    public static void writeTimeDate64(OutputStream out, ZonedDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, int scale) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            SerializerUtils.writeDateTime64(out, value, scale, ZoneId.of("UTC")); // TODO: check
+        }
+    }
+
     // clickhouse type String support
     public static void writeString(OutputStream out, String value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
@@ -135,7 +175,8 @@ public class Serialize {
         }
     }
 
-    public static void writeFixedString(OutputStream out, String value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, int size, String column) throws IOException {
+    // Add a boundary check before inserting
+    public static void writeFixedString(OutputStream out, String value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, int size) throws IOException {
         if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
             BinaryStreamUtils.writeFixedString(out, convertToString(value), size);
         }
@@ -183,6 +224,48 @@ public class Serialize {
         }
     }
 
+    public static void writeUInt8(OutputStream out, int value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            BinaryStreamUtils.writeUnsignedInt8(out, value);
+        }
+    }
+
+    public static void writeUInt16(OutputStream out, int value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            BinaryStreamUtils.writeUnsignedInt16(out, value);
+        }
+    }
+
+    public static void writeUInt32(OutputStream out, long value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            BinaryStreamUtils.writeUnsignedInt32(out, value);
+        }
+    }
+
+    public static void writeUInt64(OutputStream out, long value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            BinaryStreamUtils.writeUnsignedInt64(out, value);
+        }
+    }
+
+    public static void writeUInt128(OutputStream out, BigInteger value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            BinaryStreamUtils.writeUnsignedInt128(out, value);
+        }
+    }
+
+    public static void writeUInt256(OutputStream out, BigInteger value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            BinaryStreamUtils.writeUnsignedInt256(out, value);
+        }
+    }
+    // Decimal
+    public static void writeDecimal(OutputStream out, BigDecimal value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, int precision, int scale) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            BinaryStreamUtils.writeDecimal(out, value, precision, scale);
+        }
+    }
+
     // Float32
     public static void writeFloat32(OutputStream out, Float value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
@@ -201,6 +284,13 @@ public class Serialize {
     public static void writeBoolean(OutputStream out, Boolean value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
             BinaryStreamUtils.writeBoolean(out, value);
+        }
+    }
+
+    // UUID
+    public static void writeUUID(OutputStream out, UUID value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            BinaryStreamUtils.writeUuid(out, value);
         }
     }
 
