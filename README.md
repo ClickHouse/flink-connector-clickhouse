@@ -49,7 +49,7 @@ Maven
     <groupId>com.clickhouse.flink</groupId>
     <artifactId>flink-connector-clickhouse-2.0.0</artifactId>
     <version>0.1.0</version>
-    <type>pom</type>
+    <classifier>all</classifier>
 </dependency>
 ```
 
@@ -62,7 +62,7 @@ Maven
     <groupId>com.clickhouse.flink</groupId>
     <artifactId>flink-connector-clickhouse-1.17</artifactId>
     <version>0.1.0</version>
-    <type>pom</type>
+    <classifier>all</classifier>
 </dependency>
 ```
 
