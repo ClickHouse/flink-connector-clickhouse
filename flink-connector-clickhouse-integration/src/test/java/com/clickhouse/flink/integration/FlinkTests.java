@@ -41,7 +41,7 @@ public class FlinkTests {
     }
 
     private String exampleSubFolder(String flinkVersion) {
-        if (flinkVersion.equalsIgnoreCase("latest") || flinkVersion.startsWith("2.0"))
+        if (flinkVersion.equalsIgnoreCase("latest") || flinkVersion.startsWith("2."))
             return "flink-v2";
         return "flink-v1.7";
     }
