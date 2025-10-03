@@ -1,9 +1,9 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
 /*
- * Build configuration for Flink 2.0.0 ClickHouse Connector
+ * Build configuration for Flink 2.0.0+ ClickHouse Connector
  *
- * This module provides Apache Flink 2.0.0 compatibility for the ClickHouse connector.
+ * This module provides Apache Flink 2.0.0+ compatibility for the ClickHouse connector.
  * It depends on the flink-connector-clickhouse-base module for shared functionality.
  */
 
@@ -25,7 +25,7 @@ repositories {
 }
 
 extra.apply {
-    set("flinkVersion", "2.0.0")
+    set("flinkVersion", "2.0.0") // the default still will be 2.0.0 since it is more popular currently
     set("log4jVersion","2.17.2")
     set("testContainersVersion", "1.21.0")
     set("byteBuddyVersion", "1.17.5")
