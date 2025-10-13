@@ -91,6 +91,8 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "v_dateTime DateTime," +
                 "v_dateTime64 DateTime64," +
                 "uuid UUID," +
+                "stringList Array(String)," +
+                "longList Array(Int64)," +
                 ") " +
                 "ENGINE = MergeTree " +
                 "ORDER BY (longPrimitive); ";
@@ -532,6 +534,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         simplePOJOs.sinkTo(simplePOJOSink);
         int rows = executeAsyncJob(env, tableName, 100, EXPECTED_ROWS);
         Assertions.assertEquals(EXPECTED_ROWS, rows);
+        ClickHouseServerForTests.showData("simple_too_many_parts_pojo");
         //ClickHouseServerForTests.executeSql(String.format("SYSTEM START MERGES `%s.%s`", getDatabase(), tableName));
     }
 

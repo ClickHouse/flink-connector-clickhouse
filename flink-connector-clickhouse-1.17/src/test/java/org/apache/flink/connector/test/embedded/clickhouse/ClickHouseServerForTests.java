@@ -102,6 +102,18 @@ public class ClickHouseServerForTests {
         }
     }
 
+    public static void showData(String tableName) throws ExecutionException, InterruptedException {
+        String showDataSql = String.format("select * from '%s'", tableName);
+        Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
+        List<GenericRecord> content = client.queryAll(showDataSql);
+        for (GenericRecord record : content) {
+            System.out.println();
+            for (int i = 0; i< record.getSchema().getColumns().toArray().length; i++) {
+                System.out.print(" | " + record.getObject(i +1));
+            }
+        }
+    }
+
     public static int countParts(String table) {
         String countPartsSql = String.format("SELECT count(*) FROM system.parts WHERE table = '%s' and active = 1", table);
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);

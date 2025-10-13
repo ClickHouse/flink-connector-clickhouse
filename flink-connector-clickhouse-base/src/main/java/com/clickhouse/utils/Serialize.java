@@ -1,6 +1,7 @@
 package com.clickhouse.utils;
 
 import com.clickhouse.client.api.data_formats.internal.SerializerUtils;
+import com.clickhouse.data.ClickHouseColumn;
 import com.clickhouse.data.ClickHouseDataType;
 import com.clickhouse.data.format.BinaryStreamUtils;
 import org.slf4j.Logger;
@@ -292,6 +293,11 @@ public class Serialize {
         if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
             BinaryStreamUtils.writeUuid(out, value);
         }
+    }
+
+    // Array
+    public static void writeArray(OutputStream out, Object value, ClickHouseColumn column) throws IOException {
+        SerializerUtils.serializeArrayData(out, value, column);
     }
 
 }
