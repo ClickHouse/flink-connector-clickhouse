@@ -93,6 +93,8 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "uuid UUID," +
                 "stringList Array(String)," +
                 "longList Array(Int64)," +
+                "mapOfStrings Map(String,String)," +
+                "tupleOfObjects Tuple(String,Int64,Boolean)," +
                 ") " +
                 "ENGINE = MergeTree " +
                 "ORDER BY (longPrimitive); ";
@@ -285,6 +287,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         simplePOJOs.sinkTo(simplePOJOSink);
         int rows = executeAsyncJob(env, tableName, 10, EXPECTED_ROWS);
         Assertions.assertEquals(EXPECTED_ROWS, rows);
+        ClickHouseServerForTests.showData(tableName);
     }
 
     @Test

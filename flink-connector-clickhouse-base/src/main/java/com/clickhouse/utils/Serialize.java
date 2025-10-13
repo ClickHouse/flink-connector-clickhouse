@@ -300,4 +300,14 @@ public class Serialize {
         SerializerUtils.serializeArrayData(out, value, column);
     }
 
+    // Map
+    public static void writeMap(OutputStream out, Object value, ClickHouseColumn column) throws IOException {
+        SerializerUtils.serializeData(out, value, column);
+    }
+
+    // Tuple
+    public static void writeTuple(OutputStream out, Object value, ClickHouseColumn column) throws IOException {
+        SerializerUtils.serializeData(out, value, column);
+    }
+
 }

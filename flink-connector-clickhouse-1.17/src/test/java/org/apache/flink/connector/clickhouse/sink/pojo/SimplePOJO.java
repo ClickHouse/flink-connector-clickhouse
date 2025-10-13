@@ -4,9 +4,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 public class SimplePOJO {
 
@@ -68,6 +66,10 @@ public class SimplePOJO {
 
     private List<String> stringList;
     private List<Long> longList;
+
+    private Map<String, String> mapOfStrings;
+
+    private List<Object> tupleOfObjects;
 
     public SimplePOJO(int index) {
         this.bytePrimitive = Byte.MIN_VALUE;
@@ -136,6 +138,15 @@ public class SimplePOJO {
         this.longList.add(2L);
         this.longList.add(3L);
         this.longList.add(4L);
+
+        this.mapOfStrings = new HashMap<>();
+        this.mapOfStrings.put("a", "a");
+        this.mapOfStrings.put("b", "b");
+
+        this.tupleOfObjects =  new ArrayList<>();
+        this.tupleOfObjects.add("test");
+        this.tupleOfObjects.add(1L);
+        this.tupleOfObjects.add(true);
     }
 
     public byte getBytePrimitive() {
@@ -242,4 +253,7 @@ public class SimplePOJO {
 
     public List<Long> getLongList() { return longList; }
 
+    public Map<String, String> getMapOfStrings() { return mapOfStrings; }
+
+    public List<Object> getTupleOfObjects() { return tupleOfObjects; }
 }
