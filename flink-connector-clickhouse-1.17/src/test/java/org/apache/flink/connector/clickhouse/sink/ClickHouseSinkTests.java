@@ -287,7 +287,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         simplePOJOs.sinkTo(simplePOJOSink);
         int rows = executeAsyncJob(env, tableName, 10, EXPECTED_ROWS);
         Assertions.assertEquals(EXPECTED_ROWS, rows);
-        ClickHouseServerForTests.showData(tableName);
+//        ClickHouseServerForTests.showData(tableName);
     }
 
     @Test
@@ -537,7 +537,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         simplePOJOs.sinkTo(simplePOJOSink);
         int rows = executeAsyncJob(env, tableName, 100, EXPECTED_ROWS);
         Assertions.assertEquals(EXPECTED_ROWS, rows);
-        ClickHouseServerForTests.showData("simple_too_many_parts_pojo");
+//        ClickHouseServerForTests.showData("simple_too_many_parts_pojo");
         //ClickHouseServerForTests.executeSql(String.format("SYSTEM START MERGES `%s.%s`", getDatabase(), tableName));
     }
 

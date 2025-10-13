@@ -167,9 +167,9 @@ Planned for a future release — a complete end-to-end example will be added onc
 | int/Integer     | Enum16          | ✅         | Serialize.writeInt16       |
 | java.util.UUID  | UUID            | ✅         | Serialize.writeIntUUID     |
 | String          | JSON            | ❌         | N/A                        |
-| Array<Type>     | Array<Type>     | ❌         | N/A                        |
-| Map<K,V>        | Map<K,V>        | ❌         | N/A                        |
-| Tuple<Type,..>  | Map<T1,T2,..>   | ❌         | N/A                        |
+| Array<Type>     | Array<Type>     | ✅         | Serialize.writeArray       |
+| Map<K,V>        | Map<K,V>        | ✅         | Serialize.writeMap         |
+| Tuple<Type,..>  | Tuple<T1,T2,..> | ✅         | Serialize.writeTuple       |
 | Object          | Variant         | ❌         | N/A                        |
 
 * A ZoneId must also be provided when performing date operations. 
