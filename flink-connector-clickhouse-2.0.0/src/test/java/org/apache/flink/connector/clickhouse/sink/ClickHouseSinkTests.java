@@ -46,6 +46,60 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
     static final int STREAM_PARALLELISM = 5;
 
+    private String createSimplePOJOTableSQL(String database, String tableName, int parts_to_throw_insert) {
+        String createTable = createSimplePOJOTableSQL(database, tableName);
+        return createTable.trim().substring(0, createTable.trim().length() - 1) + " " + String.format("SETTINGS parts_to_throw_insert = %d;",  parts_to_throw_insert);
+    }
+
+    private String createSimplePOJOTableSQL(String database, String tableName) {
+        return "CREATE TABLE `" + database + "`.`" + tableName + "` (" +
+                "bytePrimitive Int8," +
+                "byteObject Int8," +
+                "shortPrimitive Int16," +
+                "shortObject Int16," +
+                "intPrimitive Int32," +
+                "integerObject Int32," +
+                "longPrimitive Int64," +
+                "longObject Int64," +
+                "bigInteger128 Int128," +
+                "bigInteger256 Int256," +
+                "uint8Primitive  UInt8," +
+                "uint8Object UInt8," +
+                "uint16Primitive  UInt16," +
+                "uint16Object UInt16," +
+                "uint32Primitive  UInt32," +
+                "uint32Object UInt32," +
+                "uint64Primitive  UInt64," +
+                "uint64Object UInt64," +
+                "uint128Object UInt128," +
+                "uint256Object UInt256," +
+                "decimal Decimal(10,5)," +
+                "decimal32 Decimal32(9)," +
+                "decimal64 Decimal64(18)," +
+                "decimal128 Decimal128(38)," +
+                "decimal256 Decimal256(76)," +
+                "floatPrimitive Float," +
+                "floatObject Float," +
+                "doublePrimitive Double," +
+                "doubleObject Double," +
+                "booleanPrimitive Boolean," +
+                "booleanObject Boolean," +
+                "str String," +
+                "fixedStr FixedString(10)," +
+                "v_date Date," +
+                "v_date32 Date32," +
+                "v_dateTime DateTime," +
+                "v_dateTime64 DateTime64," +
+                "uuid UUID," +
+                "stringList Array(String)," +
+                "longList Array(Int64)," +
+                "mapOfStrings Map(String,String)," +
+                "tupleOfObjects Tuple(String,Int64,Boolean)," +
+                ") " +
+                "ENGINE = MergeTree " +
+                "ORDER BY (longPrimitive); ";
+    }
+
     private int executeAsyncJob(StreamExecutionEnvironment env, String tableName, int numIterations, int expectedRows) throws Exception {
         JobClient jobClient = env.executeAsync("Read GZipped CSV with FileSource");
         int rows = 0;
@@ -197,22 +251,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
         ClickHouseServerForTests.executeSql(dropTable);
         // create table
-        String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
-                "bytePrimitive Int8," +
-                "byteObject Int8," +
-                "shortPrimitive Int16," +
-                "shortObject Int16," +
-                "intPrimitive Int32," +
-                "integerObject Int32," +
-                "longPrimitive Int64," +
-                "longObject Int64," +
-                "floatPrimitive Float," +
-                "floatObject Float," +
-                "doublePrimitive Double," +
-                "doubleObject Double," +
-                ") " +
-                "ENGINE = MergeTree " +
-                "ORDER BY (longPrimitive); ";
+        String tableSql = createSimplePOJOTableSQL(getDatabase(),  tableName);
         ClickHouseServerForTests.executeSql(tableSql);
 
 
@@ -458,23 +497,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
         ClickHouseServerForTests.executeSql(dropTable);
         // create table
-        String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
-                "bytePrimitive Int8," +
-                "byteObject Int8," +
-                "shortPrimitive Int16," +
-                "shortObject Int16," +
-                "intPrimitive Int32," +
-                "integerObject Int32," +
-                "longPrimitive Int64," +
-                "longObject Int64," +
-                "floatPrimitive Float," +
-                "floatObject Float," +
-                "doublePrimitive Double," +
-                "doubleObject Double," +
-                ") " +
-                "ENGINE = MergeTree " +
-                "ORDER BY (longPrimitive) " +
-                "SETTINGS parts_to_throw_insert = 10;";
+        String tableSql = createSimplePOJOTableSQL(getDatabase(),  tableName, 10);
         ClickHouseServerForTests.executeSql(tableSql);
         //ClickHouseServerForTests.executeSql(String.format("SYSTEM STOP MERGES `%s.%s`", getDatabase(), tableName));
 
