@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.UUID;
+import java.util.*;
 
 public class SimplePOJO {
 
@@ -64,6 +64,13 @@ public class SimplePOJO {
 
     private UUID uuid;
 
+    private List<String> stringList;
+    private List<Long> longList;
+
+    private Map<String, String> mapOfStrings;
+
+    private List<Object> tupleOfObjects;
+
     public SimplePOJO(int index) {
         this.bytePrimitive = Byte.MIN_VALUE;
         this.byteObject = Byte.MAX_VALUE;
@@ -119,6 +126,27 @@ public class SimplePOJO {
         this.dateTime64 = LocalDateTime.now();
 
         this.uuid = UUID.randomUUID();
+
+        this.stringList = new ArrayList<>();
+        this.stringList.add("a");
+        this.stringList.add("b");
+        this.stringList.add("c");
+        this.stringList.add("d");
+
+        this.longList = new ArrayList<>();
+        this.longList.add(1L);
+        this.longList.add(2L);
+        this.longList.add(3L);
+        this.longList.add(4L);
+
+        this.mapOfStrings = new HashMap<>();
+        this.mapOfStrings.put("a", "a");
+        this.mapOfStrings.put("b", "b");
+
+        this.tupleOfObjects =  new ArrayList<>();
+        this.tupleOfObjects.add("test");
+        this.tupleOfObjects.add(1L);
+        this.tupleOfObjects.add(true);
     }
 
     public byte getBytePrimitive() {
@@ -221,4 +249,11 @@ public class SimplePOJO {
 
     public UUID getUuid() { return uuid; }
 
+    public List<String> getStringList() { return stringList; }
+
+    public List<Long> getLongList() { return longList; }
+
+    public Map<String, String> getMapOfStrings() { return mapOfStrings; }
+
+    public List<Object> getTupleOfObjects() { return tupleOfObjects; }
 }
