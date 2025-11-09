@@ -16,6 +16,7 @@ public class ClickHouseAsyncSinkSerializer extends AsyncSinkWriterStateSerialize
     protected void serializeRequestToStream(ClickHousePayload clickHousePayload, DataOutputStream dataOutputStream) throws IOException {
         byte[] bytes = clickHousePayload.getPayload();
         if (bytes != null) {
+            dataOutputStream.writeInt(V1);
             dataOutputStream.writeInt(bytes.length);
             dataOutputStream.write(bytes);
         } else {
@@ -34,11 +35,16 @@ public class ClickHouseAsyncSinkSerializer extends AsyncSinkWriterStateSerialize
     }
 
     @Override
-    protected ClickHousePayload deserializeRequestFromStream(long version, DataInputStream dataInputStream) throws IOException {
-        if (version == V1) {
-            return deserializeV1(dataInputStream);
+    protected ClickHousePayload deserializeRequestFromStream(long requestSize, DataInputStream dataInputStream) throws IOException {
+        if  (requestSize > 0) {
+            int version = dataInputStream.readInt();
+            if (version == V1) {
+                return deserializeV1(dataInputStream);
+            } else {
+                throw new IOException("Unsupported version " + version);
+            }
         } else {
-            throw new IOException("Unsupported version: " + version);
+            throw new IOException("request size < 0");
         }
     }
 

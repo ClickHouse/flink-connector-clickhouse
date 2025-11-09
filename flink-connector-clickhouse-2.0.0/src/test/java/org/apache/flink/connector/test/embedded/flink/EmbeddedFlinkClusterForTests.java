@@ -21,6 +21,10 @@ public class EmbeddedFlinkClusterForTests {
 
     public static void setUp() throws Exception {
         Configuration config = new Configuration();
+        setUp(config);
+    }
+
+    public static void setUp(Configuration config) throws Exception {
         config.set(RestOptions.PORT, REST_PORT); // web UI port (optional)
         config.set(TaskManagerOptions.NUM_TASK_SLOTS, NUM_TASK_SLOTS);
         flinkCluster = new MiniClusterWithClientResource(
@@ -31,6 +35,7 @@ public class EmbeddedFlinkClusterForTests {
                         .build());
         flinkCluster.before();
     }
+
     public static void tearDown() {
         if (flinkCluster != null) {
             flinkCluster.after();
