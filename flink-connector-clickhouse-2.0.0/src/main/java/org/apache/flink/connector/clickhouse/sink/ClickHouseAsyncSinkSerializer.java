@@ -44,7 +44,7 @@ public class ClickHouseAsyncSinkSerializer extends AsyncSinkWriterStateSerialize
                 throw new IOException("Unsupported version " + version);
             }
         } else {
-            throw new IOException("request size < 0");
+            throw new IOException("Request size: " + requestSize);
         }
     }
 
