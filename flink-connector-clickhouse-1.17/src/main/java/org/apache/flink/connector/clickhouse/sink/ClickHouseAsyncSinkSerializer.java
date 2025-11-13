@@ -20,6 +20,7 @@ public class ClickHouseAsyncSinkSerializer extends AsyncSinkWriterStateSerialize
             dataOutputStream.writeInt(bytes.length);
             dataOutputStream.write(bytes);
         } else {
+            dataOutputStream.writeInt(V1);
             dataOutputStream.writeInt(-1);
         }
 
@@ -41,10 +42,10 @@ public class ClickHouseAsyncSinkSerializer extends AsyncSinkWriterStateSerialize
             if (version == V1) {
                 return deserializeV1(dataInputStream);
             } else {
-                throw new IOException("Unsupported version " + version);
+                throw new IOException("Unsupported serialization version: " + version);
             }
         } else {
-            throw new IOException("Request size: " + requestSize);
+            throw new IOException("Invalid request size: " + requestSize);
         }
     }
 
