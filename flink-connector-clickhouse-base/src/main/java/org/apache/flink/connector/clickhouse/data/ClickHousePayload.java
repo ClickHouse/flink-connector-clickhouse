@@ -15,7 +15,10 @@ public class ClickHousePayload implements Serializable {
         this.payload = payload;
     }
     public byte[] getPayload() { return payload; }
-    public int getPayloadLength() { return payload.length; }
+    public int getPayloadLength() {
+        if (payload == null) return -1;
+        return payload.length;
+    }
     public int getAttemptCount() { return attemptCount; }
     public void incrementAttempts() { attemptCount++; }
 }

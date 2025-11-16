@@ -45,6 +45,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
     static final long MAX_RECORD_SIZE_IN_BYTES = 1000;
 
     static final int STREAM_PARALLELISM = 5;
+    static final int NUMBER_OF_RETRIES = 10;
 
     private String createSimplePOJOTableSQL(String database, String tableName, int parts_to_throw_insert) {
         String createTable = createSimplePOJOTableSQL(database, tableName);
@@ -511,7 +512,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         env.setParallelism(STREAM_PARALLELISM);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
-        clickHouseClientConfig.setNumberOfRetries(10);
+        clickHouseClientConfig.setNumberOfRetries(NUMBER_OF_RETRIES);
         clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
 
         ElementConverter<SimplePOJO, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
