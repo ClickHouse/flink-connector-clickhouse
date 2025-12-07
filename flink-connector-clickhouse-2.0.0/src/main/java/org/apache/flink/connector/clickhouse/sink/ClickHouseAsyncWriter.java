@@ -14,6 +14,7 @@ import org.apache.flink.connector.base.sink.writer.ResultHandler;
 import org.apache.flink.connector.base.sink.writer.config.AsyncSinkWriterConfiguration;
 import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
 import org.apache.flink.connector.clickhouse.exception.RetriableException;
+import org.apache.flink.connector.clickhouse.sink.writer.ExtendedAsyncSinkWriter;
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.metrics.groups.SinkWriterMetricGroup;
 import org.slf4j.Logger;
@@ -24,7 +25,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, ClickHousePayload> {
+public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<InputT, ClickHousePayload> {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseAsyncWriter.class);
     private static final int DEFAULT_MAX_RETRIES = 3;
 
@@ -38,6 +39,7 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
     private final Counter numOfDroppedBatchesCounter;
     private final Counter numOfDroppedRecordsCounter;
     private final Counter totalBatchRetriesCounter;
+    private final Counter triggeredByBackPressureCounter;
 
     public ClickHouseAsyncWriter(ElementConverter<InputT, ClickHousePayload> elementConverter,
                                  WriterInitContext context,
@@ -72,6 +74,7 @@ public class ClickHouseAsyncWriter<InputT> extends AsyncSinkWriter<InputT, Click
         this.numOfDroppedBatchesCounter = metricGroup.counter("numOfDroppedBatches");
         this.numOfDroppedRecordsCounter = metricGroup.counter("numOfDroppedRecords");
         this.totalBatchRetriesCounter = metricGroup.counter("totalBatchRetries");
+        this.triggeredByBackPressureCounter = metricGroup.counter("triggeredByBackPressureCounter");
     }
 
 
