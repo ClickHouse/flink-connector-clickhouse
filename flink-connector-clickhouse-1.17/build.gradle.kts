@@ -30,7 +30,8 @@ val flinkVersion = System.getenv("FLINK_VERSION") ?: "1.17.2"
 extra.apply {
     set("flinkVersion", flinkVersion)
     set("log4jVersion","2.17.2")
-    set("testContainersVersion", "1.21.0")
+    set("testContainersVersion", "2.0.2")
+    set("testContainersClickHouseVersion", "1.21.3")
     set("byteBuddyVersion", "1.17.5")
 }
 
@@ -74,7 +75,7 @@ dependencies {
     testImplementation("org.apache.flink:flink-test-utils:${project.extra["flinkVersion"]}")
     //
     testImplementation("org.testcontainers:testcontainers:${project.extra["testContainersVersion"]}")
-    testImplementation("org.testcontainers:clickhouse:${project.extra["testContainersVersion"]}")
+    testImplementation("org.testcontainers:clickhouse:${project.extra["testContainersClickHouseVersion"]}")
     testImplementation("org.scalatest:scalatest_2.13:3.2.19")
     testRuntimeOnly("org.scalatestplus:junit-4-13_2.13:3.2.18.0")
 }

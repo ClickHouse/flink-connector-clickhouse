@@ -2,7 +2,7 @@ package com.clickhouse.flink.integration;
 
 import com.clickhouse.flink.Cluster;
 import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests;
-import org.junit.Assert;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -126,7 +126,7 @@ public class FlinkTests {
             Thread.sleep(2000);
         }
         int count = ClickHouseServerForTests.countRows(tableName);
-        Assert.assertEquals(NUMBERS_OF_RECORDS, count);
+        Assertions.assertEquals(NUMBERS_OF_RECORDS, count);
         // destroy cluster
         cluster.tearDown();
     }
