@@ -16,7 +16,9 @@ import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
 import org.apache.flink.connector.clickhouse.exception.RetriableException;
 import org.apache.flink.connector.clickhouse.sink.writer.ExtendedAsyncSinkWriter;
 import org.apache.flink.metrics.Counter;
+import org.apache.flink.metrics.Histogram;
 import org.apache.flink.metrics.groups.SinkWriterMetricGroup;
+import org.apache.flink.runtime.metrics.DescriptiveStatisticsHistogram;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,7 +41,8 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
     private final Counter numOfDroppedBatchesCounter;
     private final Counter numOfDroppedRecordsCounter;
     private final Counter totalBatchRetriesCounter;
-    private final Counter triggeredByBackPressureCounter;
+    private final Histogram writeLatencyHistogram;
+    private final Histogram writeFailureLatencyHistogram;
 
     public ClickHouseAsyncWriter(ElementConverter<InputT, ClickHousePayload> elementConverter,
                                  WriterInitContext context,
@@ -74,7 +77,8 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
         this.numOfDroppedBatchesCounter = metricGroup.counter("numOfDroppedBatches");
         this.numOfDroppedRecordsCounter = metricGroup.counter("numOfDroppedRecords");
         this.totalBatchRetriesCounter = metricGroup.counter("totalBatchRetries");
-        this.triggeredByBackPressureCounter = metricGroup.counter("triggeredByBackPressureCounter");
+        this.writeLatencyHistogram = metricGroup.histogram("writeLatencyHistogram", new DescriptiveStatisticsHistogram(1000));
+        this.writeFailureLatencyHistogram = metricGroup.histogram("writeFailureLatencyHistogram", new DescriptiveStatisticsHistogram(1000));
     }
 
 
@@ -130,6 +134,7 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
                 throw new RuntimeException("ClickHouseFormat was not set ");
             }
         }
+        long writeStartTime = System.currentTimeMillis();
         try {
             CompletableFuture<InsertResponse> response = chClient.insert(tableName, out -> {
                 for (ClickHousePayload requestEntry : requestEntries) {
@@ -147,9 +152,9 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
             }, format, new InsertSettings().setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true"));
             response.whenComplete((insertResponse, throwable) -> {
                 if (throwable != null) {
-                    handleFailedRequest(requestEntries, resultHandler, throwable);
+                    handleFailedRequest(requestEntries, resultHandler, throwable,  writeStartTime);
                 } else {
-                    handleSuccessfulRequest(resultHandler, insertResponse);
+                    handleSuccessfulRequest(resultHandler, insertResponse, writeStartTime);
                 }
             });
         } catch (Exception e) {
@@ -159,12 +164,15 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
     }
 
     private void handleSuccessfulRequest(
-            ResultHandler<ClickHousePayload> resultHandler, InsertResponse response) {
-        LOG.info("Successfully completed submitting request. Response [written rows {}, time took to insert {}, written bytes {}, query_id {}]",
+            ResultHandler<ClickHousePayload> resultHandler, InsertResponse response, long writeStartTime) {
+        long writeEndTime = System.currentTimeMillis();
+        this.writeLatencyHistogram.update(writeEndTime - writeStartTime);
+        LOG.info("Successfully completed submitting request. Response [written rows {}, time took to insert {}, written bytes {}, query_id {}, write latency {} ms.]",
                 response.getWrittenRows(),
                 response.getServerTime(),
                 response.getWrittenBytes(),
-                response.getQueryId()
+                response.getQueryId(),
+                writeEndTime - writeStartTime
         );
         resultHandler.complete();
     }
@@ -172,8 +180,10 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
     private void handleFailedRequest(
             List<ClickHousePayload> requestEntries,
             ResultHandler<ClickHousePayload> resultHandler,
-            Throwable error) {
+            Throwable error, long writeStartTime) {
         // TODO: extract from error if we can retry
+        long writeEndTime = System.currentTimeMillis();
+        this.writeFailureLatencyHistogram.update(writeEndTime - writeStartTime);
         try {
             Utils.handleException(error);
         } catch (RetriableException e) {
