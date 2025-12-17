@@ -17,6 +17,7 @@ Table of Contents
 * [Configuration Options](#configuration-options)
   * [Client Configuration](#client-configuration)
   * [Sink Configuration](#sink-configuration)
+  * [Sink Metrics](#sink-metrics)
 * [Limitations](#limitations)
 * [Contributing](#contributing)
 
@@ -200,26 +201,26 @@ Our Sink is built on top of Flink’s `AsyncSinkBase`
 | maxTimeInBufferMS         | The maximum time a record may stay in the sink before being flushed                                                                 | N/A        |
 | maxRecordSizeInBytes         | The maximum record size that the sink will accept, records larger than this will be automatically rejected                                                                 | N/A        |
 
-### Metrics 
+### Sink Metrics
 
-Our Sink exposing extra metrics on top Flink’s existing.  
+Our Sink exposes additional metrics on top of Flink's existing metrics:
 
-| Metrics                               | Description                                                                   | Type      | Implemented |
-|---------------------------------------|-------------------------------------------------------------------------------| ----------|-------------|
-| numBytesSend                          | Total number of bytes send to ClickHouse                                      | Counter   | ✅          | 
-| numRecordSend                         | Total number of records send to ClickHouse                                    | Counter   | ✅          |
-| numRequestSubmitted                   | Total Number of Request send (the actual total number flushes done)           | Counter   | ✅          |
-| numOfDroppedBatches                   | Total number of dropped batches due to non-retryable failure                  | Counter   | ✅          |
-| numOfDroppedRecords                   | Total number of dropped records due to non-retryable failure                  | Counter   | ✅          |
-| totalBatchRetries                     | Total numebr of batches retries due to retryable failure                      | Counter   | ✅          |
-| writeLatencyHistogram                 | Provide histogram to the write latency distribution                           | Histogram | ✅          |
-| writeFailureLatencyHistogram          | Provide histogram to the write failure latency distribution                   | Histogram | ✅          |
-| triggeredByMaxBatchSizeCounter        | Sink flush that was triggered by reaching `maxBatchSize`                      | Counter   | ✅          |
-| triggeredByMaxBatchSizeInBytesCounter | Sink flush that was triggered by reaching `maxBatchSizeInBytes`               | Counter   | ✅          |
-| triggeredByMaxTimeInBufferMSCounter   | Sink flush that was triggered by reaching `maxTimeInBufferMS`                 | Counter   | ✅          |
-| actualRecordsPerBatchHistogram        | Provide histogram to the actual batch size distribution                       | Histogram | ✅          |
-| actualBytesPerBatchHistogram          | Provide histogram to the actual bytes per batch distribution                  | Histogram | ✅          |
-| actualTimeInBufferHistogram           | Provide histogram to the actual time in the buffer before flush distribution  | Histogram | ❌          |
+| Metric | Description | Type | Status |
+|--------|-------------|------|--------|
+| numBytesSend | Total number of bytes sent to ClickHouse | Counter | ✅ |
+| numRecordSend | Total number of records sent to ClickHouse | Counter | ✅ |
+| numRequestSubmitted | Total number of requests sent (actual number of flushes performed) | Counter | ✅ |
+| numOfDroppedBatches | Total number of batches dropped due to non-retryable failures | Counter | ✅ |
+| numOfDroppedRecords | Total number of records dropped due to non-retryable failures | Counter | ✅ |
+| totalBatchRetries | Total number of batch retries due to retryable failures | Counter | ✅ |
+| writeLatencyHistogram | Histogram of write latency distribution | Histogram | ✅ |
+| writeFailureLatencyHistogram | Histogram of write failure latency distribution | Histogram | ✅ |
+| triggeredByMaxBatchSizeCounter | Sink flushes triggered by reaching `maxBatchSize` | Counter | ✅ |
+| triggeredByMaxBatchSizeInBytesCounter | Sink flushes triggered by reaching `maxBatchSizeInBytes` | Counter | ✅ |
+| triggeredByMaxTimeInBufferMSCounter | Sink flushes triggered by reaching `maxTimeInBufferMS` | Counter | ✅ |
+| actualRecordsPerBatchHistogram | Histogram of actual batch size distribution | Histogram | ✅ |
+| actualBytesPerBatchHistogram | Histogram of actual bytes per batch distribution | Histogram | ✅ |
+| actualTimeInBufferHistogram | Histogram of actual time in buffer before flush distribution | Histogram | ❌ |
 
 ## Limitations
 
