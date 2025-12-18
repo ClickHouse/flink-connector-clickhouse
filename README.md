@@ -17,6 +17,7 @@ Table of Contents
 * [Configuration Options](#configuration-options)
   * [Client Configuration](#client-configuration)
   * [Sink Configuration](#sink-configuration)
+  * [Sink Metrics](#sink-metrics)
 * [Limitations](#limitations)
 * [Contributing](#contributing)
 
@@ -200,10 +201,30 @@ Our Sink is built on top of Flink’s `AsyncSinkBase`
 | maxTimeInBufferMS         | The maximum time a record may stay in the sink before being flushed                                                                 | N/A        |
 | maxRecordSizeInBytes         | The maximum record size that the sink will accept, records larger than this will be automatically rejected                                                                 | N/A        |
 
-## Limitations 
+### Sink Metrics
+
+Our Sink exposes additional metrics on top of Flink's existing metrics:
+
+| Metric | Description | Type | Status |
+|--------|-------------|------|--------|
+| numBytesSend | Total number of bytes sent to ClickHouse | Counter | ✅ |
+| numRecordSend | Total number of records sent to ClickHouse | Counter | ✅ |
+| numRequestSubmitted | Total number of requests sent (actual number of flushes performed) | Counter | ✅ |
+| numOfDroppedBatches | Total number of batches dropped due to non-retryable failures | Counter | ✅ |
+| numOfDroppedRecords | Total number of records dropped due to non-retryable failures | Counter | ✅ |
+| totalBatchRetries | Total number of batch retries due to retryable failures | Counter | ✅ |
+| writeLatencyHistogram | Histogram of write latency distribution | Histogram | ✅ |
+| writeFailureLatencyHistogram | Histogram of write failure latency distribution | Histogram | ✅ |
+| triggeredByMaxBatchSizeCounter | Sink flushes triggered by reaching `maxBatchSize` | Counter | ✅ |
+| triggeredByMaxBatchSizeInBytesCounter | Sink flushes triggered by reaching `maxBatchSizeInBytes` | Counter | ✅ |
+| triggeredByMaxTimeInBufferMSCounter | Sink flushes triggered by reaching `maxTimeInBufferMS` | Counter | ✅ |
+| actualRecordsPerBatchHistogram | Histogram of actual batch size distribution | Histogram | ✅ |
+| actualBytesPerBatchHistogram | Histogram of actual bytes per batch distribution | Histogram | ✅ |
+| actualTimeInBufferHistogram | Histogram of actual time in buffer before flush distribution | Histogram | ❌ |
+
+## Limitations
 
 * Currently the sink does not support exactly-once semantics 
-
 
 ## Compatibility
 
