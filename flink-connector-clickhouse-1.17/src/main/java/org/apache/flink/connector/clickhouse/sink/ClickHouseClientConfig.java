@@ -35,24 +35,30 @@ public class ClickHouseClientConfig implements Serializable {
         this.tableName = tableName;
         this.fullProductName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s)", ClickHouseSinkVersion.getVersion(), EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion());
         this.options = new HashMap<>();
+        Client clientTmp = initClient(database);
+        boolean isServerAlive = clientTmp.ping();
+        if (!isServerAlive) {
+            throw new RuntimeException("ClickHouse server is noy accessible. Please check your configuration or ClickHouse server.");
+        }
+    }
+
+    private Client initClient(String database) {
+        return new Client.Builder()
+                .addEndpoint(url)
+                .setUsername(username)
+                .setPassword(password)
+                .setDefaultDatabase(database)
+                .setClientName(fullProductName)
+                .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true")
+                .setOptions(options)
+                .build();
     }
 
     public Client createClient(String database) {
         if (this.client == null) {
-            Client client = new Client.Builder()
-                    .addEndpoint(url)
-                    .setUsername(username)
-                    .setPassword(password)
-                    .setDefaultDatabase(database)
-                    .setClientName(fullProductName)
-                    .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true")
-                    .setOptions(options)
-                    .build();
-            this.client = client;
-            return client;
-        } else {
-            return this.client;
+            this.client = initClient(database);
         }
+        return client;
     }
 
     public Client createClient() {

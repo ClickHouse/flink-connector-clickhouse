@@ -542,4 +542,8 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         //ClickHouseServerForTests.executeSql(String.format("SYSTEM START MERGES `%s.%s`", getDatabase(), tableName));
     }
 
+    @Test
+    void CheckClickHouseAlive() {
+        Assertions.assertThrows(RuntimeException.class, () -> { new ClickHouseClientConfig(getServerURL(), getUsername() + "wrong_password", getPassword(), getDatabase(), "dummy");});
+    }
 }

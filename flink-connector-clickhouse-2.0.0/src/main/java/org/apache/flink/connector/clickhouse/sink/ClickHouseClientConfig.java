@@ -37,22 +37,23 @@ public class ClickHouseClientConfig implements Serializable {
         this.options = new HashMap<>();
     }
 
+    private Client initClient(String database) {
+        return new Client.Builder()
+                .addEndpoint(url)
+                .setUsername(username)
+                .setPassword(password)
+                .setDefaultDatabase(database)
+                .setClientName(fullProductName)
+                .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true")
+                .setOptions(options)
+                .build();
+    }
+
     public Client createClient(String database) {
         if (this.client == null) {
-            Client client = new Client.Builder()
-                    .addEndpoint(url)
-                    .setUsername(username)
-                    .setPassword(password)
-                    .setDefaultDatabase(database)
-                    .setClientName(fullProductName)
-                    .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true")
-                    .setOptions(options)
-                    .build();
-            this.client = client;
-            return client;
-        } else {
-            return this.client;
+            this.client = initClient(database);
         }
+        return client;
     }
 
     public Client createClient() {
