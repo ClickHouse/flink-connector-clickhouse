@@ -450,7 +450,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         env.setParallelism(STREAM_PARALLELISM);
 
 
-        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getIncorrectServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
         // create sink
         ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
