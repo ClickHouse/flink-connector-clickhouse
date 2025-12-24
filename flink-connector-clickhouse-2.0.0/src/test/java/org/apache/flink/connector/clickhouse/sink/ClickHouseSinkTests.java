@@ -388,7 +388,6 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
         env.setParallelism(STREAM_PARALLELISM);
 
-
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
         // create sink
@@ -415,7 +414,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 WatermarkStrategy.noWatermarks(),
                 "GzipCsvSource"
         );
-        lines.sinkTo(csvSink);
+        lines.map(line -> line + ", error, error").sinkTo(csvSink);
         // TODO: make the test smarter by checking the counter of numOfDroppedRecords equals EXPECTED_ROWS
         int rows = executeAsyncJob(env, tableName, 10, EXPECTED_ROWS);
         Assertions.assertEquals(EXPECTED_ROWS_ON_FAILURE, rows);

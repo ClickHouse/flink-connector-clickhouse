@@ -35,6 +35,23 @@ public class ClickHouseClientConfig implements Serializable {
         this.tableName = tableName;
         this.fullProductName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s)", ClickHouseSinkVersion.getVersion(), EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion());
         this.options = new HashMap<>();
+        Client clientTmp = initClient(database);
+
+        boolean isServerAlive = false;
+        for (int i = 0; i < numberOfRetries && !isServerAlive; i++) {
+            isServerAlive = clientTmp.ping();
+            if (!isServerAlive) {
+                LOG.warn("Ping failed, number of will {} retry in {} seconds.", numberOfRetries, 1);
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ignored) {
+
+                }
+            }
+        }
+        if (!isServerAlive) {
+            throw new RuntimeException("ClickHouse server is noy accessible. Please check your configuration or ClickHouse server.");
+        }
     }
 
     private Client initClient(String database) {
