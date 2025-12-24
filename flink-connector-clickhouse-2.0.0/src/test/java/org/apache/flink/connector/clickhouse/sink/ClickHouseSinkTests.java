@@ -45,7 +45,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
     static final long MAX_RECORD_SIZE_IN_BYTES = 1000;
 
     static final int STREAM_PARALLELISM = 5;
-    static final int NUMBER_OF_RETRIES = 10;
+    static final int NUMBER_OF_RETRIES = 20;
 
     private String createSimplePOJOTableSQL(String database, String tableName, int parts_to_throw_insert) {
         String createTable = createSimplePOJOTableSQL(database, tableName);
