@@ -35,6 +35,7 @@ public class ClickHouseClientConfig implements Serializable {
         this.tableName = tableName;
         this.fullProductName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s)", ClickHouseSinkVersion.getVersion(), EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion());
         this.options = new HashMap<>();
+        LOG.info("ClickHouseClientConfig: url={}, user={}, password={}, database={}", url, username, "x".repeat(password.length()), database);
         Client clientTmp = initClient(database);
 
         boolean isServerAlive = false;
