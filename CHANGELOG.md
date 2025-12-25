@@ -1,3 +1,5 @@
+## 0.1.3
+* Added check if ClickHouse is alive before start. https://github.com/ClickHouse/flink-connector-clickhouse/issues/76 
 ## 0.1.2
 * Fix serialize state  https://github.com/ClickHouse/flink-connector-clickhouse/pull/64
 ## 0.1.1

@@ -8,7 +8,7 @@ plugins {
 
 val sinkVersion by extra("0.1.2")
 val flinkVersion by extra("1.18.0")
-val clickhouseVersion by extra("0.9.1")
+val clickhouseVersion by extra("0.9.5")
 val junitVersion by extra("5.8.2")
 
 allprojects {

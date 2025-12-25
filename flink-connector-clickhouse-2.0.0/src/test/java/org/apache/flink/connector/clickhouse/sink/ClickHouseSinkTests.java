@@ -45,7 +45,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
     static final long MAX_RECORD_SIZE_IN_BYTES = 1000;
 
     static final int STREAM_PARALLELISM = 5;
-    static final int NUMBER_OF_RETRIES = 10;
+    static final int NUMBER_OF_RETRIES = 20;
 
     private String createSimplePOJOTableSQL(String database, String tableName, int parts_to_throw_insert) {
         String createTable = createSimplePOJOTableSQL(database, tableName);
@@ -388,7 +388,6 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
         env.setParallelism(STREAM_PARALLELISM);
 
-
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
         // create sink
@@ -451,7 +450,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         env.setParallelism(STREAM_PARALLELISM);
 
 
-        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getIncorrectServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
         // create sink
         ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
@@ -477,7 +476,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 WatermarkStrategy.noWatermarks(),
                 "GzipCsvSource"
         );
-        lines.sinkTo(csvSink);
+        lines.map(line -> line + ", error, error").sinkTo(csvSink);
         // TODO: make the test smarter by checking the counter of numOfDroppedRecords equals EXPECTED_ROWS
         int rows = executeAsyncJob(env, tableName, 10, EXPECTED_ROWS);
         Assertions.assertEquals(EXPECTED_ROWS_ON_FAILURE, rows);
@@ -538,4 +537,8 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         //ClickHouseServerForTests.executeSql(String.format("SYSTEM START MERGES `%s.%s`", getDatabase(), tableName));
     }
 
+    @Test
+    void CheckClickHouseAlive() {
+        Assertions.assertThrows(RuntimeException.class, () -> { new ClickHouseClientConfig(getServerURL(), getUsername() + "wrong_username", getPassword(), getDatabase(), "dummy");});
+    }
 }
