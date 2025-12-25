@@ -32,13 +32,13 @@ The connector supports two main Apache Flink APIs:
 
 | Version | Dependency                       | ClickHouse Client Version | Required Java |
 |---------|----------------------------------|---------------------------|---------------|
-| latest  | flink-connector-clickhouse-2.0.0 | 0.9.1                     | Java 17+      |
-| 2.0.1   | flink-connector-clickhouse-2.0.0 | 0.9.1                     | Java 17+      |
-| 2.0.0   | flink-connector-clickhouse-2.0.0 | 0.9.1                     | Java 17+      |
-| 1.20.2  | flink-connector-clickhouse-1.17  | 0.9.1                     | Java 11+      |
-| 1.19.3  | flink-connector-clickhouse-1.17  | 0.9.1                     | Java 11+      |
-| 1.18.1  | flink-connector-clickhouse-1.17  | 0.9.1                     | Java 11+      |
-| 1.17.2  | flink-connector-clickhouse-1.17  | 0.9.1                     | Java 11+      |
+| latest  | flink-connector-clickhouse-2.0.0 | 0.9.5                     | Java 17+      |
+| 2.0.1   | flink-connector-clickhouse-2.0.0 | 0.9.5                     | Java 17+      |
+| 2.0.0   | flink-connector-clickhouse-2.0.0 | 0.9.5                     | Java 17+      |
+| 1.20.2  | flink-connector-clickhouse-1.17  | 0.9.5                     | Java 11+      |
+| 1.19.3  | flink-connector-clickhouse-1.17  | 0.9.5                     | Java 11+      |
+| 1.18.1  | flink-connector-clickhouse-1.17  | 0.9.5                     | Java 11+      |
+| 1.17.2  | flink-connector-clickhouse-1.17  | 0.9.5                     | Java 11+      |
 
 ## Installation
 

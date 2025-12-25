@@ -539,6 +539,6 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
     @Test
     void CheckClickHouseAlive() {
-        Assertions.assertThrows(RuntimeException.class, () -> { new ClickHouseClientConfig(getServerURL(), getUsername() + "wrong_password", getPassword(), getDatabase(), "dummy");});
+        Assertions.assertThrows(RuntimeException.class, () -> { new ClickHouseClientConfig(getServerURL(), getUsername() + "wrong_username", getPassword(), getDatabase(), "dummy");});
     }
 }
