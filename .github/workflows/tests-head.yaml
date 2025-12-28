@@ -2,7 +2,7 @@ name: Apache Flink ClickHouse Head Connector Tests CI (Java)
 
 on:
   schedule:
-    # Run against ClickHouse head 3:55pm every day
+    # Run against ClickHouse head at 3:55pm every day
     - cron: "55 15 * * *"
   workflow_dispatch:
     inputs:
