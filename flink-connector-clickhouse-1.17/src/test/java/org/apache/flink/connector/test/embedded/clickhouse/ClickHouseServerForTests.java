@@ -112,6 +112,7 @@ public class ClickHouseServerForTests {
                 System.out.print(" | " + record.getObject(i +1));
             }
         }
+        System.out.println("\n-----------------");
     }
 
     public static int countParts(String table) {
