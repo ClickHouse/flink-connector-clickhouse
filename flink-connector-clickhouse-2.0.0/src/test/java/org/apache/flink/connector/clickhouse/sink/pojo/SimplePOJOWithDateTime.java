@@ -2,12 +2,12 @@ package org.apache.flink.connector.clickhouse.sink.pojo;
 
 import java.time.Instant;
 
-public class SimplePOJOWithDataTime {
+public class SimplePOJOWithDateTime {
     private String id;
     private Instant createdAt;
     private int numLogins;
 
-    public SimplePOJOWithDataTime(String id, Instant createdAt, int numLogins) {
+    public SimplePOJOWithDateTime(String id, Instant createdAt, int numLogins) {
         this.id = id;
         this.createdAt = createdAt;
         this.numLogins = numLogins;
