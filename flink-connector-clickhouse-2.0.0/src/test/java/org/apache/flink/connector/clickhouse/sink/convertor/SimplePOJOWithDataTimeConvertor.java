@@ -8,7 +8,6 @@ import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJOWithDataTime;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
 
 public class SimplePOJOWithDataTimeConvertor extends POJOConvertor<SimplePOJOWithDataTime> {
 
