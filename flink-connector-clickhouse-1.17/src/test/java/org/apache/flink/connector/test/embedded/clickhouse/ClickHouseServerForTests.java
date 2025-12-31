@@ -115,8 +115,8 @@ public class ClickHouseServerForTests {
         System.out.println("\n-----------------");
     }
 
-    public static List<GenericRecord> extractData(String tableName, String id) throws ExecutionException, InterruptedException {
-        String showDataSql = String.format("select * from `%s` order by `%s` ASC", tableName, id);
+    public static List<GenericRecord> extractData(String database, String tableName, String id) throws ExecutionException, InterruptedException {
+        String showDataSql = String.format("select * from `%s`.`%s` order by `%s` ASC", database, tableName, id);
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
         return client.queryAll(showDataSql);
     }

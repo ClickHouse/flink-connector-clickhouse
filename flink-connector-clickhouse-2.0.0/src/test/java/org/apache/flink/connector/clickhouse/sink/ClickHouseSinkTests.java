@@ -596,7 +596,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         simplePOJOs.sinkTo(simplePOJOSink);
         int rows = executeAsyncJob(env, tableName, 10, 3);
         Assertions.assertEquals(3, rows);
-        List<GenericRecord> genericRecordList = ClickHouseServerForTests.extractData(tableName, "id");
+        List<GenericRecord> genericRecordList = ClickHouseServerForTests.extractData(getDatabase(), tableName, "id");
 //        ClickHouseServerForTests.showData(tableName);
 
         for (int j = 0; j < genericRecordList.size(); j++) {
