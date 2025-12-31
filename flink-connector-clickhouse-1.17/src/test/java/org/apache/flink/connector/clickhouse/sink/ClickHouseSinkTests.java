@@ -1,6 +1,7 @@
 package org.apache.flink.connector.clickhouse.sink;
 
 import com.clickhouse.client.api.metadata.TableSchema;
+import com.clickhouse.client.api.query.GenericRecord;
 import com.clickhouse.data.ClickHouseFormat;
 import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
@@ -11,8 +12,10 @@ import org.apache.flink.connector.clickhouse.convertor.POJOConvertor;
 import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
 import org.apache.flink.connector.clickhouse.sink.convertor.CovidPOJOConvertor;
 import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOConvertor;
+import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOWithDateTimeConvertor;
 import org.apache.flink.connector.clickhouse.sink.pojo.CovidPOJO;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJO;
+import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJOWithDateTime;
 import org.apache.flink.connector.file.src.FileSource;
 import org.apache.flink.connector.file.src.reader.TextLineInputFormat;
 import org.apache.flink.connector.test.FlinkClusterTests;
@@ -26,11 +29,12 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
-import static org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests.countMerges;
-import static org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests.isCloud;
+import static org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests.*;
 
 public class ClickHouseSinkTests extends FlinkClusterTests {
 
@@ -545,5 +549,69 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
     @Test
     void CheckClickHouseAlive() {
         Assertions.assertThrows(RuntimeException.class, () -> { new ClickHouseClientConfig(getServerURL(), getUsername() + "wrong_username", getPassword(), getDatabase(), "dummy");});
+    }
+
+    @Test
+    void SimplePOJOWithDateTime() throws Exception {
+        String tableName = "simple_pojo_with_datetime";
+
+        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
+        ClickHouseServerForTests.executeSql(dropTable);
+        // create table
+        String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
+                "id String," +
+                "created_at DateTime64(3)," +
+                "num_logins Int32," +
+                ") " +
+                "ENGINE = MergeTree " +
+                "ORDER BY (id); ";
+        ClickHouseServerForTests.executeSql(tableSql);
+
+
+        TableSchema simpleTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
+        POJOConvertor<SimplePOJOWithDateTime> simplePOJOWithDateTimeConvertor = new SimplePOJOWithDateTimeConvertor();
+
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(STREAM_PARALLELISM);
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
+
+        ElementConverter<SimplePOJOWithDateTime, ClickHousePayload> convertorSimplePOJOWithDateTimeConvertor = new ClickHouseConvertor<>(SimplePOJOWithDateTime.class, simplePOJOWithDateTimeConvertor);
+
+        ClickHouseAsyncSink<SimplePOJOWithDateTime> simplePOJOSink = new ClickHouseAsyncSink<>(
+                convertorSimplePOJOWithDateTimeConvertor,
+                MAX_BATCH_SIZE,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                MAX_TIME_IN_BUFFER_MS,
+                MAX_RECORD_SIZE_IN_BYTES,
+                clickHouseClientConfig
+        );
+
+        List<SimplePOJOWithDateTime> simplePOJOList = Arrays.asList(
+                new SimplePOJOWithDateTime("user-001", Instant.parse("2024-01-15T10:30:00Z"), 42),
+                new SimplePOJOWithDateTime("user-002", Instant.parse("2024-02-20T14:15:30Z"), 158),
+                new SimplePOJOWithDateTime("user-003", Instant.parse("2024-03-10T08:45:12Z"), 7)
+                );
+
+        // create from list
+        DataStream<SimplePOJOWithDateTime> simplePOJOs = env.fromElements(simplePOJOList.toArray(new SimplePOJOWithDateTime[0]));
+        // send to a sink
+        simplePOJOs.sinkTo(simplePOJOSink);
+        int rows = executeAsyncJob(env, tableName, 10, 3);
+        Assertions.assertEquals(3, rows);
+        List<GenericRecord> genericRecordList = ClickHouseServerForTests.extractData(getDatabase(), tableName, "id");
+
+        for (int j = 0; j < genericRecordList.size(); j++) {
+            String id = simplePOJOList.get(j).getId();
+            Instant instant = simplePOJOList.get(j).getCreatedAt();
+            int numLogins = simplePOJOList.get(j).getNumLogins();
+
+            Assertions.assertEquals(id, genericRecordList.get(j).getString("id"));
+            Assertions.assertEquals(instant, genericRecordList.get(j).getZonedDateTime("created_at").toInstant());
+            Assertions.assertEquals(numLogins, genericRecordList.get(j).getInteger("num_logins"));
+        }
     }
 }
