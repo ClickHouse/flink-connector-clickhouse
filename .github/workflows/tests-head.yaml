@@ -4,12 +4,6 @@ on:
   schedule:
     # Run against ClickHouse head at 3:55pm every day
     - cron: "55 15 * * *"
-  workflow_dispatch:
-    inputs:
-      pr:
-        description: "Pull request#"
-        required: false
-
 
 jobs:
   test-flink-17:
@@ -22,31 +16,18 @@ jobs:
         flink: [ "1.17.2", "1.18.1", "1.19.3", "1.20.2"]
     name: Apache Flink ${{ matrix.flink }} ClickHouse Connector tests with ClickHouse ${{ matrix.clickhouse }}
     steps:
-      - name: Check for Cloud Credentials
-        id: check-cloud-credentials
-        run: |
-          if [[ "${{ matrix.clickhouse }}" == "cloud" && (-z "${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}" || -z "${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}") ]]; then
-            echo "SKIP_STEP=true" >> $GITHUB_ENV
-          else
-            echo "SKIP_STEP=false" >> $GITHUB_ENV
-          fi
-        shell: bash
-      - uses: actions/checkout@v3
-        if: env.SKIP_STEP != 'true'
+      - name: Checkout
+        uses: actions/checkout@v3
       - name: Set up JDK 17
-        if: env.SKIP_STEP != 'true'
         uses: actions/setup-java@v3
         with:
           java-version: '17'
           distribution: 'adopt'
           architecture: x64
       - name: Setup and execute Gradle 'test' task
-        if: env.SKIP_STEP != 'true'
         uses: gradle/gradle-build-action@v2
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
-          CLICKHOUSE_CLOUD_HOST: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}
-          CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}
           FLINK_VERSION: ${{ matrix.flink }}
         with:
           arguments: :flink-connector-clickhouse-1.17:test
@@ -59,30 +40,17 @@ jobs:
         clickhouse: [ "head" ]
     name: Apache Flink 2.0.0 ClickHouse Connector tests with ClickHouse ${{ matrix.clickhouse }}
     steps:
-      - name: Check for Cloud Credentials
-        id: check-cloud-credentials
-        run: |
-          if [[ "${{ matrix.clickhouse }}" == "cloud" && (-z "${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}" || -z "${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}") ]]; then
-            echo "SKIP_STEP=true" >> $GITHUB_ENV
-          else
-            echo "SKIP_STEP=false" >> $GITHUB_ENV
-          fi
-        shell: bash
-      - uses: actions/checkout@v3
-        if: env.SKIP_STEP != 'true'
+      - name: Checkout
+        uses: actions/checkout@v3
       - name: Set up JDK 17
-        if: env.SKIP_STEP != 'true'
         uses: actions/setup-java@v3
         with:
           java-version: '17'
           distribution: 'adopt'
           architecture: x64
       - name: Setup and execute Gradle 'test' task
-        if: env.SKIP_STEP != 'true'
         uses: gradle/gradle-build-action@v2
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
-          CLICKHOUSE_CLOUD_HOST: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}
-          CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}
         with:
           arguments: :flink-connector-clickhouse-2.0.0:test
