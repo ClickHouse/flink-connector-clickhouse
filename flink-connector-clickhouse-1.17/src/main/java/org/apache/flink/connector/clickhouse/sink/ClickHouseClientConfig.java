@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 public class ClickHouseClientConfig implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseClientConfig.class);
@@ -35,8 +36,8 @@ public class ClickHouseClientConfig implements Serializable {
         this.database = database;
         this.tableName = tableName;
         this.fullProductName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s)", ClickHouseSinkVersion.getVersion(), EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion());
-        this.options = options;
-        this.serverSettings = serverSettings;
+        this.options = Optional.ofNullable(options).orElseGet(HashMap::new);
+        this.serverSettings = Optional.ofNullable(serverSettings).orElseGet(HashMap::new);
         LOG.info("ClickHouseClientConfig: url={}, user={}, password={}, database={}", url, username, "x".repeat(password.length()), database);
         Client clientTmp = initClient(database);
 
