@@ -71,6 +71,8 @@ public class SimplePOJO {
 
     private List<Object> tupleOfObjects;
 
+    private String jsonString;
+
     public SimplePOJO(int index) {
         this.bytePrimitive = Byte.MIN_VALUE;
         this.byteObject = Byte.MAX_VALUE;
@@ -147,6 +149,8 @@ public class SimplePOJO {
         this.tupleOfObjects.add("test");
         this.tupleOfObjects.add(1L);
         this.tupleOfObjects.add(true);
+
+        this.jsonString = String.format("{\"index\" : \"%d\", \"bar\" : \"foo\" }", index);
     }
 
     public byte getBytePrimitive() {
@@ -256,4 +260,6 @@ public class SimplePOJO {
     public Map<String, String> getMapOfStrings() { return mapOfStrings; }
 
     public List<Object> getTupleOfObjects() { return tupleOfObjects; }
+
+    public String getJsonString() { return jsonString; }
 }

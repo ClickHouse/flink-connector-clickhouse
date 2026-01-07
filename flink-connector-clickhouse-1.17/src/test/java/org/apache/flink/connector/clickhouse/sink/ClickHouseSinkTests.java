@@ -96,6 +96,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "longList Array(Int64)," +
                 "mapOfStrings Map(String,String)," +
                 "tupleOfObjects Tuple(String,Int64,Boolean)," +
+                "jsonPayload JSON," +
                 ") " +
                 "ENGINE = MergeTree " +
                 "ORDER BY (longPrimitive); ";
