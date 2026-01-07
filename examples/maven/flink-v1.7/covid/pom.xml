@@ -34,8 +34,23 @@ under the License.
 		<scala.binary.version>2.12</scala.binary.version>
 		<maven.compiler.source>${target.java.version}</maven.compiler.source>
 		<maven.compiler.target>${target.java.version}</maven.compiler.target>
-		<log4j.version>2.24.1</log4j.version>
+		<log4j.version>2.25.3</log4j.version>
 	</properties>
+
+    <repositories>
+        <repository>
+            <id>scala-sbt</id>
+            <url>https://repo.scala-sbt.org/scalasbt/maven-releases/</url>
+        </repository>
+        <repository>
+            <id>apache</id>
+            <url>https://repository.apache.org/content/repositories/releases/</url>
+        </repository>
+        <repository>
+            <id>central</id>
+            <url>https://repo.maven.apache.org/maven2</url>
+        </repository>
+    </repositories>
 
     <dependencies>
 		<!-- Apache Flink dependencies -->
