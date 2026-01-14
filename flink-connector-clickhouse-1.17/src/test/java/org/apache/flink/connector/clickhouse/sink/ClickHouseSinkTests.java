@@ -3,7 +3,6 @@ package org.apache.flink.connector.clickhouse.sink;
 import com.clickhouse.client.api.metadata.TableSchema;
 import com.clickhouse.client.api.query.GenericRecord;
 import com.clickhouse.data.ClickHouseFormat;
-import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.connector.base.sink.writer.ElementConverter;
@@ -12,18 +11,15 @@ import org.apache.flink.connector.clickhouse.convertor.POJOConvertor;
 import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
 import org.apache.flink.connector.clickhouse.sink.convertor.CovidPOJOConvertor;
 import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOConvertor;
-import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOWithDateTimeConvertor;
 import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOWithJSONConvertor;
 import org.apache.flink.connector.clickhouse.sink.pojo.CovidPOJO;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJO;
-import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJOWithDateTime;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJOWithJSON;
 import org.apache.flink.connector.file.src.FileSource;
 import org.apache.flink.connector.file.src.reader.TextLineInputFormat;
 import org.apache.flink.connector.test.FlinkClusterTests;
 import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests;
 import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseTestHelpers;
-import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
@@ -32,100 +28,19 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 import static org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests.*;
+import static org.apache.flink.connector.clickhouse.sink.ClickHouseSinkTestUtils.*;
+import static org.apache.flink.connector.test.embedded.flink.EmbeddedFlinkClusterForTests.executeAsyncJob;
 
 public class ClickHouseSinkTests extends FlinkClusterTests {
 
     static final int EXPECTED_ROWS = 10000;
     static final int EXPECTED_ROWS_ON_FAILURE = 0;
-    static final int MAX_BATCH_SIZE = 5000;
-    static final int MIN_BATCH_SIZE = 1;
-    static final int MAX_IN_FLIGHT_REQUESTS = 2;
-    static final int MAX_BUFFERED_REQUESTS = 20000;
-    static final long MAX_BATCH_SIZE_IN_BYTES = 1024 * 1024;
-    static final long MAX_TIME_IN_BUFFER_MS = 5 * 1000;
-    static final long MAX_RECORD_SIZE_IN_BYTES = 1000;
-
     static final int STREAM_PARALLELISM = 5;
     static final int NUMBER_OF_RETRIES = 20;
-
-    private String createSimplePOJOTableSQL(String database, String tableName, int parts_to_throw_insert) {
-        String createTable = createSimplePOJOTableSQL(database, tableName);
-        return createTable.trim().substring(0, createTable.trim().length() - 1) + " " + String.format("SETTINGS parts_to_throw_insert = %d;",  parts_to_throw_insert);
-    }
-
-    private String createSimplePOJOTableSQL(String database, String tableName) {
-        return "CREATE TABLE `" + database + "`.`" + tableName + "` (" +
-                "bytePrimitive Int8," +
-                "byteObject Int8," +
-                "shortPrimitive Int16," +
-                "shortObject Int16," +
-                "intPrimitive Int32," +
-                "integerObject Int32," +
-                "longPrimitive Int64," +
-                "longObject Int64," +
-                "bigInteger128 Int128," +
-                "bigInteger256 Int256," +
-                "uint8Primitive  UInt8," +
-                "uint8Object UInt8," +
-                "uint16Primitive  UInt16," +
-                "uint16Object UInt16," +
-                "uint32Primitive  UInt32," +
-                "uint32Object UInt32," +
-                "uint64Primitive  UInt64," +
-                "uint64Object UInt64," +
-                "uint128Object UInt128," +
-                "uint256Object UInt256," +
-                "decimal Decimal(10,5)," +
-                "decimal32 Decimal32(9)," +
-                "decimal64 Decimal64(18)," +
-                "decimal128 Decimal128(38)," +
-                "decimal256 Decimal256(76)," +
-                "floatPrimitive Float," +
-                "floatObject Float," +
-                "doublePrimitive Double," +
-                "doubleObject Double," +
-                "booleanPrimitive Boolean," +
-                "booleanObject Boolean," +
-                "str String," +
-                "fixedStr FixedString(10)," +
-                "v_date Date," +
-                "v_date32 Date32," +
-                "v_dateTime DateTime," +
-                "v_dateTime64 DateTime64," +
-                "uuid UUID," +
-                "stringList Array(String)," +
-                "longList Array(Int64)," +
-                "mapOfStrings Map(String,String)," +
-                "tupleOfObjects Tuple(String,Int64,Boolean)," +
-//                "jsonPayload JSON," +
-                ") " +
-                "ENGINE = MergeTree " +
-                "ORDER BY (longPrimitive); ";
-    }
-
-    private int executeAsyncJob(StreamExecutionEnvironment env, String tableName, int numIterations, int expectedRows) throws Exception {
-        JobClient jobClient = env.executeAsync("Read GZipped CSV with FileSource");
-        int rows = 0;
-        int iterations = 0;
-        while (iterations < numIterations) {
-            Thread.sleep(1000);
-            iterations++;
-            rows = ClickHouseServerForTests.countRows(tableName);
-            System.out.println("Rows: " + rows + " EXPECTED_ROWS: " + expectedRows);
-            if (rows == expectedRows)
-                break;
-
-        }
-        // cancel job
-        jobClient.cancel();
-        return rows;
-    }
 
     @Test
     void CSVDataTest() throws Exception {
@@ -250,53 +165,6 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         covidPOJOs.sinkTo(covidPOJOSink);
         int rows = executeAsyncJob(env, tableName, 10, EXPECTED_ROWS);
         Assertions.assertEquals(EXPECTED_ROWS, rows);
-    }
-
-    @Test
-    void SimplePOJODataTest() throws Exception {
-        // TODO: needs to be extended to all types
-        String tableName = "simple_pojo";
-
-        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
-        ClickHouseServerForTests.executeSql(dropTable);
-        // create table
-        String tableSql = createSimplePOJOTableSQL(getDatabase(),  tableName);
-        ClickHouseServerForTests.executeSql(tableSql);
-
-
-        TableSchema simpleTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
-        POJOConvertor<SimplePOJO> simplePOJOConvertor = new SimplePOJOConvertor();
-
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(STREAM_PARALLELISM);
-
-        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
-        clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
-
-        ElementConverter<SimplePOJO, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
-
-        ClickHouseAsyncSink<SimplePOJO> simplePOJOSink = new ClickHouseAsyncSink<>(
-                convertorCovid,
-                MAX_BATCH_SIZE,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                MAX_TIME_IN_BUFFER_MS,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
-
-        List<SimplePOJO> simplePOJOList = new ArrayList<>();
-        for (int i = 0; i < EXPECTED_ROWS; i++) {
-            simplePOJOList.add(new SimplePOJO(i));
-        }
-        // create from list
-        DataStream<SimplePOJO> simplePOJOs = env.fromElements(simplePOJOList.toArray(new SimplePOJO[0]));
-        // send to a sink
-        simplePOJOs.sinkTo(simplePOJOSink);
-        int rows = executeAsyncJob(env, tableName, 10, EXPECTED_ROWS);
-        Assertions.assertEquals(EXPECTED_ROWS, rows);
-//        ClickHouseServerForTests.showData(tableName);
     }
 
     @Test
@@ -553,70 +421,6 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
     @Test
     void CheckClickHouseAlive() {
         Assertions.assertThrows(RuntimeException.class, () -> { new ClickHouseClientConfig(getServerURL(), getUsername() + "wrong_username", getPassword(), getDatabase(), "dummy");});
-    }
-
-    @Test
-    void SimplePOJOWithDateTime() throws Exception {
-        String tableName = "simple_pojo_with_datetime";
-
-        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
-        ClickHouseServerForTests.executeSql(dropTable);
-        // create table
-        String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
-                "id String," +
-                "created_at DateTime64(3)," +
-                "num_logins Int32," +
-                ") " +
-                "ENGINE = MergeTree " +
-                "ORDER BY (id); ";
-        ClickHouseServerForTests.executeSql(tableSql);
-
-
-        TableSchema simpleTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
-        POJOConvertor<SimplePOJOWithDateTime> simplePOJOWithDateTimeConvertor = new SimplePOJOWithDateTimeConvertor();
-
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(STREAM_PARALLELISM);
-
-        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
-        clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
-
-        ElementConverter<SimplePOJOWithDateTime, ClickHousePayload> convertorSimplePOJOWithDateTimeConvertor = new ClickHouseConvertor<>(SimplePOJOWithDateTime.class, simplePOJOWithDateTimeConvertor);
-
-        ClickHouseAsyncSink<SimplePOJOWithDateTime> simplePOJOSink = new ClickHouseAsyncSink<>(
-                convertorSimplePOJOWithDateTimeConvertor,
-                MAX_BATCH_SIZE,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                MAX_TIME_IN_BUFFER_MS,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
-
-        List<SimplePOJOWithDateTime> simplePOJOList = Arrays.asList(
-                new SimplePOJOWithDateTime("user-001", Instant.parse("2024-01-15T10:30:00Z"), 42),
-                new SimplePOJOWithDateTime("user-002", Instant.parse("2024-02-20T14:15:30Z"), 158),
-                new SimplePOJOWithDateTime("user-003", Instant.parse("2024-03-10T08:45:12Z"), 7)
-                );
-
-        // create from list
-        DataStream<SimplePOJOWithDateTime> simplePOJOs = env.fromElements(simplePOJOList.toArray(new SimplePOJOWithDateTime[0]));
-        // send to a sink
-        simplePOJOs.sinkTo(simplePOJOSink);
-        int rows = executeAsyncJob(env, tableName, 10, 3);
-        Assertions.assertEquals(3, rows);
-        List<GenericRecord> genericRecordList = ClickHouseServerForTests.extractData(getDatabase(), tableName, "id");
-
-        for (int j = 0; j < genericRecordList.size(); j++) {
-            String id = simplePOJOList.get(j).getId();
-            Instant instant = simplePOJOList.get(j).getCreatedAt();
-            int numLogins = simplePOJOList.get(j).getNumLogins();
-
-            Assertions.assertEquals(id, genericRecordList.get(j).getString("id"));
-            Assertions.assertEquals(instant, genericRecordList.get(j).getZonedDateTime("created_at").toInstant());
-            Assertions.assertEquals(numLogins, genericRecordList.get(j).getInteger("num_logins"));
-        }
     }
 
     @Test
