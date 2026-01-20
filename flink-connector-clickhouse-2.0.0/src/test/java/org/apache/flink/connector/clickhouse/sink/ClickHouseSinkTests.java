@@ -29,6 +29,7 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -615,8 +616,8 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
     @Test
     void SimplePOJOWithJSONDataTest() throws Exception {
-        if (!isCloud() && !ClickHouseTestHelpers.getClickhouseVersion().equalsIgnoreCase("latest"))
-            return;
+        Assumptions.assumeTrue(
+                isCloud() || ClickHouseTestHelpers.getClickhouseVersion().equalsIgnoreCase("latest"));
         String tableName = "simple_pojo_with_json_data";
 
         String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
