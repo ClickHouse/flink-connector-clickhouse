@@ -77,6 +77,7 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers:${project.extra["testContainersVersion"]}")
     testImplementation("org.testcontainers:clickhouse:${project.extra["testContainersClickHouseVersion"]}")
     testImplementation("org.scalatest:scalatest_2.13:3.2.19")
+    testImplementation("org.json:json:20230227")
     testRuntimeOnly("org.scalatestplus:junit-4-13_2.13:3.2.18.0")
 }
 

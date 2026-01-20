@@ -147,6 +147,7 @@ public class SimplePOJO {
         this.tupleOfObjects.add("test");
         this.tupleOfObjects.add(1L);
         this.tupleOfObjects.add(true);
+
     }
 
     public byte getBytePrimitive() {

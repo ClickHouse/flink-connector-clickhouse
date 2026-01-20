@@ -167,7 +167,7 @@ Planned for a future release — a complete end-to-end example will be added onc
 | byte/Byte       | Enum8           | ✅         | Serialize.writeInt8        |
 | int/Integer     | Enum16          | ✅         | Serialize.writeInt16       |
 | java.util.UUID  | UUID            | ✅         | Serialize.writeIntUUID     |
-| String          | JSON            | ❌         | N/A                        |
+| String          | JSON            | ✅         | Serialize.writeJSON        |
 | Array<Type>     | Array<Type>     | ✅         | Serialize.writeArray       |
 | Map<K,V>        | Map<K,V>        | ✅         | Serialize.writeMap         |
 | Tuple<Type,..>  | Tuple<T1,T2,..> | ✅         | Serialize.writeTuple       |
@@ -175,6 +175,7 @@ Planned for a future release — a complete end-to-end example will be added onc
 
 * A ZoneId must also be provided when performing date operations. 
 * Precision and scale must also be provided when performing decimal operations. 
+* To use JSON type as a string, you need to enable `enableJsonSupportAsString` in `ClickHouseClientConfig` . 
 
 ## Configuration Options
 

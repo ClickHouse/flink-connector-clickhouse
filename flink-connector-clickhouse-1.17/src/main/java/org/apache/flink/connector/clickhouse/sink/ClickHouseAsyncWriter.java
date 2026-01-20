@@ -4,6 +4,7 @@ import com.clickhouse.client.api.Client;
 import com.clickhouse.client.api.ClientConfigProperties;
 import com.clickhouse.client.api.insert.InsertResponse;
 import com.clickhouse.client.api.insert.InsertSettings;
+import com.clickhouse.client.api.internal.ServerSettings;
 import com.clickhouse.data.ClickHouseFormat;
 import com.clickhouse.utils.Utils;
 import org.apache.flink.api.connector.sink2.Sink;
@@ -131,6 +132,13 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
                 throw new RuntimeException("ClickHouseFormat was not set ");
             }
         }
+        InsertSettings insertSettings = new InsertSettings();
+        insertSettings.setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true");
+        Boolean getEnableJsonSupportAsString = clickHouseClientConfig.getEnableJsonSupportAsString();
+        if (getEnableJsonSupportAsString) {
+            insertSettings.serverSetting(ServerSettings.INPUT_FORMAT_BINARY_READ_JSON_AS_STRING,"1");
+        }
+
         long writeStartTime = System.currentTimeMillis();
         try {
             CompletableFuture<InsertResponse> response = chClient.insert(tableName, out -> {
@@ -146,7 +154,7 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
                 this.numRecordsSendCounter.inc(requestEntries.size());
                 LOG.info("Data that will be sent to ClickHouse in bytes {} and the amount of records {}.", numBytesSendCounter.getCount(), requestEntries.size());
                 out.close();
-            }, format, new InsertSettings().setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true"));
+            }, format, insertSettings);
             response.whenComplete((insertResponse, throwable) -> {
                 if (throwable != null) {
                     handleFailedRequest(requestEntries, requestToRetry, throwable, writeStartTime);
@@ -185,6 +193,7 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
             Consumer<List<ClickHousePayload>> requestToRetry,
             Throwable error, long writeStartTime) {
         // TODO: extract from error if we can retry
+        System.out.println(error.getCause());
         long writeEndTime = System.currentTimeMillis();
         this.writeFailureLatencyHistogram.update(writeEndTime - writeStartTime);
         try {
