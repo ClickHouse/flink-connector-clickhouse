@@ -137,8 +137,8 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
         }
         InsertSettings insertSettings = new InsertSettings();
         insertSettings.setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true");
-        Boolean getEnableJsonSupport = clickHouseClientConfig.getEnableJsonSupport();
-        if (getEnableJsonSupport) {
+        Boolean getEnableJsonSupportAsString = clickHouseClientConfig.getEnableJsonSupportAsString();
+        if (getEnableJsonSupportAsString) {
             insertSettings.serverSetting(ServerSettings.INPUT_FORMAT_BINARY_READ_JSON_AS_STRING,"1");
         }
         long writeStartTime = System.currentTimeMillis();

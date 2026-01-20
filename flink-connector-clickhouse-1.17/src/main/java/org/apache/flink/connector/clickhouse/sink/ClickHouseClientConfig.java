@@ -26,11 +26,11 @@ public class ClickHouseClientConfig implements Serializable {
     private Boolean supportDefault = null;
     private final Map<String, String> options;
     private final Map<String, String> serverSettings;
-    private boolean enableJsonSupport;
+    private boolean enableJsonSupportAsString = true;
     private transient Client client = null;
     private int numberOfRetries = DEFAULT_MAX_RETRIES;
 
-    public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, boolean enableJsonSupport) {
+    public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, boolean enableJsonSupportAsString) {
         this.url = url;
         this.username = username;
         this.password = password;
@@ -39,7 +39,7 @@ public class ClickHouseClientConfig implements Serializable {
         this.fullProductName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s)", ClickHouseSinkVersion.getVersion(), EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion());
         this.options = new HashMap<>(Optional.ofNullable(options).orElseGet(HashMap::new));
         this.serverSettings = new HashMap<>(Optional.ofNullable(serverSettings).orElseGet(HashMap::new));
-        this.enableJsonSupport =  enableJsonSupport;
+        this.enableJsonSupportAsString =  enableJsonSupportAsString;
         LOG.info("ClickHouseClientConfig: url={}, user={}, password={}, database={}", url, username, "x".repeat(password.length()), database);
         Client clientTmp = initClient(database);
 
@@ -127,9 +127,9 @@ public class ClickHouseClientConfig implements Serializable {
         return numberOfRetries;
     }
 
-    public void setEnableJsonSupport(boolean enableJsonSupport) {
-        this.enableJsonSupport = enableJsonSupport;
+    public void setEnableJsonSupportAsString(boolean enableJsonSupportAsString) {
+        this.enableJsonSupportAsString = enableJsonSupportAsString;
     }
 
-    public Boolean getEnableJsonSupport() { return  enableJsonSupport; }
+    public Boolean getEnableJsonSupportAsString() { return  enableJsonSupportAsString; }
 }

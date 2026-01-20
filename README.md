@@ -175,7 +175,7 @@ Planned for a future release — a complete end-to-end example will be added onc
 
 * A ZoneId must also be provided when performing date operations. 
 * Precision and scale must also be provided when performing decimal operations. 
-* To use JSON type, you need to enable `enableJsonSupport` in `ClickHouseClientConfig` . 
+* To use JSON type as a string, you need to enable `enableJsonSupportAsString` in `ClickHouseClientConfig` . 
 
 ## Configuration Options
 
