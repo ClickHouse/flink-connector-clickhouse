@@ -4,6 +4,7 @@ import com.clickhouse.client.api.Client;
 import com.clickhouse.client.api.ClientConfigProperties;
 import com.clickhouse.client.api.insert.InsertResponse;
 import com.clickhouse.client.api.insert.InsertSettings;
+import com.clickhouse.client.api.internal.ServerSettings;
 import com.clickhouse.data.ClickHouseFormat;
 import com.clickhouse.utils.Utils;
 import org.apache.flink.api.connector.sink2.Sink;
@@ -133,7 +134,11 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
         }
         InsertSettings insertSettings = new InsertSettings();
         insertSettings.setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true");
-        insertSettings.setOption("input_format_json_read_objects_as_strings", "1");
+        Boolean getEnableJsonSupport = clickHouseClientConfig.getEnableJsonSupport();
+        if (getEnableJsonSupport) {
+            insertSettings.serverSetting(ServerSettings.INPUT_FORMAT_BINARY_READ_JSON_AS_STRING,"1");
+        }
+
         long writeStartTime = System.currentTimeMillis();
         try {
             CompletableFuture<InsertResponse> response = chClient.insert(tableName, out -> {
@@ -188,6 +193,7 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
             Consumer<List<ClickHousePayload>> requestToRetry,
             Throwable error, long writeStartTime) {
         // TODO: extract from error if we can retry
+        System.out.println(error.getCause());
         long writeEndTime = System.currentTimeMillis();
         this.writeFailureLatencyHistogram.update(writeEndTime - writeStartTime);
         try {

@@ -26,10 +26,11 @@ public class ClickHouseClientConfig implements Serializable {
     private Boolean supportDefault = null;
     private final Map<String, String> options;
     private final Map<String, String> serverSettings;
+    private boolean enableJsonSupport;
     private transient Client client = null;
     private int numberOfRetries = DEFAULT_MAX_RETRIES;
 
-    public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings) {
+    public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, boolean enableJsonSupport) {
         this.url = url;
         this.username = username;
         this.password = password;
@@ -38,6 +39,7 @@ public class ClickHouseClientConfig implements Serializable {
         this.fullProductName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s)", ClickHouseSinkVersion.getVersion(), EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion());
         this.options = new HashMap<>(Optional.ofNullable(options).orElseGet(HashMap::new));
         this.serverSettings = new HashMap<>(Optional.ofNullable(serverSettings).orElseGet(HashMap::new));
+        this.enableJsonSupport =  enableJsonSupport;
         LOG.info("ClickHouseClientConfig: url={}, user={}, password={}, database={}", url, username, "x".repeat(password.length()), database);
         Client clientTmp = initClient(database);
 
@@ -58,9 +60,12 @@ public class ClickHouseClientConfig implements Serializable {
         }
     }
 
-
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName) {
-        this(url, username, password, database, tableName, new HashMap<>(), new HashMap<>());
+        this(url, username, password, database, tableName, new HashMap<>(), new HashMap<>(), false);
+    }
+
+    public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, boolean enableJsonSupport) {
+        this(url, username, password, database, tableName, new HashMap<>(), new HashMap<>(), enableJsonSupport);
     }
 
     private Client initClient(String database) {
@@ -72,6 +77,7 @@ public class ClickHouseClientConfig implements Serializable {
                 .setClientName(fullProductName)
                 .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true")
                 .setOptions(options);
+
         for (Map.Entry<String, String> entry : serverSettings.entrySet()) {
             clientBuilder.serverSetting(entry.getKey(), entry.getValue());
         }
@@ -120,4 +126,10 @@ public class ClickHouseClientConfig implements Serializable {
     public int getNumberOfRetries() {
         return numberOfRetries;
     }
+
+    public void setEnableJsonSupport(boolean enableJsonSupport) {
+        this.enableJsonSupport = enableJsonSupport;
+    }
+
+    public Boolean getEnableJsonSupport() { return  enableJsonSupport; }
 }

@@ -76,7 +76,6 @@ public class SimplePOJOConvertor extends POJOConvertor<SimplePOJO> {
 
         Serialize.writeTuple(out, input.getTupleOfObjects(), ClickHouseColumn.of("tupleOfObjects", ClickHouseDataType.Tuple, false, ClickHouseColumn.of("", ClickHouseDataType.String.toString()), ClickHouseColumn.of("", ClickHouseDataType.Int64.toString()), ClickHouseColumn.of("", ClickHouseDataType.Bool.toString()) ));
 
-        Serialize.writeString(out, input.getJsonString(), false, false, ClickHouseDataType.JSON, false, "jsonString");
     }
 
 }

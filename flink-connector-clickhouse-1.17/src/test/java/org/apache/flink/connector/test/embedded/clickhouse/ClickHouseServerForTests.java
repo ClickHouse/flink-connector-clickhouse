@@ -121,6 +121,13 @@ public class ClickHouseServerForTests {
         return client.queryAll(showDataSql);
     }
 
+    public static List<GenericRecord> extractData(String database, String tableName, String id, String expression) throws ExecutionException, InterruptedException {
+        String showDataSql = String.format("select %s,%s from `%s`.`%s` order by `%s` ASC", id, expression, database, tableName, id);
+        Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
+        return client.queryAll(showDataSql);
+    }
+
+
     public static int countParts(String table) {
         String countPartsSql = String.format("SELECT count(*) FROM system.parts WHERE table = '%s' and active = 1", table);
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);

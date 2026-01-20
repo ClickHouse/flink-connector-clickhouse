@@ -310,4 +310,9 @@ public class Serialize {
         SerializerUtils.serializeData(out, value, column);
     }
 
+    public static void writeJSON(OutputStream out, String value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            BinaryStreamUtils.writeString(out, convertToString(value));
+        }
+    }
 }

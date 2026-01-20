@@ -13,19 +13,23 @@ import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
 import org.apache.flink.connector.clickhouse.sink.convertor.CovidPOJOConvertor;
 import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOConvertor;
 import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOWithDateTimeConvertor;
+import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOWithJSONConvertor;
 import org.apache.flink.connector.clickhouse.sink.pojo.CovidPOJO;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJO;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJOWithDateTime;
+import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJOWithJSON;
 import org.apache.flink.connector.file.src.FileSource;
 import org.apache.flink.connector.file.src.reader.TextLineInputFormat;
 import org.apache.flink.connector.test.FlinkClusterTests;
 import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests;
+import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseTestHelpers;
 import org.apache.flink.connector.test.embedded.flink.EmbeddedFlinkClusterForTests;
 import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.json.JSONObject;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -100,7 +104,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "longList Array(Int64)," +
                 "mapOfStrings Map(String,String)," +
                 "tupleOfObjects Tuple(String,Int64,Boolean)," +
-                "jsonPayload JSON," +
+//                "jsonPayload JSON," +
                 ") " +
                 "ENGINE = MergeTree " +
                 "ORDER BY (longPrimitive); ";
@@ -613,6 +617,64 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
             Assertions.assertEquals(id, genericRecordList.get(j).getString("id"));
             Assertions.assertEquals(instant, genericRecordList.get(j).getZonedDateTime("created_at").toInstant());
             Assertions.assertEquals(numLogins, genericRecordList.get(j).getInteger("num_logins"));
+        }
+    }
+
+    @Test
+    void SimplePOJOWithJSONDataTest() throws Exception {
+        if (!isCloud() && !ClickHouseTestHelpers.getClickhouseVersion().equalsIgnoreCase("latest"))
+            return;
+        String tableName = "simple_pojo_with_json_data";
+
+        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
+        ClickHouseServerForTests.executeSql(dropTable);
+        // create table
+        String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
+                "longPrimitive Int64," +
+                "jsonPayload JSON," +
+                ") " +
+                "ENGINE = MergeTree " +
+                "ORDER BY (longPrimitive); ";
+        ClickHouseServerForTests.executeSql(tableSql);
+
+        TableSchema simplePOJOWithJSONTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
+
+        POJOConvertor<SimplePOJOWithJSON> simplePOJOWithJSONConvertor = new SimplePOJOWithJSONConvertor();
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(STREAM_PARALLELISM);
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName, true);
+        clickHouseClientConfig.setSupportDefault(simplePOJOWithJSONTableSchema.hasDefaults());
+        ElementConverter<SimplePOJOWithJSON, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(SimplePOJOWithJSON.class, simplePOJOWithJSONConvertor);
+
+        ClickHouseAsyncSink<SimplePOJOWithJSON> simplePOJOWithJSONSink = new ClickHouseAsyncSink<>(
+                convertorCovid,
+                MAX_BATCH_SIZE,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                MAX_TIME_IN_BUFFER_MS,
+                MAX_RECORD_SIZE_IN_BYTES,
+                clickHouseClientConfig
+        );
+
+        List<SimplePOJOWithJSON> simplePOJOWithJSONList = new ArrayList<>();
+        for (int i = 0; i < EXPECTED_ROWS; i++) {
+            simplePOJOWithJSONList.add(new SimplePOJOWithJSON(i));
+        }
+        // create from list
+        DataStream<SimplePOJOWithJSON> simplePOJOsWithJSON = env.fromElements(simplePOJOWithJSONList.toArray(new SimplePOJOWithJSON[0]));
+        // send to a sink
+        simplePOJOsWithJSON.sinkTo(simplePOJOWithJSONSink);
+        int rows = executeAsyncJob(env, tableName, 100, EXPECTED_ROWS);
+        Assertions.assertEquals(EXPECTED_ROWS, rows);
+
+        List<GenericRecord> genericRecordList = ClickHouseServerForTests.extractData(getDatabase(), tableName, "longPrimitive", "getSubcolumn(jsonPayload, 'bar') as bar");
+        for (int j = 0; j < genericRecordList.size(); j++) {
+            long longPrimitive = simplePOJOWithJSONList.get(j).getLongPrimitive();
+            String foo = genericRecordList.get(j).getString("bar");
+            Assertions.assertEquals(longPrimitive, genericRecordList.get(j).getLong("longPrimitive"));
+            Assertions.assertEquals("foo", foo);
         }
     }
 }
