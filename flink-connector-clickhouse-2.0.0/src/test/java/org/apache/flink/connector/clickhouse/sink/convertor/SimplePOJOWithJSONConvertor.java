@@ -2,6 +2,7 @@ package org.apache.flink.connector.clickhouse.sink.convertor;
 
 import com.clickhouse.data.ClickHouseDataType;
 import com.clickhouse.utils.Serialize;
+import com.clickhouse.utils.writer.DataWriter;
 import org.apache.flink.connector.clickhouse.convertor.POJOConvertor;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJOWithJSON;
 
@@ -9,11 +10,15 @@ import java.io.IOException;
 import java.io.OutputStream;
 
 public class SimplePOJOWithJSONConvertor extends POJOConvertor<SimplePOJOWithJSON> {
-    @Override
-    public void instrument(OutputStream out, SimplePOJOWithJSON input) throws IOException {
-        Serialize.writeInt64(out, input.getLongPrimitive(), false, false, ClickHouseDataType.Int64, false, "longPrimitive");
 
-        Serialize.writeJSON(out, input.getJsonString(), false, false, ClickHouseDataType.JSON, false, "jsonString");
+    public SimplePOJOWithJSONConvertor(boolean hasDefaults) {
+        super(hasDefaults);
+    }
+
+    @Override
+    public void instrument(DataWriter dataWriter, SimplePOJOWithJSON input) throws IOException {
+        dataWriter.writeInt64(input.getLongPrimitive(), false, ClickHouseDataType.Int64, false, "longPrimitive");
+        dataWriter.writeJSON(input.getJsonString(), false, ClickHouseDataType.JSON, false, "jsonString");
     }
 
 }
