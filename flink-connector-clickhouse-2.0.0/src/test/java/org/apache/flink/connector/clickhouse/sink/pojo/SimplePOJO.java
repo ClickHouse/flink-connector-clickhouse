@@ -6,6 +6,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 
+/**
+ * For testing most data types.
+ */
 public class SimplePOJO {
 
     private byte bytePrimitive;
