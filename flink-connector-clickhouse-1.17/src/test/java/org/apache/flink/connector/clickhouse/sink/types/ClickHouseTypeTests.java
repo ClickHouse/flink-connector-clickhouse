@@ -75,7 +75,7 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
 
 
         TableSchema simpleTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
-        POJOConvertor<SimplePOJO> simplePOJOConvertor = new SimplePOJOConvertor();
+        POJOConvertor<SimplePOJO> simplePOJOConvertor = new SimplePOJOConvertor(simpleTableSchema.hasDefaults());
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(STREAM_PARALLELISM);
@@ -127,7 +127,7 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
         ClickHouseServerForTests.executeSql(tableSql);
 
         TableSchema simpleTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
-        POJOConvertor<DateTimePOJO> simplePOJOWithDateTimeConvertor = new DateTimePOJOConvertor();
+        POJOConvertor<DateTimePOJO> simplePOJOWithDateTimeConvertor = new DateTimePOJOConvertor(simpleTableSchema.hasDefaults());
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(STREAM_PARALLELISM);
