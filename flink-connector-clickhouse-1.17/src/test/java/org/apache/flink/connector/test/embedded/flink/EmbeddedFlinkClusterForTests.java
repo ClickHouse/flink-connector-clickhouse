@@ -3,7 +3,10 @@ package org.apache.flink.connector.test.embedded.flink;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.RestOptions;
 import org.apache.flink.configuration.TaskManagerOptions;
+import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests;
+import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.runtime.testutils.MiniClusterResourceConfiguration;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.test.util.MiniClusterWithClientResource;
 
 public class EmbeddedFlinkClusterForTests {
@@ -41,5 +44,23 @@ public class EmbeddedFlinkClusterForTests {
         if (flinkCluster == null)
             throw new RuntimeException("No MiniCluster available");
         return flinkCluster;
+    }
+
+    public static int executeAsyncJob(StreamExecutionEnvironment env, String tableName, int numIterations, int expectedRows) throws Exception {
+        JobClient jobClient = env.executeAsync("Read GZipped CSV with FileSource");
+        int rows = 0;
+        int iterations = 0;
+        while (iterations < numIterations) {
+            Thread.sleep(1000);
+            iterations++;
+            rows = ClickHouseServerForTests.countRows(tableName);
+            System.out.println("Rows: " + rows + " EXPECTED_ROWS: " + expectedRows);
+            if (rows == expectedRows)
+                break;
+
+        }
+        // cancel job
+        jobClient.cancel();
+        return rows;
     }
 }
