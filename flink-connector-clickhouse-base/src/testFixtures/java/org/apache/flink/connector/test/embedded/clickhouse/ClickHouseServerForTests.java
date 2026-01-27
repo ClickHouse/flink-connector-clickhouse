@@ -7,7 +7,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.clickhouse.ClickHouseContainer;
 import org.testcontainers.containers.Network;
+import org.testcontainers.containers.wait.strategy.Wait;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
@@ -59,6 +61,8 @@ public class ClickHouseServerForTests {
                    .withNetwork(Network.newNetwork());
 
             }
+            db.waitingFor(Wait.forHealthcheck());
+            db.withStartupTimeout(Duration.ofSeconds(60));
             db.start();
         }
         initConfiguration();
