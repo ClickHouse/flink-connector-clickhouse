@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        clickhouse: [ "23.7", "24.3", "latest", "cloud", "head" ]
+        clickhouse: [ "25.3", "25.8", "25.10", "25.11", "25.12", "latest", "cloud", "head" ]
         flink: [ "1.17.2", "1.18.1", "1.19.3", "1.20.2"]
     name: Apache Flink ${{ matrix.flink }} ClickHouse Connector tests with ClickHouse ${{ matrix.clickhouse }}
     steps:
@@ -50,7 +50,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        clickhouse: [ "23.7", "24.3", "latest", "cloud", "head" ]
+        clickhouse: [ "25.3", "25.8", "25.10", "25.11", "25.12", "latest", "cloud", "head" ]
     name: Apache Flink 2.0.0 ClickHouse Connector tests with ClickHouse ${{ matrix.clickhouse }}
     steps:
       - name: Check for Cloud Credentials

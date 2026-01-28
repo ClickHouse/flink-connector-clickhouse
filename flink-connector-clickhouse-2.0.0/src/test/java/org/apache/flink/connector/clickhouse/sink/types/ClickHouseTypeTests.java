@@ -11,8 +11,10 @@ import org.apache.flink.connector.clickhouse.sink.ClickHouseAsyncSink;
 import org.apache.flink.connector.clickhouse.sink.ClickHouseClientConfig;
 import org.apache.flink.connector.clickhouse.sink.convertor.DateTimePOJOConvertor;
 import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOConvertor;
+import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOWithDefaultsConvertor;
 import org.apache.flink.connector.clickhouse.sink.pojo.DateTimePOJO;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJO;
+import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJOWithDefaults;
 import org.apache.flink.connector.test.FlinkClusterTests;
 import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -29,9 +31,6 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import static org.apache.flink.connector.clickhouse.sink.ClickHouseSinkTestUtils.*;
-import static org.apache.flink.connector.clickhouse.sink.ClickHouseSinkTestUtils.MAX_BATCH_SIZE_IN_BYTES;
-import static org.apache.flink.connector.clickhouse.sink.ClickHouseSinkTestUtils.MAX_RECORD_SIZE_IN_BYTES;
-import static org.apache.flink.connector.clickhouse.sink.ClickHouseSinkTestUtils.MAX_TIME_IN_BUFFER_MS;
 import static org.apache.flink.connector.test.embedded.flink.EmbeddedFlinkClusterForTests.executeAsyncJob;
 
 public class ClickHouseTypeTests extends FlinkClusterTests {
@@ -166,4 +165,56 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
             Assertions.assertEquals(numLogins, genericRecordList.get(j).getInteger("num_logins"));
         }
     }
+
+    @Test
+    void testSimplePOJOWithDefaultsTypes() throws Exception {
+        String tableName = "simple_pojo_with_defaults";
+
+        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
+        ClickHouseServerForTests.executeSql(dropTable);
+        // create table
+        String tableSql = "CREATE TABLE `" + FlinkClusterTests.getDatabase() + "`.`" + tableName + "` (" +
+                "id String," +
+                "created_on DateTime64 DEFAULT now('UTC')" +
+                ") " +
+                "ENGINE = MergeTree " +
+                "ORDER BY (id); ";
+        ClickHouseServerForTests.executeSql(tableSql);
+
+
+        TableSchema simpleTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
+        POJOConvertor<SimplePOJOWithDefaults> simplePOJOConvertor = new SimplePOJOWithDefaultsConvertor(simpleTableSchema.hasDefaults());
+
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(STREAM_PARALLELISM);
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
+
+        ElementConverter<SimplePOJOWithDefaults, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(SimplePOJOWithDefaults.class, simplePOJOConvertor);
+
+        ClickHouseAsyncSink<SimplePOJOWithDefaults> simplePOJOWithDefaultsSink = new ClickHouseAsyncSink<>(
+                convertorCovid,
+                MAX_BATCH_SIZE,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                MAX_TIME_IN_BUFFER_MS,
+                MAX_RECORD_SIZE_IN_BYTES,
+                clickHouseClientConfig
+        );
+
+        List<SimplePOJOWithDefaults> simplePOJOList = new ArrayList<>();
+        for (int i = 0; i < EXPECTED_ROWS; i++) {
+            simplePOJOList.add(new SimplePOJOWithDefaults(i));
+        }
+        // create from list
+        DataStream<SimplePOJOWithDefaults> simplePOJOs = env.fromElements(simplePOJOList.toArray(new SimplePOJOWithDefaults[0]));
+        // send to a sink
+        simplePOJOs.sinkTo(simplePOJOWithDefaultsSink);
+        int rows = executeAsyncJob(env, tableName, 10, EXPECTED_ROWS);
+        Assertions.assertEquals(EXPECTED_ROWS, rows);
+
+    }
+
 }
