@@ -191,10 +191,10 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
 
-        ElementConverter<SimplePOJOWithDefaults, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(SimplePOJOWithDefaults.class, simplePOJOConvertor);
+        ElementConverter<SimplePOJOWithDefaults, ClickHousePayload> convertorSimplePOJOWithDefaults = new ClickHouseConvertor<>(SimplePOJOWithDefaults.class, simplePOJOConvertor);
 
         ClickHouseAsyncSink<SimplePOJOWithDefaults> simplePOJOWithDefaultsSink = new ClickHouseAsyncSink<>(
-                convertorCovid,
+                convertorSimplePOJOWithDefaults,
                 MAX_BATCH_SIZE,
                 MAX_IN_FLIGHT_REQUESTS,
                 MAX_BUFFERED_REQUESTS,
