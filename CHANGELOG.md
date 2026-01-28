@@ -1,5 +1,6 @@
 ## 0.1.4
 * Add JSON type support https://github.com/ClickHouse/flink-connector-clickhouse/pull/106
+* Enhance instrument api https://github.com/ClickHouse/flink-connector-clickhouse/pull/99
 ## 0.1.3
 * Added an option to configure the client with server-side parameters. https://github.com/ClickHouse/flink-connector-clickhouse/pull/85 
 * Added check if ClickHouse is alive before start. https://github.com/ClickHouse/flink-connector-clickhouse/issues/76 
