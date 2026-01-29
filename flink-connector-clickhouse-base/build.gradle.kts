@@ -63,3 +63,31 @@ sourceSets {
         }
     }
 }
+
+tasks.register("generateVersionClass") {
+    val versionFile = file("../version.txt")
+    val outputDir = file("build/generated/sources/version/java")
+
+    inputs.file(versionFile)
+    outputs.dir(outputDir)
+
+    doLast {
+        val version = versionFile.readText().trim()
+        val versionClass =
+"""package org.apache.flink.connector.clickhouse.sink;
+
+public class ClickHouseSinkVersion {
+    public static String getVersion() {
+        return "$version";
+    }
+}
+"""
+        val outputFile = File(outputDir, "org/apache/flink/connector/clickhouse/sink/ClickHouseSinkVersion.java")
+        outputFile.parentFile.mkdirs()
+        outputFile.writeText(versionClass)
+    }
+}
+
+tasks.named("compileJava") {
+    dependsOn("generateVersionClass")
+}

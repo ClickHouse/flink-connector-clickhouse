@@ -84,6 +84,7 @@ sourceSets {
         }
         java {
             srcDirs("src/main/java")
+            srcDir("../flink-connector-clickhouse-base/build/generated/sources/version/java")
         }
     }
     test {
