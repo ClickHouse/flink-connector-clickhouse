@@ -14,6 +14,7 @@ plugins {
 val scalaVersion = "2.13.12"
 val sinkVersion: String by rootProject.extra
 val clickhouseVersion: String by rootProject.extra // Temporary until we have a Java Client release
+val versionFile = "version.txt"
 
 repositories {
     // Use Maven Central for resolving dependencies.
@@ -62,4 +63,32 @@ sourceSets {
             srcDirs("src/test/java")
         }
     }
+}
+
+tasks.register("generateVersionClass") {
+    val versionFile = rootProject.file(versionFile)
+    val outputDir = project.layout.buildDirectory.file("generated/sources/version/java").get().asFile
+
+    inputs.file(versionFile)
+    outputs.dir(outputDir)
+
+    doLast {
+        val version = versionFile.readText().trim()
+        val versionClass =
+"""package org.apache.flink.connector.clickhouse.sink;
+
+public class ClickHouseSinkVersion {
+    public static String getVersion() {
+        return "$version";
+    }
+}
+"""
+        val outputFile = File(outputDir, "org/apache/flink/connector/clickhouse/sink/ClickHouseSinkVersion.java")
+        outputFile.parentFile.mkdirs()
+        outputFile.writeText(versionClass)
+    }
+}
+
+tasks.named("compileJava") {
+    dependsOn("generateVersionClass")
 }

@@ -6,10 +6,20 @@ plugins {
     id("com.gradleup.shadow") version "9.0.2"
 }
 
-val sinkVersion by extra("0.1.3")
+val sinkVersion by extra(getProjectVersion())
 val flinkVersion by extra("1.18.0")
 val clickhouseVersion by extra("0.9.5")
 val junitVersion by extra("5.8.2")
+
+fun isVersionFileExists(): Boolean = file("version.txt").exists()
+
+fun getVersionFromFile(): String = file("version.txt").readText().trim()
+
+fun getProjectVersion(): String {
+    if (!isVersionFileExists())
+        throw IllegalStateException("Cannot find version.txt")
+    return getVersionFromFile()
+}
 
 allprojects {
     group = "org.apache.flink"
