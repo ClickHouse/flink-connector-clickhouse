@@ -88,6 +88,7 @@ sourceSets {
         }
         java {
             srcDirs("src/main/java")
+            srcDir(project(":flink-connector-clickhouse-base").layout.buildDirectory.file("generated/sources/version/java").get().asFile) // to include ClickHouseSinkVersion in the classpath
         }
     }
     test {
@@ -114,6 +115,7 @@ val shadowSourcesJar by tasks.registering(Jar::class) {
     archiveClassifier.set("all-sources")
     from(sourceSets.main.get().allSource)
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    dependsOn(":flink-connector-clickhouse-base:generateVersionClass")
 }
 
 publishing {
