@@ -72,11 +72,11 @@ public class SimplePOJOConvertor extends POJOConvertor<SimplePOJO> {
         dataWriter.writeDate(input.getDateObject(), false, ClickHouseDataType.Date, false, "dateObject");
         dataWriter.writeDate32(input.getDate32Object(), false, ClickHouseDataType.Date32, false, "date32Object");
 
-        dataWriter.writeTimeDate(input.getDateTimeObject_Local(), false, ClickHouseDataType.DateTime, false, "dateTimeObject_Local");
-        dataWriter.writeTimeDate64(input.getDateTime64Object_Local(), false, ClickHouseDataType.DateTime64, false, "dateTime64Object_Local", 6);
+        dataWriter.writeDateTime(input.getDateTimeObject_Local(), false, ClickHouseDataType.DateTime, false, "dateTimeObject_Local");
+        dataWriter.writeDateTime64(input.getDateTime64Object_Local(), false, ClickHouseDataType.DateTime64, false, "dateTime64Object_Local", 6);
 
-        dataWriter.writeTimeDate(input.getDateTimeObject_Zoned(), false, ClickHouseDataType.DateTime, false, "dateTimeObject_Zoned");
-        dataWriter.writeTimeDate64(input.getDateTime64Object_Zoned(), false, ClickHouseDataType.DateTime64, false, "dateTime64Object_Zoned", 6);
+        dataWriter.writeDateTime(input.getDateTimeObject_Zoned(), false, ClickHouseDataType.DateTime, false, "dateTimeObject_Zoned");
+        dataWriter.writeDateTime64(input.getDateTime64Object_Zoned(), false, ClickHouseDataType.DateTime64, false, "dateTime64Object_Zoned", 6);
 
         dataWriter.writeUUID(input.getUuid(), false, ClickHouseDataType.UUID, false, "uuid");
 

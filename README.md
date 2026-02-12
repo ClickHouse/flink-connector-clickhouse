@@ -134,44 +134,48 @@ Planned for a future release — a complete end-to-end example will be added onc
 
 ## Supported ClickHouse Types
 
-| Java Type       | ClickHouse Type | Supported | Serialize Method           |
-|-----------------|-----------------|-----------|----------------------------| 
-| byte/Byte       | Int8            | ✅         | Serialize.writeInt8        |
-| short/Short     | Int16           | ✅         | Serialize.writeInt16       |
-| int/Integer     | Int32           | ✅         | Serialize.writeInt32       |
-| long/Long       | Int64           | ✅         | Serialize.writeInt64       |
-| BigInteger      | Int128          | ✅         | Serialize.writeInt124      |
-| BigInteger      | Int256          | ✅         | Serialize.writeInt256      |
-| int/Integer     | UInt8           | ✅         | Serialize.writeUInt8       |
-| int/Integer     | UInt16          | ✅         | Serialize.writeUInt16      |
-| long/Long       | UInt32          | ✅         | Serialize.writeUInt32      |
-| long/Long       | UInt64          | ✅         | Serialize.writeUInt64      |
-| BigInteger      | UInt128         | ✅         | Serialize.writeUInt128     |
-| BigInteger      | UInt256         | ✅         | Serialize.writeUInt256     |
-| BigDecimal      | Decimal         | ✅         | Serialize.writeDecimal     |
-| BigDecimal      | Decimal32       | ✅         | Serialize.writeDecimal     |
-| BigDecimal      | Decimal64       | ✅         | Serialize.writeDecimal     |
-| BigDecimal      | Decimal128      | ✅         | Serialize.writeDecimal     |
-| BigDecimal      | Decimal256      | ✅         | Serialize.writeDecimal     |
-| float/Float     | Float           | ✅         | Serialize.writeFloat32     |
-| double/Double   | Double          | ✅         | Serialize.writeFloat64     |
-| boolean/Boolean | Boolean         | ✅         | Serialize.writeBoolean     |
-| String          | String          | ✅         | Serialize.writeString      |
-| String          | FixedString     | ✅         | Serialize.writeFixedString |
-| LocalDate       | Date            | ✅         | Serialize.writeDate        |
-| LocalDate       | Date32          | ✅         | Serialize.writeDate32      |
-| LocalDateTime   | DateTime        | ✅         | Serialize.writeDateTime    |
-| LocalDateTime   | DateTime64      | ✅         | Serialize.writeDateTime64  |
-| int/Integer     | Time            | ❌         | N/A                        |
-| long/Long       | Time64          | ❌         | N/A                        |
-| byte/Byte       | Enum8           | ✅         | Serialize.writeInt8        |
-| int/Integer     | Enum16          | ✅         | Serialize.writeInt16       |
-| java.util.UUID  | UUID            | ✅         | Serialize.writeIntUUID     |
-| String          | JSON            | ✅         | Serialize.writeJSON        |
-| Array<Type>     | Array<Type>     | ✅         | Serialize.writeArray       |
-| Map<K,V>        | Map<K,V>        | ✅         | Serialize.writeMap         |
-| Tuple<Type,..>  | Tuple<T1,T2,..> | ✅         | Serialize.writeTuple       |
-| Object          | Variant         | ❌         | N/A                        |
+| Java Type       | ClickHouse Type | Supported | Serialize Method            |
+|-----------------|-----------------|-----------|-----------------------------| 
+| byte/Byte       | Int8            | ✅         | DataWriter.writeInt8        |
+| short/Short     | Int16           | ✅         | DataWriter.writeInt16       |
+| int/Integer     | Int32           | ✅         | DataWriter.writeInt32       |
+| long/Long       | Int64           | ✅         | DataWriter.writeInt64       |
+| BigInteger      | Int128          | ✅         | DataWriter.writeInt124      |
+| BigInteger      | Int256          | ✅         | DataWriter.writeInt256      |
+| short/Short     | UInt8           | ✅         | DataWriter.writeUInt8       |
+| int/Integer     | UInt8           | ✅         | DataWriter.writeUInt8       |
+| int/Integer     | UInt16          | ✅         | DataWriter.writeUInt16      |
+| long/Long       | UInt32          | ✅         | DataWriter.writeUInt32      |
+| long/Long       | UInt64          | ✅         | DataWriter.writeUInt64      |
+| BigInteger      | UInt64          | ✅         | DataWriter.writeUInt64      |
+| BigInteger      | UInt128         | ✅         | DataWriter.writeUInt128     |
+| BigInteger      | UInt256         | ✅         | DataWriter.writeUInt256     |
+| BigDecimal      | Decimal         | ✅         | DataWriter.writeDecimal     |
+| BigDecimal      | Decimal32       | ✅         | DataWriter.writeDecimal     |
+| BigDecimal      | Decimal64       | ✅         | DataWriter.writeDecimal     |
+| BigDecimal      | Decimal128      | ✅         | DataWriter.writeDecimal     |
+| BigDecimal      | Decimal256      | ✅         | DataWriter.writeDecimal     |
+| float/Float     | Float           | ✅         | DataWriter.writeFloat32     |
+| double/Double   | Double          | ✅         | DataWriter.writeFloat64     |
+| boolean/Boolean | Boolean         | ✅         | DataWriter.writeBoolean     |
+| String          | String          | ✅         | DataWriter.writeString      |
+| String          | FixedString     | ✅         | DataWriter.writeFixedString |
+| LocalDate       | Date            | ✅         | DataWriter.writeDate        |
+| LocalDate       | Date32          | ✅         | DataWriter.writeDate32      |
+| LocalDateTime   | DateTime        | ✅         | DataWriter.writeDateTime    |
+| ZonedDateTime   | DateTime        | ✅         | DataWriter.writeDateTime    |
+| LocalDateTime   | DateTime64      | ✅         | DataWriter.writeDateTime64  |
+| ZonedDateTime   | DateTime64      | ✅         | DataWriter.writeDateTime64  |
+| int/Integer     | Time            | ❌         | N/A                         |
+| long/Long       | Time64          | ❌         | N/A                         |
+| byte/Byte       | Enum8           | ✅         | DataWriter.writeInt8        |
+| int/Integer     | Enum16          | ✅         | DataWriter.writeInt16       |
+| java.util.UUID  | UUID            | ✅         | DataWriter.writeIntUUID     |
+| String          | JSON            | ✅         | DataWriter.writeJSON        |
+| Array<Type>     | Array<Type>     | ✅         | DataWriter.writeArray       |
+| Map<K,V>        | Map<K,V>        | ✅         | DataWriter.writeMap         |
+| Tuple<Type,..>  | Tuple<T1,T2,..> | ✅         | DataWriter.writeTuple       |
+| Object          | Variant         | ❌         | N/A                         |
 
 * A ZoneId must also be provided when performing date operations. 
 * Precision and scale must also be provided when performing decimal operations. 

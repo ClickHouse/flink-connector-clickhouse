@@ -69,8 +69,8 @@ public class SimplePOJOConvertor extends POJOConvertor<SimplePOJO> {
 
         dataWriter.writeDate(input.getDate(), false, ClickHouseDataType.Date, false, "v_date");
         dataWriter.writeDate32(input.getDate32(), false, ClickHouseDataType.Date32, false, "v_date32");
-        dataWriter.writeTimeDate(input.getDateTime(), false, ClickHouseDataType.DateTime, false, "v_dateTime");
-        dataWriter.writeTimeDate64(input.getDateTime64(), false, ClickHouseDataType.DateTime64, false, "v_dateTime64", 1);
+        dataWriter.writeDateTime(input.getDateTime(), false, ClickHouseDataType.DateTime, false, "v_dateTime");
+        dataWriter.writeDateTime64(input.getDateTime64(), false, ClickHouseDataType.DateTime64, false, "v_dateTime64", 1);
 
         dataWriter.writeUUID(input.getUuid(), false, ClickHouseDataType.UUID, false, "uuid");
 

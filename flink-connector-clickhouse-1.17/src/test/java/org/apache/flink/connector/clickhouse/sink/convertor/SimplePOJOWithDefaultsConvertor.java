@@ -16,6 +16,6 @@ public class SimplePOJOWithDefaultsConvertor extends POJOConvertor<SimplePOJOWit
     @Override
     public void instrument(DataWriter dataWriter, SimplePOJOWithDefaults input) throws IOException {
        dataWriter.writeInt32(input.getId(), false, ClickHouseDataType.Int32, false, "id");
-       dataWriter.writeTimeDate64(input.getCreatedOn(), false, ClickHouseDataType.DateTime64, true, "created_on", 6);
+       dataWriter.writeDateTime64(input.getCreatedOn(), false, ClickHouseDataType.DateTime64, true, "created_on", 6);
     }
 }

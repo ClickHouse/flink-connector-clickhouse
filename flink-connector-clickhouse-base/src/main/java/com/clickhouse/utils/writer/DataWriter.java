@@ -56,25 +56,25 @@ public class DataWriter {
     }
 
     // Support for DateTime section
-    public void writeTimeDate(LocalDateTime value, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+    public void writeDateTime(LocalDateTime value, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         if (Serialize.writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
             SerializerUtils.writeDateTime(out, value, ZoneId.of("UTC")); // TODO: check
         }
     }
 
-    public void writeTimeDate(ZonedDateTime value, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+    public void writeDateTime(ZonedDateTime value, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         if (Serialize.writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
             SerializerUtils.writeDateTime(out, value, ZoneId.of("UTC")); // TODO: check
         }
     }
 
-    public void writeTimeDate64(LocalDateTime value, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, int scale) throws IOException {
+    public void writeDateTime64(LocalDateTime value, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, int scale) throws IOException {
         if (Serialize.writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
             SerializerUtils.writeDateTime64(out, value, scale, ZoneId.of("UTC")); // TODO: check
         }
     }
 
-    public void writeTimeDate64(ZonedDateTime value, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, int scale) throws IOException {
+    public void writeDateTime64(ZonedDateTime value, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, int scale) throws IOException {
         if (Serialize.writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
             SerializerUtils.writeDateTime64(out, value, scale, ZoneId.of("UTC")); // TODO: check
         }
