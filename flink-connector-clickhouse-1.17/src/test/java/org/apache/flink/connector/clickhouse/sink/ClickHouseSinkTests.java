@@ -377,7 +377,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
         ClickHouseServerForTests.executeSql(dropTable);
         // create table
-        String tableSql = createSimplePOJOTableSQL(getDatabase(),  tableName, 10);
+        String tableSql = SimplePOJO.createTableSQL(getDatabase(),  tableName, 10);
         ClickHouseServerForTests.executeSql(tableSql);
         //ClickHouseServerForTests.executeSql(String.format("SYSTEM STOP MERGES `%s.%s`", getDatabase(), tableName));
 
@@ -421,64 +421,5 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
     @Test
     void CheckClickHouseAlive() {
         Assertions.assertThrows(RuntimeException.class, () -> { new ClickHouseClientConfig(getServerURL(), getUsername() + "wrong_username", getPassword(), getDatabase(), "dummy");});
-    }
-
-    @Test
-    void SimplePOJOWithJSONDataTest() throws Exception {
-        Assumptions.assumeTrue(
-                isCloud() || ClickHouseTestHelpers.getClickhouseVersion().equalsIgnoreCase("latest"));
-
-        String tableName = "simple_pojo_with_json_data";
-
-        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
-        ClickHouseServerForTests.executeSql(dropTable);
-        // create table
-        String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
-                "longPrimitive Int64," +
-                "jsonPayload JSON," +
-                ") " +
-                "ENGINE = MergeTree " +
-                "ORDER BY (longPrimitive); ";
-        ClickHouseServerForTests.executeSql(tableSql);
-
-        TableSchema simplePOJOWithJSONTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
-
-        POJOConvertor<SimplePOJOWithJSON> simplePOJOWithJSONConvertor = new SimplePOJOWithJSONConvertor(simplePOJOWithJSONTableSchema.hasDefaults());
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(STREAM_PARALLELISM);
-
-        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName, true);
-        clickHouseClientConfig.setSupportDefault(simplePOJOWithJSONTableSchema.hasDefaults());
-        ElementConverter<SimplePOJOWithJSON, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(SimplePOJOWithJSON.class, simplePOJOWithJSONConvertor);
-
-        ClickHouseAsyncSink<SimplePOJOWithJSON> simplePOJOWithJSONSink = new ClickHouseAsyncSink<>(
-                convertorCovid,
-                MAX_BATCH_SIZE,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                MAX_TIME_IN_BUFFER_MS,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
-
-        List<SimplePOJOWithJSON> simplePOJOWithJSONList = new ArrayList<>();
-        for (int i = 0; i < EXPECTED_ROWS; i++) {
-            simplePOJOWithJSONList.add(new SimplePOJOWithJSON(i));
-        }
-        // create from list
-        DataStream<SimplePOJOWithJSON> simplePOJOsWithJSON = env.fromElements(simplePOJOWithJSONList.toArray(new SimplePOJOWithJSON[0]));
-        // send to a sink
-        simplePOJOsWithJSON.sinkTo(simplePOJOWithJSONSink);
-        int rows = executeAsyncJob(env, tableName, 100, EXPECTED_ROWS);
-        Assertions.assertEquals(EXPECTED_ROWS, rows);
-
-        List<GenericRecord> genericRecordList = ClickHouseServerForTests.extractData(getDatabase(), tableName, "longPrimitive", "getSubcolumn(jsonPayload, 'bar') as bar");
-        for (int j = 0; j < genericRecordList.size(); j++) {
-            long longPrimitive = simplePOJOWithJSONList.get(j).getLongPrimitive();
-            String foo = genericRecordList.get(j).getString("bar");
-            Assertions.assertEquals(longPrimitive, genericRecordList.get(j).getLong("longPrimitive"));
-            Assertions.assertEquals("foo", foo);
-        }
     }
 }

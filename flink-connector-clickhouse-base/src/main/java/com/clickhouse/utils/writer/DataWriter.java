@@ -97,28 +97,28 @@ public class DataWriter {
     // Int8
     public void writeInt8(Byte value, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         if (Serialize.writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
-            BinaryStreamUtils.writeInt8(out, Serialize.convertToInteger(value));
+            BinaryStreamUtils.writeInt8(out, value);
         }
     }
 
     // Int16
     public void writeInt16(Short value, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         if (Serialize.writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
-            BinaryStreamUtils.writeInt16(out, Serialize.convertToInteger(value));
+            BinaryStreamUtils.writeInt16(out, value);
         }
     }
 
     // Int32
     public void writeInt32(Integer value, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         if (Serialize.writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
-            BinaryStreamUtils.writeInt32(out, Serialize.convertToInteger(value));
+            BinaryStreamUtils.writeInt32(out, value);
         }
     }
 
     // Int64
     public void writeInt64(Long value, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         if (Serialize.writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
-            BinaryStreamUtils.writeInt64(out, Serialize.convertToInteger(value));
+            BinaryStreamUtils.writeInt64(out, value);
         }
     }
 
@@ -151,6 +151,12 @@ public class DataWriter {
     public void writeUInt32(long value, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         if (Serialize.writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
             BinaryStreamUtils.writeUnsignedInt32(out, value);
+        }
+    }
+
+    public void writeUInt64(BigInteger value, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
+        if (Serialize.writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+            BinaryStreamUtils.writeUnsignedInt64(out, value);
         }
     }
 
