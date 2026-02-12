@@ -24,6 +24,7 @@ public class ClickHouseServerForTests {
     protected static String password = null;
     protected static boolean isSSL = false;
 
+    private static final String SELECT_STATEMENT_TEMPLATE = "select %s from `%s`.`%s` order by `%s` ASC";
 
     public static void initConfiguration() {
         if (isCloud) {
@@ -115,16 +116,23 @@ public class ClickHouseServerForTests {
         System.out.println("\n-----------------");
     }
 
-    public static List<GenericRecord> extractData(String database, String tableName, String id) throws ExecutionException, InterruptedException {
-        String showDataSql = String.format("select * from `%s`.`%s` order by `%s` ASC", database, tableName, id);
+    public static List<GenericRecord> extractAllData(String database, String tableName, String orderByCol) throws ExecutionException, InterruptedException {
+        return extractData("*", database, tableName, orderByCol);
+    }
+
+    public static List<GenericRecord> extractData(String selectColsCommaSeparated, String database, String tableName, String orderByCol) throws ExecutionException, InterruptedException {
+        String showDataSql = String.format(SELECT_STATEMENT_TEMPLATE, selectColsCommaSeparated, database, tableName, orderByCol);
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
         return client.queryAll(showDataSql);
     }
 
-    public static List<GenericRecord> extractData(String database, String tableName, String id, String expression) throws ExecutionException, InterruptedException {
-        String showDataSql = String.format("select %s,%s from `%s`.`%s` order by `%s` ASC", id, expression, database, tableName, id);
+    public static <T> List<T> extractAllDataToPOJO(String database, String tableName, String orderByCol, Class<T> pojoClass) throws ExecutionException, InterruptedException {
+        // NOTE: see DefaultColumnToMethodMatchingStrategy.java for rules the pojo class must follow in order to be deserialized correctly
+        String showDataSql = String.format(SELECT_STATEMENT_TEMPLATE, "*", database, tableName, orderByCol);
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
-        return client.queryAll(showDataSql);
+        TableSchema schema = getTableSchema(tableName, database);
+        client.register(pojoClass, schema);
+        return client.queryAll(showDataSql, pojoClass, schema);
     }
 
     public static int countParts(String table) {
@@ -147,25 +155,22 @@ public class ClickHouseServerForTests {
         List<GenericRecord> countResult = client.queryAll(countSql);
         return countResult.get(0).getInteger(1);
     }
-
     // http_user_agent
     public static String extractProductName(String databaseName, String tableName, String startWith) {
         String extractProductName = String.format("SELECT http_user_agent, tables FROM clusterAllReplicas('default', system.query_log) WHERE type = 'QueryStart' AND query_kind = 'Insert' AND has(databases,'%s') AND has(tables,'%s.%s') and startsWith(http_user_agent, '%s') LIMIT 100", databaseName, databaseName, tableName, startWith);
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
         List<GenericRecord> userAgentResult = client.queryAll(extractProductName);
-        String userAgentValue = null;
         if (!userAgentResult.isEmpty()) {
-            for (GenericRecord userAgent : userAgentResult) {
-                userAgentValue = userAgent.getString(1);
-                if (userAgentValue.contains(startWith))
-                    return userAgent.getString(1);
-            }
-            throw new RuntimeException("Can not extract product name from " + userAgentValue);
+            return userAgentResult.get(0).getString(1);
         }
         throw new RuntimeException("Query is returning empty result.");
     }
 
     public static TableSchema getTableSchema(String table) throws ExecutionException, InterruptedException {
+        return getTableSchema(table, database);
+    }
+
+    private static TableSchema getTableSchema(String table, String database) {
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
         return client.getTableSchema(table, database);
     }

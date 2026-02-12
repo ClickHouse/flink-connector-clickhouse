@@ -33,27 +33,31 @@ public class SimplePOJOConvertor extends POJOConvertor<SimplePOJO> {
         dataWriter.writeInt128(input.getBigInteger128(), false, ClickHouseDataType.Int128, false, "bigInteger128");
         dataWriter.writeInt256(input.getBigInteger256(), false, ClickHouseDataType.Int256, false, "bigInteger256");
 
-        // UIntX
-        dataWriter.writeUInt8(input.getUint8Primitive(), false, ClickHouseDataType.UInt8, false, "uint8Primitive");
-        dataWriter.writeUInt8(input.getUint8Object(), false, ClickHouseDataType.UInt8, false, "uint8Object");
+        dataWriter.writeUInt8(input.getUint8Primitive_Int(), false, ClickHouseDataType.UInt8, false, "uint8Primitive_Int");
+        dataWriter.writeUInt8(input.getUint8Object_Int(), false, ClickHouseDataType.UInt8, false, "uint8Object_Int");
 
-        dataWriter.writeUInt16(input.getUint16Primitive(), false, ClickHouseDataType.UInt16, false, "uint8Primitive");
-        dataWriter.writeUInt16(input.getUint16Object(), false, ClickHouseDataType.UInt16, false, "uint8Object");
+        dataWriter.writeUInt8(input.getUint8Primitive_Short(), false, ClickHouseDataType.UInt8, false, "uint8Primitive_Short");
+        dataWriter.writeUInt8(input.getUint8Object_Short(), false, ClickHouseDataType.UInt8, false, "uint8Object_Short");
 
-        dataWriter.writeUInt32(input.getUint32Primitive(), false, ClickHouseDataType.UInt32, false, "uint8Primitive");
-        dataWriter.writeUInt32(input.getUint32Object(), false, ClickHouseDataType.UInt32, false, "uint8Object");
+        dataWriter.writeUInt16(input.getUint16Primitive(), false, ClickHouseDataType.UInt16, false, "uint16Primitive");
+        dataWriter.writeUInt16(input.getUint16Object(), false, ClickHouseDataType.UInt16, false, "uint16Object");
 
-        dataWriter.writeUInt64(input.getUint64Primitive(), false, ClickHouseDataType.UInt64, false, "uint8Primitive");
-        dataWriter.writeUInt64(input.getUint64Object(), false, ClickHouseDataType.UInt64, false, "uint8Object");
+        dataWriter.writeUInt32(input.getUint32Primitive(), false, ClickHouseDataType.UInt32, false, "uint32Primitive");
+        dataWriter.writeUInt32(input.getUint32Object(), false, ClickHouseDataType.UInt32, false, "uint32Object");
 
-        dataWriter.writeUInt128(input.getUint128Object(), false, ClickHouseDataType.UInt128, false, "bigInteger128");
-        dataWriter.writeUInt256(input.getUint256Object(), false, ClickHouseDataType.UInt256, false, "bigInteger256");
+        dataWriter.writeUInt64(input.getUint64Primitive_Long(), false, ClickHouseDataType.UInt64, false, "uint64Primitive_Long");
+        dataWriter.writeUInt64(input.getUint64Object_Long(), false, ClickHouseDataType.UInt64, false, "uint64Object_Long");
 
-        dataWriter.writeDecimal(input.getBigDecimal(), false, ClickHouseDataType.Decimal, false, "decimal", 10, 5);
-        dataWriter.writeDecimal(input.getBigDecimal(), false, ClickHouseDataType.Decimal32, false, "decimal32", 9, 1);
-        dataWriter.writeDecimal(input.getBigDecimal(), false, ClickHouseDataType.Decimal64, false, "decimal64", 18, 10);
-        dataWriter.writeDecimal(input.getBigDecimal(), false, ClickHouseDataType.Decimal128, false, "decimal128", 38, 19);
-        dataWriter.writeDecimal(input.getBigDecimal(), false, ClickHouseDataType.Decimal256, false, "decimal256", 76, 39);
+        dataWriter.writeUInt64(input.getUint64Object_BigInt(), false, ClickHouseDataType.UInt64, false, "uint64Object_BigInt");
+
+        dataWriter.writeUInt128(input.getUint128Object(), false, ClickHouseDataType.UInt128, false, "uint128Object");
+        dataWriter.writeUInt256(input.getUint256Object(), false, ClickHouseDataType.UInt256, false, "uint256Object");
+
+        dataWriter.writeDecimal(input.getBigDecimal(), false, ClickHouseDataType.Decimal, false, "bigDecimal", 10, 5);
+        dataWriter.writeDecimal(input.getBigDecimal32(), false, ClickHouseDataType.Decimal32, false, "bigDecimal32", 9, 9);
+        dataWriter.writeDecimal(input.getBigDecimal64(), false, ClickHouseDataType.Decimal64, false, "bigDecimal64", 18, 18);
+        dataWriter.writeDecimal(input.getBigDecimal128(), false, ClickHouseDataType.Decimal128, false, "bigDecimal128", 38, 38);
+        dataWriter.writeDecimal(input.getBigDecimal256(), false, ClickHouseDataType.Decimal256, false, "bigDecimal256", 76, 76);
 
         dataWriter.writeFloat32(input.getFloatPrimitive(), false, ClickHouseDataType.Float32, false, "floatPrimitive");
         dataWriter.writeFloat32(input.getFloatObject(), false, ClickHouseDataType.Float32, false, "floatObject");
@@ -61,16 +65,20 @@ public class SimplePOJOConvertor extends POJOConvertor<SimplePOJO> {
         dataWriter.writeFloat64(input.getDoublePrimitive(), false, ClickHouseDataType.Float64, false, "doublePrimitive");
         dataWriter.writeFloat64(input.getDoubleObject(), false, ClickHouseDataType.Float64, false, "doubleObject");
 
-        dataWriter.writeBoolean(input.isBooleanPrimitive(), false, ClickHouseDataType.Bool, false, "booleanPrimitive");
+        dataWriter.writeBoolean(input.getBooleanPrimitive(), false, ClickHouseDataType.Bool, false, "booleanPrimitive");
         dataWriter.writeBoolean(input.getBooleanObject(), false, ClickHouseDataType.Bool, false, "booleanObject");
 
         dataWriter.writeString(input.getStr(), false, ClickHouseDataType.String, false, "str");
         dataWriter.writeFixedString(input.getFixedStr(), false, ClickHouseDataType.FixedString, false, "fixedStr", 10);
 
-        dataWriter.writeDate(input.getDate(), false, ClickHouseDataType.Date, false, "v_date");
-        dataWriter.writeDate32(input.getDate32(), false, ClickHouseDataType.Date32, false, "v_date32");
-        dataWriter.writeDateTime(input.getDateTime(), false, ClickHouseDataType.DateTime, false, "v_dateTime");
-        dataWriter.writeDateTime64(input.getDateTime64(), false, ClickHouseDataType.DateTime64, false, "v_dateTime64", 1);
+        dataWriter.writeDate(input.getDateObject(), false, ClickHouseDataType.Date, false, "dateObject");
+        dataWriter.writeDate32(input.getDate32Object(), false, ClickHouseDataType.Date32, false, "date32Object");
+
+        dataWriter.writeDateTime(input.getDateTimeObject_Local(), false, ClickHouseDataType.DateTime, false, "dateTimeObject_Local");
+        dataWriter.writeDateTime64(input.getDateTime64Object_Local(), false, ClickHouseDataType.DateTime64, false, "dateTime64Object_Local", 6);
+
+        dataWriter.writeDateTime(input.getDateTimeObject_Zoned(), false, ClickHouseDataType.DateTime, false, "dateTimeObject_Zoned");
+        dataWriter.writeDateTime64(input.getDateTime64Object_Zoned(), false, ClickHouseDataType.DateTime64, false, "dateTime64Object_Zoned", 6);
 
         dataWriter.writeUUID(input.getUuid(), false, ClickHouseDataType.UUID, false, "uuid");
 
@@ -81,6 +89,7 @@ public class SimplePOJOConvertor extends POJOConvertor<SimplePOJO> {
         dataWriter.writeMap(input.getMapOfStrings(), ClickHouseColumn.of("mapOfStrings", ClickHouseDataType.Map, false, ClickHouseColumn.of("", ClickHouseDataType.String.toString()), ClickHouseColumn.of("", ClickHouseDataType.String.toString())));
 
         dataWriter.writeTuple(input.getTupleOfObjects(), ClickHouseColumn.of("tupleOfObjects", ClickHouseDataType.Tuple, false, ClickHouseColumn.of("", ClickHouseDataType.String.toString()), ClickHouseColumn.of("", ClickHouseDataType.Int64.toString()), ClickHouseColumn.of("", ClickHouseDataType.Bool.toString())));
+
     }
 
 }

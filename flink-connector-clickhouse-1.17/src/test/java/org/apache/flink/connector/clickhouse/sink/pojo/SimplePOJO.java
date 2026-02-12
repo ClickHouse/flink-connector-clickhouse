@@ -1,7 +1,5 @@
 package org.apache.flink.connector.clickhouse.sink.pojo;
 
-import scala.tools.nsc.doc.html.HtmlTags;
-
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.*;
@@ -84,7 +82,8 @@ public class SimplePOJO {
 
     private List<Object> tupleOfObjects; // Tuple(String,Int64,Boolean)
 
-    public SimplePOJO() {}
+    public SimplePOJO() {
+    }
 
     public SimplePOJO(int index) {
         this.bytePrimitive = Byte.MIN_VALUE;
@@ -100,16 +99,16 @@ public class SimplePOJO {
         this.longObject = Long.MAX_VALUE;
 
         this.uint8Primitive_Int = Byte.MAX_VALUE;
-        this.uint8Object_Int = (int)Byte.MAX_VALUE;
+        this.uint8Object_Int = (int) Byte.MAX_VALUE;
 
         this.uint8Primitive_Short = Byte.MAX_VALUE;
-        this.uint8Object_Short = (short)Byte.MAX_VALUE;
+        this.uint8Object_Short = (short) Byte.MAX_VALUE;
 
         this.uint16Primitive = Short.MAX_VALUE;
-        this.uint16Object = (int)Short.MAX_VALUE;
+        this.uint16Object = (int) Short.MAX_VALUE;
 
         this.uint32Primitive = Integer.MAX_VALUE;
-        this.uint32Object = (long)Integer.MAX_VALUE;
+        this.uint32Object = (long) Integer.MAX_VALUE;
 
         this.uint64Primitive_Long = Long.MAX_VALUE;
         this.uint64Object_Long = Long.MAX_VALUE;
@@ -167,7 +166,7 @@ public class SimplePOJO {
         this.mapOfStrings.put("a", "a");
         this.mapOfStrings.put("b", "b");
 
-        this.tupleOfObjects =  new ArrayList<>();
+        this.tupleOfObjects = new ArrayList<>();
         this.tupleOfObjects.add("test");
         this.tupleOfObjects.add(1L);
         this.tupleOfObjects.add(true);
@@ -207,45 +206,85 @@ public class SimplePOJO {
         return longObject;
     }
 
-    public BigInteger getBigInteger128() { return bigInteger128; }
+    public BigInteger getBigInteger128() {
+        return bigInteger128;
+    }
 
-    public BigInteger getBigInteger256() { return bigInteger256; }
+    public BigInteger getBigInteger256() {
+        return bigInteger256;
+    }
 
-    public int getUint8Primitive_Int() { return uint8Primitive_Int; }
+    public int getUint8Primitive_Int() {
+        return uint8Primitive_Int;
+    }
 
-    public Integer getUint8Object_Int() { return uint8Object_Int; }
+    public Integer getUint8Object_Int() {
+        return uint8Object_Int;
+    }
 
-    public short getUint8Primitive_Short() { return uint8Primitive_Short; }
+    public short getUint8Primitive_Short() {
+        return uint8Primitive_Short;
+    }
 
-    public Short getUint8Object_Short() { return uint8Object_Short; }
+    public Short getUint8Object_Short() {
+        return uint8Object_Short;
+    }
 
-    public int getUint16Primitive() { return uint16Primitive; }
+    public int getUint16Primitive() {
+        return uint16Primitive;
+    }
 
-    public Integer getUint16Object() { return uint16Object; }
+    public Integer getUint16Object() {
+        return uint16Object;
+    }
 
-    public long getUint32Primitive() { return uint32Primitive; }
+    public long getUint32Primitive() {
+        return uint32Primitive;
+    }
 
-    public Long getUint32Object() { return uint32Object; }
+    public Long getUint32Object() {
+        return uint32Object;
+    }
 
-    public long getUint64Primitive_Long() { return uint64Primitive_Long; }
+    public long getUint64Primitive_Long() {
+        return uint64Primitive_Long;
+    }
 
-    public Long getUint64Object_Long() { return uint64Object_Long; }
+    public Long getUint64Object_Long() {
+        return uint64Object_Long;
+    }
 
-    public BigInteger getUint64Object_BigInt() { return uint64Object_BigInt; }
+    public BigInteger getUint64Object_BigInt() {
+        return uint64Object_BigInt;
+    }
 
-    public BigInteger getUint128Object() { return uint128Object; }
+    public BigInteger getUint128Object() {
+        return uint128Object;
+    }
 
-    public BigInteger getUint256Object() { return uint256Object; }
+    public BigInteger getUint256Object() {
+        return uint256Object;
+    }
 
-    public BigDecimal getBigDecimal() { return bigDecimal; }
+    public BigDecimal getBigDecimal() {
+        return bigDecimal;
+    }
 
-    public BigDecimal getBigDecimal32() { return bigDecimal32; }
+    public BigDecimal getBigDecimal32() {
+        return bigDecimal32;
+    }
 
-    public BigDecimal getBigDecimal64() { return bigDecimal64; }
+    public BigDecimal getBigDecimal64() {
+        return bigDecimal64;
+    }
 
-    public BigDecimal getBigDecimal128() { return bigDecimal128; }
+    public BigDecimal getBigDecimal128() {
+        return bigDecimal128;
+    }
 
-    public BigDecimal getBigDecimal256() { return bigDecimal256; }
+    public BigDecimal getBigDecimal256() {
+        return bigDecimal256;
+    }
 
     public float getFloatPrimitive() {
         return floatPrimitive;
@@ -263,35 +302,65 @@ public class SimplePOJO {
         return doubleObject;
     }
 
-    public boolean getBooleanPrimitive() { return booleanPrimitive; }
+    public boolean getBooleanPrimitive() {
+        return booleanPrimitive;
+    }
 
-    public Boolean getBooleanObject() { return booleanObject; }
+    public Boolean getBooleanObject() {
+        return booleanObject;
+    }
 
-    public String getStr() { return str; }
+    public String getStr() {
+        return str;
+    }
 
-    public String getFixedStr() { return fixedStr; }
+    public String getFixedStr() {
+        return fixedStr;
+    }
 
-    public LocalDate getDateObject() { return date; }
+    public LocalDate getDateObject() {
+        return date;
+    }
 
-    public LocalDate getDate32Object() { return date32; }
+    public LocalDate getDate32Object() {
+        return date32;
+    }
 
-    public LocalDateTime getDateTimeObject_Local() { return dateTime_Local; }
+    public LocalDateTime getDateTimeObject_Local() {
+        return dateTime_Local;
+    }
 
-    public LocalDateTime getDateTime64Object_Local() { return dateTime64_Local; }
+    public LocalDateTime getDateTime64Object_Local() {
+        return dateTime64_Local;
+    }
 
-    public ZonedDateTime getDateTimeObject_Zoned() { return dateTime_Zoned; }
+    public ZonedDateTime getDateTimeObject_Zoned() {
+        return dateTime_Zoned;
+    }
 
-    public ZonedDateTime getDateTime64Object_Zoned() { return dateTime64_Zoned; }
+    public ZonedDateTime getDateTime64Object_Zoned() {
+        return dateTime64_Zoned;
+    }
 
-    public UUID getUuid() { return uuid; }
+    public UUID getUuid() {
+        return uuid;
+    }
 
-    public List<String> getStringList() { return stringList; }
+    public List<String> getStringList() {
+        return stringList;
+    }
 
-    public List<Long> getLongList() { return longList; }
+    public List<Long> getLongList() {
+        return longList;
+    }
 
-    public Map<String, String> getMapOfStrings() { return mapOfStrings; }
+    public Map<String, String> getMapOfStrings() {
+        return mapOfStrings;
+    }
 
-    public List<Object> getTupleOfObjects() { return tupleOfObjects; }
+    public List<Object> getTupleOfObjects() {
+        return tupleOfObjects;
+    }
 
     // setters
     public void setBytePrimitive(byte bytePrimitive) {
@@ -340,9 +409,9 @@ public class SimplePOJO {
 
     public void setUint8Object_Int(Object uint8Object) {
         if (uint8Object instanceof Short) {
-            this.uint8Object_Int = ((Short)uint8Object).intValue();
+            this.uint8Object_Int = ((Short) uint8Object).intValue();
         } else {
-            this.uint8Object_Int = (Integer)uint8Object;
+            this.uint8Object_Int = (Integer) uint8Object;
         }
     }
 
@@ -372,17 +441,17 @@ public class SimplePOJO {
 
     public void setUint64Primitive_Long(Object uint64Primitive) {
         if (uint64Primitive instanceof BigInteger) {
-            this.uint64Primitive_Long = ((BigInteger)uint64Primitive).longValue();
+            this.uint64Primitive_Long = ((BigInteger) uint64Primitive).longValue();
         } else {
-            this.uint64Primitive_Long = (long)uint64Primitive;
+            this.uint64Primitive_Long = (long) uint64Primitive;
         }
     }
 
     public void setUint64Object_Long(Object uint64Object) {
         if (uint64Object instanceof BigInteger) {
-            this.uint64Object_Long = ((BigInteger)uint64Object).longValue();
+            this.uint64Object_Long = ((BigInteger) uint64Object).longValue();
         } else {
-            this.uint64Object_Long = (Long)uint64Object;
+            this.uint64Object_Long = (Long) uint64Object;
         }
     }
 
@@ -461,18 +530,18 @@ public class SimplePOJO {
     public void setDateTimeObject_Local(Object dateTimeObject) {
         if (dateTimeObject instanceof ZonedDateTime) {
             ZoneId utcZone = ZoneId.of("UTC");
-            this.dateTime_Local = ((ZonedDateTime)dateTimeObject).withZoneSameInstant(utcZone).toLocalDateTime();
+            this.dateTime_Local = ((ZonedDateTime) dateTimeObject).withZoneSameInstant(utcZone).toLocalDateTime();
         } else {
-            this.dateTime_Local = (LocalDateTime)dateTimeObject;
+            this.dateTime_Local = (LocalDateTime) dateTimeObject;
         }
     }
 
     public void setDateTime64Object_Local(Object dateTime64Object) {
         if (dateTime64Object instanceof ZonedDateTime) {
             ZoneId utcZone = ZoneId.of("UTC");
-            this.dateTime64_Local = ((ZonedDateTime)dateTime64Object).withZoneSameInstant(utcZone).toLocalDateTime();
+            this.dateTime64_Local = ((ZonedDateTime) dateTime64Object).withZoneSameInstant(utcZone).toLocalDateTime();
         } else {
-            this.dateTime64_Local = (LocalDateTime)dateTime64Object;
+            this.dateTime64_Local = (LocalDateTime) dateTime64Object;
         }
     }
 
@@ -506,7 +575,7 @@ public class SimplePOJO {
 
     public static String createTableSQL(String database, String tableName, int parts_to_throw_insert) {
         String createTable = createTableSQL(database, tableName);
-        return createTable.trim().substring(0, createTable.trim().length() - 1) + " " + String.format("SETTINGS parts_to_throw_insert = %d;",  parts_to_throw_insert);
+        return createTable.trim().substring(0, createTable.trim().length() - 1) + " " + String.format("SETTINGS parts_to_throw_insert = %d;", parts_to_throw_insert);
     }
 
     public static String createTableSQL(String database, String tableName) {
@@ -569,197 +638,57 @@ public class SimplePOJO {
             return false;
         }
         SimplePOJO other = (SimplePOJO) obj;
+        return Objects.equals(bytePrimitive, other.bytePrimitive) &&
+                Objects.equals(byteObject, other.byteObject) &&
+                Objects.equals(shortPrimitive, other.shortPrimitive) &&
+                Objects.equals(shortObject, other.shortObject) &&
+                Objects.equals(intPrimitive, other.intPrimitive) &&
+                Objects.equals(integerObject, other.integerObject) &&
+                Objects.equals(longPrimitive, other.longPrimitive) &&
+                Objects.equals(longObject, other.longObject) &&
+                Objects.equals(bigInteger128, other.bigInteger128) &&
+                Objects.equals(bigInteger256, other.bigInteger256) &&
+                Objects.equals(uint8Primitive_Int, other.uint8Primitive_Int) &&
+                Objects.equals(uint8Object_Int, other.uint8Object_Int) &&
+                Objects.equals(uint8Primitive_Short, other.uint8Primitive_Short) &&
+                Objects.equals(uint8Object_Short, other.uint8Object_Short) &&
+                Objects.equals(uint16Primitive, other.uint16Primitive) &&
+                Objects.equals(uint16Object, other.uint16Object) &&
+                Objects.equals(uint32Primitive, other.uint32Primitive) &&
+                Objects.equals(uint32Object, other.uint32Object) &&
+                Objects.equals(uint64Primitive_Long, other.uint64Primitive_Long) &&
+                Objects.equals(uint64Object_Long, other.uint64Object_Long) &&
+                Objects.equals(uint64Object_BigInt, other.uint64Object_BigInt) &&
+                Objects.equals(uint128Object, other.uint128Object) &&
+                Objects.equals(uint256Object, other.uint256Object) &&
+                Objects.equals(bigDecimal, other.bigDecimal) &&
+                Objects.equals(bigDecimal32, other.bigDecimal32) &&
+                Objects.equals(bigDecimal64, other.bigDecimal64) &&
+                Objects.equals(bigDecimal128, other.bigDecimal128) &&
+                Objects.equals(bigDecimal256, other.bigDecimal256) &&
+                Objects.equals(floatPrimitive, other.floatPrimitive) &&
+                Objects.equals(floatObject, other.floatObject) &&
+                Objects.equals(doublePrimitive, other.doublePrimitive) &&
+                Objects.equals(doubleObject, other.doubleObject) &&
+                Objects.equals(booleanPrimitive, other.booleanPrimitive) &&
+                Objects.equals(booleanObject, other.booleanObject) &&
+                Objects.equals(str, other.str) &&
+                Objects.equals(fixedStr, other.fixedStr) &&
+                Objects.equals(date, other.date) &&
+                Objects.equals(date32, other.date32) &&
+                Objects.equals(dateTime_Local, other.dateTime_Local) &&
+                Objects.equals(dateTime64_Local, other.dateTime64_Local) &&
+                Objects.equals(dateTime_Zoned, other.dateTime_Zoned) &&
+                Objects.equals(dateTime64_Zoned, other.dateTime64_Zoned) &&
+                Objects.equals(uuid, other.uuid) &&
+                Objects.equals(stringList, other.stringList) &&
+                Objects.equals(longList, other.longList) &&
+                Objects.equals(mapOfStrings, other.mapOfStrings) &&
+                Objects.equals(tupleOfObjects, other.tupleOfObjects);
+    }
 
-        if (bytePrimitive != other.bytePrimitive) {
-            System.out.println("bytePrimitive: this=" + bytePrimitive + ", other=" + other.bytePrimitive);
-            return false;
-        }
-        if (!Objects.equals(byteObject, other.byteObject)) {
-            System.out.println("byteObject: this=" + byteObject + ", other=" + other.byteObject);
-            return false;
-        }
-        if (shortPrimitive != other.shortPrimitive) {
-            System.out.println("shortPrimitive: this=" + shortPrimitive + ", other=" + other.shortPrimitive);
-            return false;
-        }
-        if (!Objects.equals(shortObject, other.shortObject)) {
-            System.out.println("shortObject: this=" + shortObject + ", other=" + other.shortObject);
-            return false;
-        }
-        if (intPrimitive != other.intPrimitive) {
-            System.out.println("intPrimitive: this=" + intPrimitive + ", other=" + other.intPrimitive);
-            return false;
-        }
-        if (!Objects.equals(integerObject, other.integerObject)) {
-            System.out.println("integerObject: this=" + integerObject + ", other=" + other.integerObject);
-            return false;
-        }
-        if (longPrimitive != other.longPrimitive) {
-            System.out.println("longPrimitive: this=" + longPrimitive + ", other=" + other.longPrimitive);
-            return false;
-        }
-        if (!Objects.equals(longObject, other.longObject)) {
-            System.out.println("longObject: this=" + longObject + ", other=" + other.longObject);
-            return false;
-        }
-
-        if (uint8Primitive_Int != other.uint8Primitive_Int) {
-            System.out.println("uint8Primitive_Int: this=" + uint8Primitive_Int + ", other=" + other.uint8Primitive_Int);
-            return false;
-        }
-        if (!Objects.equals(uint8Object_Int, other.uint8Object_Int)) {
-            System.out.println("uint8Object_Int: this=" + uint8Object_Int + ", other=" + other.uint8Object_Int);
-            return false;
-        }
-
-        if (uint8Primitive_Short != other.uint8Primitive_Short) {
-            System.out.println("uint8Primitive_Short: this=" + uint8Primitive_Short + ", other=" + other.uint8Primitive_Short);
-            return false;
-        }
-        if (!Objects.equals(uint8Object_Short, other.uint8Object_Short)) {
-            System.out.println("uint8Object_Short: this=" + uint8Object_Short + ", other=" + other.uint8Object_Short);
-            return false;
-        }
-        if (uint16Primitive != other.uint16Primitive) {
-            System.out.println("uint16Primitive: this=" + uint16Primitive + ", other=" + other.uint16Primitive);
-            return false;
-        }
-        if (!Objects.equals(uint16Object, other.uint16Object)) {
-            System.out.println("uint16Object: this=" + uint16Object + ", other=" + other.uint16Object);
-            return false;
-        }
-        if (uint32Primitive != other.uint32Primitive) {
-            System.out.println("uint32Primitive: this=" + uint32Primitive + ", other=" + other.uint32Primitive);
-            return false;
-        }
-        if (!Objects.equals(uint32Object, other.uint32Object)) {
-            System.out.println("uint32Object: this=" + uint32Object + ", other=" + other.uint32Object);
-            return false;
-        }
-        if (!Objects.equals(uint64Primitive_Long, other.uint64Primitive_Long)) {
-            System.out.println("uint64Primitive_Long: this=" + uint64Primitive_Long + ", other=" + other.uint64Primitive_Long);
-            return false;
-        }
-        if (!Objects.equals(uint64Object_Long, other.uint64Object_Long)) {
-            System.out.println("uint64Object_Long: this=" + uint64Object_Long + ", other=" + other.uint64Object_Long);
-            return false;
-        }
-        if (!Objects.equals(uint64Object_BigInt, other.uint64Object_BigInt)) {
-            System.out.println("uint64Object_BigInt: this=" + uint64Object_BigInt + ", other=" + other.uint64Object_BigInt);
-            return false;
-        }
-        if (!Objects.equals(bigInteger128, other.bigInteger128)) {
-            System.out.println("bigInteger128: this=" + bigInteger128 + ", other=" + other.bigInteger128);
-            return false;
-        }
-        if (!Objects.equals(bigInteger256, other.bigInteger256)) {
-            System.out.println("bigInteger256: this=" + bigInteger256 + ", other=" + other.bigInteger256);
-            return false;
-        }
-        if (!Objects.equals(uint128Object, other.uint128Object)) {
-            System.out.println("uint128Object: this=" + uint128Object + ", other=" + other.uint128Object);
-            return false;
-        }
-        if (!Objects.equals(uint256Object, other.uint256Object)) {
-            System.out.println("uint256Object: this=" + uint256Object + ", other=" + other.uint256Object);
-            return false;
-        }
-        if (!Objects.equals(bigDecimal, other.bigDecimal)) {
-            System.out.println("bigDecimal: this=" + bigDecimal + ", other=" + other.bigDecimal);
-            return false;
-        }
-        if (!Objects.equals(bigDecimal32, other.bigDecimal32)) {
-            System.out.println("bigDecimal32: this=" + bigDecimal32 + ", other=" + other.bigDecimal32);
-            return false;
-        }
-        if (!Objects.equals(bigDecimal64, other.bigDecimal64)) {
-            System.out.println("bigDecimal64: this=" + bigDecimal64 + ", other=" + other.bigDecimal64);
-            return false;
-        }
-        if (!Objects.equals(bigDecimal128, other.bigDecimal128)) {
-            System.out.println("bigDecimal128: this=" + bigDecimal128 + ", other=" + other.bigDecimal128);
-            return false;
-        }
-        if (!Objects.equals(bigDecimal256, other.bigDecimal256)) {
-            System.out.println("bigDecimal256: this=" + bigDecimal256 + ", other=" + other.bigDecimal256);
-            return false;
-        }
-        if (Float.compare(floatPrimitive, other.floatPrimitive) != 0) {
-            System.out.println("floatPrimitive: this=" + floatPrimitive + ", other=" + other.floatPrimitive);
-            return false;
-        }
-        if (!Objects.equals(floatObject, other.floatObject)) {
-            System.out.println("floatObject: this=" + floatObject + ", other=" + other.floatObject);
-            return false;
-        }
-        if (Double.compare(doublePrimitive, other.doublePrimitive) != 0) {
-            System.out.println("doublePrimitive: this=" + doublePrimitive + ", other=" + other.doublePrimitive);
-            return false;
-        }
-        if (!Objects.equals(doubleObject, other.doubleObject)) {
-            System.out.println("doubleObject: this=" + doubleObject + ", other=" + other.doubleObject);
-            return false;
-        }
-        if (booleanPrimitive != other.booleanPrimitive) {
-            System.out.println("booleanPrimitive: this=" + booleanPrimitive + ", other=" + other.booleanPrimitive);
-            return false;
-        }
-        if (!Objects.equals(booleanObject, other.booleanObject)) {
-            System.out.println("booleanObject: this=" + booleanObject + ", other=" + other.booleanObject);
-            return false;
-        }
-        if (!Objects.equals(str, other.str)) {
-            System.out.println("str: this=" + str + ", other=" + other.str);
-            return false;
-        }
-        if (!Objects.equals(fixedStr, other.fixedStr)) {
-            System.out.println("fixedStr: this=" + fixedStr + ", other=" + other.fixedStr);
-            return false;
-        }
-        if (!Objects.equals(date, other.date)) {
-            System.out.println("date: this=" + date + ", other=" + other.date);
-            return false;
-        }
-        if (!Objects.equals(date32, other.date32)) {
-            System.out.println("date32: this=" + date32 + ", other=" + other.date32);
-            return false;
-        }
-        if (!Objects.equals(dateTime_Local, other.dateTime_Local)) {
-            System.out.println("dateTime_Local: this=" + dateTime_Local + ", other=" + other.dateTime_Local);
-            return false;
-        }
-        if (!Objects.equals(dateTime64_Local, other.dateTime64_Local)) {
-            System.out.println("dateTime64_Local: this=" + dateTime64_Local + ", other=" + other.dateTime64_Local);
-            return false;
-        }
-        if (!Objects.equals(dateTime_Zoned, other.dateTime_Zoned)) {
-            System.out.println("dateTime_Zoned: this=" + dateTime_Zoned + ", other=" + other.dateTime_Zoned);
-            return false;
-        }
-        if (!Objects.equals(dateTime64_Zoned, other.dateTime64_Zoned)) {
-            System.out.println("dateTime64_Zoned: this=" + dateTime64_Zoned + ", other=" + other.dateTime64_Zoned);
-            return false;
-        }
-        if (!Objects.equals(uuid, other.uuid)) {
-            System.out.println("uuid: this=" + uuid + ", other=" + other.uuid);
-            return false;
-        }
-        if (!Objects.equals(stringList, other.stringList)) {
-            System.out.println("stringList: this=" + stringList + ", other=" + other.stringList);
-            return false;
-        }
-        if (!Objects.equals(longList, other.longList)) {
-            System.out.println("longList: this=" + longList + ", other=" + other.longList);
-            return false;
-        }
-        if (!Objects.equals(mapOfStrings, other.mapOfStrings)) {
-            System.out.println("mapOfStrings: this=" + mapOfStrings + ", other=" + other.mapOfStrings);
-            return false;
-        }
-        if (!Objects.equals(tupleOfObjects, other.tupleOfObjects)) {
-            System.out.println("tupleOfObjects: this=" + tupleOfObjects + ", other=" + other.tupleOfObjects);
-            return false;
-        }
-        return true;
+    @Override
+    public int hashCode() {
+        return Objects.hash(bytePrimitive, byteObject, shortPrimitive, shortObject, intPrimitive, integerObject, longPrimitive, longObject, bigInteger128, bigInteger256, uint8Primitive_Int, uint8Object_Int, uint8Primitive_Short, uint8Object_Short, uint16Primitive, uint16Object, uint32Primitive, uint32Object, uint64Primitive_Long, uint64Object_Long, uint64Object_BigInt, uint128Object, uint256Object, bigDecimal, bigDecimal32, bigDecimal64, bigDecimal128, bigDecimal256, floatPrimitive, floatObject, doublePrimitive, doubleObject, booleanPrimitive, booleanObject, str, fixedStr, date, date32, dateTime_Local, dateTime64_Local, dateTime_Zoned, dateTime64_Zoned, uuid, stringList, longList, mapOfStrings, tupleOfObjects);
     }
 }
