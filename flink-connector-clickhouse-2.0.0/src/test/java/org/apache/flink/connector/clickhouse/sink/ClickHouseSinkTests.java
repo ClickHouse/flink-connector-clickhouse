@@ -1,7 +1,6 @@
 package org.apache.flink.connector.clickhouse.sink;
 
 import com.clickhouse.client.api.metadata.TableSchema;
-import com.clickhouse.client.api.query.GenericRecord;
 import com.clickhouse.data.ClickHouseFormat;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
@@ -11,22 +10,18 @@ import org.apache.flink.connector.clickhouse.convertor.POJOConvertor;
 import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
 import org.apache.flink.connector.clickhouse.sink.convertor.CovidPOJOConvertor;
 import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOConvertor;
-import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOWithJSONConvertor;
 import org.apache.flink.connector.clickhouse.sink.pojo.CovidPOJO;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJO;
-import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJOWithJSON;
 import org.apache.flink.connector.file.src.FileSource;
 import org.apache.flink.connector.file.src.reader.TextLineInputFormat;
 import org.apache.flink.connector.test.FlinkClusterTests;
 import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests;
-import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseTestHelpers;
 import org.apache.flink.connector.test.embedded.flink.EmbeddedFlinkClusterForTests;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -50,19 +45,19 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         ClickHouseServerForTests.executeSql(dropTable);
         // create table
         String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
-                            "date Date," +
-                            "location_key LowCardinality(String)," +
-                            "new_confirmed Int32," +
-                            "new_deceased Int32," +
-                            "new_recovered Int32," +
-                            "new_tested Int32," +
-                            "cumulative_confirmed Int32," +
-                            "cumulative_deceased Int32," +
-                            "cumulative_recovered Int32," +
-                            "cumulative_tested Int32" +
-                            ") " +
-                            "ENGINE = MergeTree " +
-                            "ORDER BY (location_key, date); ";
+                "date Date," +
+                "location_key LowCardinality(String)," +
+                "new_confirmed Int32," +
+                "new_deceased Int32," +
+                "new_recovered Int32," +
+                "new_tested Int32," +
+                "cumulative_confirmed Int32," +
+                "cumulative_deceased Int32," +
+                "cumulative_recovered Int32," +
+                "cumulative_tested Int32" +
+                ") " +
+                "ENGINE = MergeTree " +
+                "ORDER BY (location_key, date); ";
         ClickHouseServerForTests.executeSql(tableSql);
 
         final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
@@ -239,6 +234,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
     /**
      * Suppose to drop data on failure. The way we try to generate this use case is by supplying the writer with wrong Format
+     *
      * @throws Exception
      */
     @Test
@@ -300,6 +296,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
     /**
      * Suppose to retry and drop data on failure. The way we try to generate this use case is by supplying a different port of ClickHouse server
+     *
      * @throws Exception
      */
     @Test
@@ -375,7 +372,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
         ClickHouseServerForTests.executeSql(dropTable);
         // create table
-        String tableSql = SimplePOJO.createTableSQL(getDatabase(),  tableName, 10);
+        String tableSql = SimplePOJO.createTableSQL(getDatabase(), tableName, 10);
         ClickHouseServerForTests.executeSql(tableSql);
         //ClickHouseServerForTests.executeSql(String.format("SYSTEM STOP MERGES `%s.%s`", getDatabase(), tableName));
 
@@ -417,6 +414,8 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
     @Test
     void CheckClickHouseAlive() {
-        Assertions.assertThrows(RuntimeException.class, () -> { new ClickHouseClientConfig(getServerURL(), getUsername() + "wrong_username", getPassword(), getDatabase(), "dummy");});
+        Assertions.assertThrows(RuntimeException.class, () -> {
+            new ClickHouseClientConfig(getServerURL(), getUsername() + "wrong_username", getPassword(), getDatabase(), "dummy");
+        });
     }
 }

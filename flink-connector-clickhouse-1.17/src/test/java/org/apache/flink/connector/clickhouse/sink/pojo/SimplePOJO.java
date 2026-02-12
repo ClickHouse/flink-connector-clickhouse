@@ -2,7 +2,10 @@ package org.apache.flink.connector.clickhouse.sink.pojo;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.time.*;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.*;
 
 /**

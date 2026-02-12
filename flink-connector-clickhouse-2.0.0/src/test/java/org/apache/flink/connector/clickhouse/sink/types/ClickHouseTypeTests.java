@@ -77,7 +77,7 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
         String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
         ClickHouseServerForTests.executeSql(dropTable);
         // create table
-        String tableSql = SimplePOJO.createTableSQL(getDatabase(),  tableName);
+        String tableSql = SimplePOJO.createTableSQL(getDatabase(), tableName);
         ClickHouseServerForTests.executeSql(tableSql);
 
         TableSchema simpleTableSchema = ClickHouseServerForTests.getTableSchema(tableName);

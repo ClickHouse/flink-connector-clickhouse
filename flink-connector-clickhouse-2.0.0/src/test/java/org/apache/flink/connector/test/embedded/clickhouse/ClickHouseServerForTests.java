@@ -44,6 +44,7 @@ public class ClickHouseServerForTests {
         }
         isSSL = ClickHouseTestHelpers.isCloud();
     }
+
     public static void setUp() throws InterruptedException, ExecutionException {
         if (!isCloud) {
             db = new ClickHouseContainer(ClickHouseTestHelpers.CLICKHOUSE_DOCKER_IMAGE).withPassword("test_password").withEnv("CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT", "1");
@@ -73,12 +74,25 @@ public class ClickHouseServerForTests {
         }
     }
 
-    public static String getDatabase() { return database; }
+    public static String getDatabase() {
+        return database;
+    }
 
-    public static String getHost() { return host; }
-    public static int getPort() { return port; }
-    public static String getUsername() { return username; }
-    public static String getPassword() { return password; }
+    public static String getHost() {
+        return host;
+    }
+
+    public static int getPort() {
+        return port;
+    }
+
+    public static String getUsername() {
+        return username;
+    }
+
+    public static String getPassword() {
+        return password;
+    }
 
     public static String getURL() {
         return ClickHouseServerForTests.getURL(host, port);
@@ -92,7 +106,9 @@ public class ClickHouseServerForTests {
         }
     }
 
-    public static boolean isCloud() { return isCloud; }
+    public static boolean isCloud() {
+        return isCloud;
+    }
 
     public static void executeSql(String sql) throws ExecutionException, InterruptedException {
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
@@ -109,8 +125,8 @@ public class ClickHouseServerForTests {
         List<GenericRecord> content = client.queryAll(showDataSql);
         for (GenericRecord record : content) {
             System.out.println();
-            for (int i = 0; i< record.getSchema().getColumns().toArray().length; i++) {
-                System.out.print(" | " + record.getObject(i +1));
+            for (int i = 0; i < record.getSchema().getColumns().toArray().length; i++) {
+                System.out.print(" | " + record.getObject(i + 1));
             }
         }
         System.out.println("\n-----------------");
@@ -155,13 +171,20 @@ public class ClickHouseServerForTests {
         List<GenericRecord> countResult = client.queryAll(countSql);
         return countResult.get(0).getInteger(1);
     }
+
     // http_user_agent
     public static String extractProductName(String databaseName, String tableName, String startWith) {
         String extractProductName = String.format("SELECT http_user_agent, tables FROM clusterAllReplicas('default', system.query_log) WHERE type = 'QueryStart' AND query_kind = 'Insert' AND has(databases,'%s') AND has(tables,'%s.%s') and startsWith(http_user_agent, '%s') LIMIT 100", databaseName, databaseName, tableName, startWith);
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
         List<GenericRecord> userAgentResult = client.queryAll(extractProductName);
+        String userAgentValue = null;
         if (!userAgentResult.isEmpty()) {
-            return userAgentResult.get(0).getString(1);
+            for (GenericRecord userAgent : userAgentResult) {
+                userAgentValue = userAgent.getString(1);
+                if (userAgentValue.contains(startWith))
+                    return userAgent.getString(1);
+            }
+            throw new RuntimeException("Can not extract product name from " + userAgentValue);
         }
         throw new RuntimeException("Query is returning empty result.");
     }

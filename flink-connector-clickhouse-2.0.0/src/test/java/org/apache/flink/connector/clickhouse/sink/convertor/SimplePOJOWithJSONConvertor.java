@@ -1,13 +1,11 @@
 package org.apache.flink.connector.clickhouse.sink.convertor;
 
 import com.clickhouse.data.ClickHouseDataType;
-import com.clickhouse.utils.Serialize;
 import com.clickhouse.utils.writer.DataWriter;
 import org.apache.flink.connector.clickhouse.convertor.POJOConvertor;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJOWithJSON;
 
 import java.io.IOException;
-import java.io.OutputStream;
 
 public class SimplePOJOWithJSONConvertor extends POJOConvertor<SimplePOJOWithJSON> {
 

@@ -2,13 +2,11 @@ package org.apache.flink.connector.clickhouse.sink.convertor;
 
 import com.clickhouse.data.ClickHouseColumn;
 import com.clickhouse.data.ClickHouseDataType;
-import com.clickhouse.utils.Serialize;
 import com.clickhouse.utils.writer.DataWriter;
 import org.apache.flink.connector.clickhouse.convertor.POJOConvertor;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJO;
 
 import java.io.IOException;
-import java.io.OutputStream;
 
 public class SimplePOJOConvertor extends POJOConvertor<SimplePOJO> {
 
@@ -89,7 +87,6 @@ public class SimplePOJOConvertor extends POJOConvertor<SimplePOJO> {
         dataWriter.writeMap(input.getMapOfStrings(), ClickHouseColumn.of("mapOfStrings", ClickHouseDataType.Map, false, ClickHouseColumn.of("", ClickHouseDataType.String.toString()), ClickHouseColumn.of("", ClickHouseDataType.String.toString())));
 
         dataWriter.writeTuple(input.getTupleOfObjects(), ClickHouseColumn.of("tupleOfObjects", ClickHouseDataType.Tuple, false, ClickHouseColumn.of("", ClickHouseDataType.String.toString()), ClickHouseColumn.of("", ClickHouseDataType.Int64.toString()), ClickHouseColumn.of("", ClickHouseDataType.Bool.toString())));
-
     }
 
 }
