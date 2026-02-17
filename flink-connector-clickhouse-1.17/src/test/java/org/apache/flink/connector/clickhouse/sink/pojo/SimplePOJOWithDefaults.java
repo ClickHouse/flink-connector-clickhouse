@@ -25,4 +25,13 @@ public class SimplePOJOWithDefaults {
     public LocalDateTime getCreatedOn() {
         return createdOn;
     }
+
+    public static String createTableSql(String database, String tableName) {
+        return "CREATE TABLE `" + database + "`.`" + tableName + "` (" +
+                "id Int32," +
+                "created_on DateTime64(6, 'UTC') DEFAULT YYYYMMDDhhmmssToDateTime64(20230911131415, 6, 'UTC')" +
+                ") " +
+                "ENGINE = MergeTree " +
+                "ORDER BY (id); ";
+    }
 }

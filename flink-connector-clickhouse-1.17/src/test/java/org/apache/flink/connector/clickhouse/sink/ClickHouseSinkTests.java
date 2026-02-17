@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 import static org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests.*;
 import static org.apache.flink.connector.clickhouse.sink.ClickHouseSinkTestUtils.*;
@@ -40,8 +41,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
     @Test
     void CSVDataTest() throws Exception {
         String tableName = "csv_covid";
-        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
-        ClickHouseServerForTests.executeSql(dropTable);
+        dropTableIfExists(getDatabase(), tableName);
         // create table
         String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
                 "date Date," +
@@ -97,24 +97,9 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
     void CovidPOJODataTest() throws Exception {
         String tableName = "covid_pojo";
 
-        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
-        ClickHouseServerForTests.executeSql(dropTable);
+        dropTableIfExists(getDatabase(), tableName);
         // create table
-        String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
-                "date Date," +
-                "location_key LowCardinality(String)," +
-                "new_confirmed Int32," +
-                "new_deceased Int32," +
-                "new_recovered Int32," +
-                "new_tested Int32," +
-                "cumulative_confirmed Int32," +
-                "cumulative_deceased Int32," +
-                "cumulative_recovered Int32," +
-                "cumulative_tested Int32" +
-                ") " +
-                "ENGINE = MergeTree " +
-                "ORDER BY (location_key, date); ";
-        ClickHouseServerForTests.executeSql(tableSql);
+        ClickHouseServerForTests.executeSql(CovidPOJO.createTableSql(getDatabase(), tableName));
 
         TableSchema covidTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
 
@@ -166,8 +151,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
     void ProductNameTest() throws Exception {
         String flinkVersion = System.getenv("FLINK_VERSION") != null ? System.getenv("FLINK_VERSION") : "1.17.2";
         String tableName = "product_name_csv_covid";
-        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
-        ClickHouseServerForTests.executeSql(dropTable);
+        dropTableIfExists(getDatabase(), tableName);
         // create table
         String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
                 "date Date," +
@@ -241,8 +225,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
     @Test
     void CSVDataOnFailureDropDataTest() throws Exception {
         String tableName = "csv_failure_covid";
-        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
-        ClickHouseServerForTests.executeSql(dropTable);
+        dropTableIfExists(getDatabase(), tableName);
         // create table
         String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
                 "date Date," +
@@ -304,8 +287,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
     @Test
     void CSVDataOnRetryAndDropDataTest() throws Exception {
         String tableName = "csv_retry_covid";
-        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
-        ClickHouseServerForTests.executeSql(dropTable);
+        dropTableIfExists(getDatabase(), tableName);
         // create table
         String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
                 "date Date," +
@@ -371,8 +353,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
             return;
         String tableName = "simple_too_many_parts_pojo";
 
-        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
-        ClickHouseServerForTests.executeSql(dropTable);
+        dropTableIfExists(getDatabase(), tableName);
         // create table
         String tableSql = SimplePOJO.createTableSQL(getDatabase(), tableName, 10);
         ClickHouseServerForTests.executeSql(tableSql);
@@ -420,5 +401,10 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         Assertions.assertThrows(RuntimeException.class, () -> {
             new ClickHouseClientConfig(getServerURL(), getUsername() + "wrong_username", getPassword(), getDatabase(), "dummy");
         });
+    }
+
+    private static void dropTableIfExists(String database, String tableName) throws ExecutionException, InterruptedException {
+        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", database, tableName);
+        ClickHouseServerForTests.executeSql(dropTable);
     }
 }

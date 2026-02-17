@@ -25,11 +25,11 @@ public class SimplePOJO {
     private long longPrimitive; // Int64
     private Long longObject; // Int64
 
-    private int uint8Primitive_Int; // UInt8
-    private Integer uint8Object_Int; // UInt8
+    private int uint8PrimitiveInt; // UInt8
+    private Integer uint8ObjectInt; // UInt8
 
-    private short uint8Primitive_Short; // UInt8
-    private Short uint8Object_Short; // UInt8
+    private short uint8PrimitiveShort; // UInt8
+    private Short uint8ObjectShort; // UInt8
 
     private int uint16Primitive; // UInt16
     private Integer uint16Object; // UInt16
@@ -37,10 +37,10 @@ public class SimplePOJO {
     private long uint32Primitive; // UInt32
     private Long uint32Object; // UInt32
 
-    private long uint64Primitive_Long; // UInt64
-    private Long uint64Object_Long; // UInt64
+    private long uint64PrimitiveLong; // UInt64
+    private Long uint64ObjectLong; // UInt64
 
-    private BigInteger uint64Object_BigInt; // UInt64
+    private BigInteger uint64ObjectBigInt; // UInt64
 
     private BigInteger bigInteger128; // Int128
     private BigInteger bigInteger256; // Int256
@@ -70,11 +70,11 @@ public class SimplePOJO {
     private LocalDate date; // Date
     private LocalDate date32; // Date32
 
-    private LocalDateTime dateTime_Local; // DateTime
-    private LocalDateTime dateTime64_Local; // DateTime64
+    private LocalDateTime localDateTime; // DateTime
+    private LocalDateTime localDateTime64; // DateTime64
 
-    private ZonedDateTime dateTime_Zoned; // DateTime
-    private ZonedDateTime dateTime64_Zoned; // DateTime64
+    private ZonedDateTime zonedDateTime; // DateTime
+    private ZonedDateTime zonedDateTime64; // DateTime64
 
     private UUID uuid; // UUID
 
@@ -101,11 +101,11 @@ public class SimplePOJO {
         this.longPrimitive = index;
         this.longObject = Long.MAX_VALUE;
 
-        this.uint8Primitive_Int = Byte.MAX_VALUE;
-        this.uint8Object_Int = (int) Byte.MAX_VALUE;
+        this.uint8PrimitiveInt = Byte.MAX_VALUE;
+        this.uint8ObjectInt = (int) Byte.MAX_VALUE;
 
-        this.uint8Primitive_Short = Byte.MAX_VALUE;
-        this.uint8Object_Short = (short) Byte.MAX_VALUE;
+        this.uint8PrimitiveShort = Byte.MAX_VALUE;
+        this.uint8ObjectShort = (short) Byte.MAX_VALUE;
 
         this.uint16Primitive = Short.MAX_VALUE;
         this.uint16Object = (int) Short.MAX_VALUE;
@@ -113,19 +113,19 @@ public class SimplePOJO {
         this.uint32Primitive = Integer.MAX_VALUE;
         this.uint32Object = (long) Integer.MAX_VALUE;
 
-        this.uint64Primitive_Long = Long.MAX_VALUE;
-        this.uint64Object_Long = Long.MAX_VALUE;
+        this.uint64PrimitiveLong = Long.MAX_VALUE;
+        this.uint64ObjectLong = Long.MAX_VALUE;
 
-        this.uint64Object_BigInt = BigInteger.valueOf(Long.MAX_VALUE);
+        this.uint64ObjectBigInt = BigInteger.valueOf(Long.MAX_VALUE);
 
         this.uint128Object = BigInteger.valueOf(index);
         this.uint256Object = BigInteger.valueOf(index);
 
-        this.bigDecimal = BigDecimal.valueOf(index, 5);
-        this.bigDecimal32 = BigDecimal.valueOf(index, 9);
-        this.bigDecimal64 = BigDecimal.valueOf(index, 18);
-        this.bigDecimal128 = BigDecimal.valueOf(index, 38);
-        this.bigDecimal256 = BigDecimal.valueOf(index, 76);
+        this.bigDecimal = BigDecimal.valueOf(index, 5); // scale = 5
+        this.bigDecimal32 = BigDecimal.valueOf(index, 9); // scale = 9
+        this.bigDecimal64 = BigDecimal.valueOf(index, 18); // scale = 18
+        this.bigDecimal128 = BigDecimal.valueOf(index, 38); // scale = 38
+        this.bigDecimal256 = BigDecimal.valueOf(index, 76); // scale = 76
 
         this.floatPrimitive = Float.MIN_VALUE;
         this.floatObject = Float.MAX_VALUE;
@@ -145,11 +145,11 @@ public class SimplePOJO {
         this.date = LocalDate.ofEpochDay(0);
         this.date32 = LocalDate.ofEpochDay(0);
 
-        this.dateTime_Local = ZonedDateTime.of(LocalDateTime.of(2026, 2, 11, 12, 45, 59), ZoneId.of("UTC")).toLocalDateTime();
-        this.dateTime64_Local = ZonedDateTime.of(LocalDateTime.now(), ZoneId.of("UTC")).toLocalDateTime();
+        this.localDateTime = ZonedDateTime.of(LocalDateTime.of(2026, 2, 11, 12, 45, 59), ZoneId.of("UTC")).toLocalDateTime();
+        this.localDateTime64 = ZonedDateTime.of(LocalDateTime.now(), ZoneId.of("UTC")).toLocalDateTime();
 
-        this.dateTime_Zoned = ZonedDateTime.of(LocalDateTime.of(2026, 2, 11, 12, 45, 59), ZoneId.of("UTC"));
-        this.dateTime64_Zoned = ZonedDateTime.of(LocalDateTime.now(), ZoneId.of("UTC"));
+        this.zonedDateTime = ZonedDateTime.of(LocalDateTime.of(2026, 2, 11, 12, 45, 59), ZoneId.of("UTC"));
+        this.zonedDateTime64 = ZonedDateTime.of(LocalDateTime.now(), ZoneId.of("UTC"));
 
         this.uuid = UUID.randomUUID();
 
@@ -217,20 +217,20 @@ public class SimplePOJO {
         return bigInteger256;
     }
 
-    public int getUint8Primitive_Int() {
-        return uint8Primitive_Int;
+    public int getUint8PrimitiveInt() {
+        return uint8PrimitiveInt;
     }
 
-    public Integer getUint8Object_Int() {
-        return uint8Object_Int;
+    public Integer getUint8ObjectInt() {
+        return uint8ObjectInt;
     }
 
-    public short getUint8Primitive_Short() {
-        return uint8Primitive_Short;
+    public short getUint8PrimitiveShort() {
+        return uint8PrimitiveShort;
     }
 
-    public Short getUint8Object_Short() {
-        return uint8Object_Short;
+    public Short getUint8ObjectShort() {
+        return uint8ObjectShort;
     }
 
     public int getUint16Primitive() {
@@ -249,16 +249,16 @@ public class SimplePOJO {
         return uint32Object;
     }
 
-    public long getUint64Primitive_Long() {
-        return uint64Primitive_Long;
+    public long getUint64PrimitiveLong() {
+        return uint64PrimitiveLong;
     }
 
-    public Long getUint64Object_Long() {
-        return uint64Object_Long;
+    public Long getUint64ObjectLong() {
+        return uint64ObjectLong;
     }
 
-    public BigInteger getUint64Object_BigInt() {
-        return uint64Object_BigInt;
+    public BigInteger getUint64ObjectBigInt() {
+        return uint64ObjectBigInt;
     }
 
     public BigInteger getUint128Object() {
@@ -329,20 +329,20 @@ public class SimplePOJO {
         return date32;
     }
 
-    public LocalDateTime getDateTimeObject_Local() {
-        return dateTime_Local;
+    public LocalDateTime getDateTimeObjectLocal() {
+        return localDateTime;
     }
 
-    public LocalDateTime getDateTime64Object_Local() {
-        return dateTime64_Local;
+    public LocalDateTime getDateTime64ObjectLocal() {
+        return localDateTime64;
     }
 
-    public ZonedDateTime getDateTimeObject_Zoned() {
-        return dateTime_Zoned;
+    public ZonedDateTime getDateTimeObjectZoned() {
+        return zonedDateTime;
     }
 
-    public ZonedDateTime getDateTime64Object_Zoned() {
-        return dateTime64_Zoned;
+    public ZonedDateTime getDateTime64ObjectZoned() {
+        return zonedDateTime64;
     }
 
     public UUID getUuid() {
@@ -406,24 +406,24 @@ public class SimplePOJO {
         this.bigInteger256 = bigInteger256;
     }
 
-    public void setUint8Primitive_Int(int uint8Primitive) {
-        this.uint8Primitive_Int = uint8Primitive;
+    public void setUint8PrimitiveInt(int uint8Primitive) {
+        this.uint8PrimitiveInt = uint8Primitive;
     }
 
-    public void setUint8Object_Int(Object uint8Object) {
+    public void setUint8ObjectInt(Object uint8Object) {
         if (uint8Object instanceof Short) {
-            this.uint8Object_Int = ((Short) uint8Object).intValue();
+            this.uint8ObjectInt = ((Short) uint8Object).intValue();
         } else {
-            this.uint8Object_Int = (Integer) uint8Object;
+            this.uint8ObjectInt = (Integer) uint8Object;
         }
     }
 
-    public void setUint8Primitive_Short(short uint8Primitive) {
-        this.uint8Primitive_Short = uint8Primitive;
+    public void setUint8PrimitiveShort(short uint8Primitive) {
+        this.uint8PrimitiveShort = uint8Primitive;
     }
 
-    public void setUint8Object_Short(Short uint8Object) {
-        this.uint8Object_Short = uint8Object;
+    public void setUint8ObjectShort(Short uint8Object) {
+        this.uint8ObjectShort = uint8Object;
     }
 
     public void setUint16Primitive(int uint16Primitive) {
@@ -442,24 +442,24 @@ public class SimplePOJO {
         this.uint32Object = uint32Object;
     }
 
-    public void setUint64Primitive_Long(Object uint64Primitive) {
+    public void setUint64PrimitiveLong(Object uint64Primitive) {
         if (uint64Primitive instanceof BigInteger) {
-            this.uint64Primitive_Long = ((BigInteger) uint64Primitive).longValue();
+            this.uint64PrimitiveLong = ((BigInteger) uint64Primitive).longValue();
         } else {
-            this.uint64Primitive_Long = (long) uint64Primitive;
+            this.uint64PrimitiveLong = (long) uint64Primitive;
         }
     }
 
-    public void setUint64Object_Long(Object uint64Object) {
+    public void setUint64ObjectLong(Object uint64Object) {
         if (uint64Object instanceof BigInteger) {
-            this.uint64Object_Long = ((BigInteger) uint64Object).longValue();
+            this.uint64ObjectLong = ((BigInteger) uint64Object).longValue();
         } else {
-            this.uint64Object_Long = (Long) uint64Object;
+            this.uint64ObjectLong = (Long) uint64Object;
         }
     }
 
-    public void setUint64Object_BigInt(BigInteger uint64Object_BigInt) {
-        this.uint64Object_BigInt = uint64Object_BigInt;
+    public void setUint64ObjectBigInt(BigInteger uint64ObjectBigInt) {
+        this.uint64ObjectBigInt = uint64ObjectBigInt;
     }
 
     public void setUint128Object(BigInteger uint128Object) {
@@ -530,30 +530,30 @@ public class SimplePOJO {
         this.date32 = date32;
     }
 
-    public void setDateTimeObject_Local(Object dateTimeObject) {
+    public void setDateTimeObjectLocal(Object dateTimeObject) {
         if (dateTimeObject instanceof ZonedDateTime) {
             ZoneId utcZone = ZoneId.of("UTC");
-            this.dateTime_Local = ((ZonedDateTime) dateTimeObject).withZoneSameInstant(utcZone).toLocalDateTime();
+            this.localDateTime = ((ZonedDateTime) dateTimeObject).withZoneSameInstant(utcZone).toLocalDateTime();
         } else {
-            this.dateTime_Local = (LocalDateTime) dateTimeObject;
+            this.localDateTime = (LocalDateTime) dateTimeObject;
         }
     }
 
-    public void setDateTime64Object_Local(Object dateTime64Object) {
+    public void setDateTime64ObjectLocal(Object dateTime64Object) {
         if (dateTime64Object instanceof ZonedDateTime) {
             ZoneId utcZone = ZoneId.of("UTC");
-            this.dateTime64_Local = ((ZonedDateTime) dateTime64Object).withZoneSameInstant(utcZone).toLocalDateTime();
+            this.localDateTime64 = ((ZonedDateTime) dateTime64Object).withZoneSameInstant(utcZone).toLocalDateTime();
         } else {
-            this.dateTime64_Local = (LocalDateTime) dateTime64Object;
+            this.localDateTime64 = (LocalDateTime) dateTime64Object;
         }
     }
 
-    public void setDateTimeObject_Zoned(ZonedDateTime dateTime_Zoned) {
-        this.dateTime_Zoned = dateTime_Zoned;
+    public void setDateTimeObjectZoned(ZonedDateTime dateTimeZoned) {
+        this.zonedDateTime = dateTimeZoned;
     }
 
-    public void setDateTime64Object_Zoned(ZonedDateTime dateTime64_Zoned) {
-        this.dateTime64_Zoned = dateTime64_Zoned;
+    public void setDateTime64ObjectZoned(ZonedDateTime dateTime64Zoned) {
+        this.zonedDateTime64 = dateTime64Zoned;
     }
 
     public void setUuid(UUID uuid) {
@@ -576,9 +576,9 @@ public class SimplePOJO {
         this.tupleOfObjects = tupleOfObjects;
     }
 
-    public static String createTableSQL(String database, String tableName, int parts_to_throw_insert) {
+    public static String createTableSQL(String database, String tableName, int partsToThrowInsert) {
         String createTable = createTableSQL(database, tableName);
-        return createTable.trim().substring(0, createTable.trim().length() - 1) + " " + String.format("SETTINGS parts_to_throw_insert = %d;", parts_to_throw_insert);
+        return createTable.trim().substring(0, createTable.trim().length() - 1) + " " + String.format("SETTINGS parts_to_throw_insert = %d;", partsToThrowInsert);
     }
 
     public static String createTableSQL(String database, String tableName) {
@@ -593,17 +593,17 @@ public class SimplePOJO {
                 "longObject Int64," +
                 "bigInteger128 Int128," +
                 "bigInteger256 Int256," +
-                "uint8Primitive_Int  UInt8," +
-                "uint8Object_Int UInt8," +
-                "uint8Primitive_Short  UInt8," +
-                "uint8Object_Short UInt8," +
+                "uint8PrimitiveInt  UInt8," +
+                "uint8ObjectInt UInt8," +
+                "uint8PrimitiveShort  UInt8," +
+                "uint8ObjectShort UInt8," +
                 "uint16Primitive  UInt16," +
                 "uint16Object UInt16," +
                 "uint32Primitive  UInt32," +
                 "uint32Object UInt32," +
-                "uint64Primitive_Long UInt64," +
-                "uint64Object_Long UInt64," +
-                "uint64Object_BigInt UInt64," +
+                "uint64PrimitiveLong UInt64," +
+                "uint64ObjectLong UInt64," +
+                "uint64ObjectBigInt UInt64," +
                 "uint128Object UInt128," +
                 "uint256Object UInt256," +
                 "bigDecimal Decimal(10,5)," +
@@ -621,10 +621,10 @@ public class SimplePOJO {
                 "fixedStr FixedString(10)," +
                 "dateObject Date," +
                 "date32Object Date32," +
-                "dateTimeObject_Local DateTime," +
-                "dateTime64Object_Local DateTime64(6, 'UTC')," +
-                "dateTimeObject_Zoned DateTime," +
-                "dateTime64Object_Zoned DateTime64(6, 'UTC')," +
+                "dateTimeObjectLocal DateTime," +
+                "dateTime64ObjectLocal DateTime64(6, 'UTC')," +
+                "dateTimeObjectZoned DateTime," +
+                "dateTime64ObjectZoned DateTime64(6, 'UTC')," +
                 "uuid UUID," +
                 "stringList Array(String)," +
                 "longList Array(Int64)," +
@@ -651,17 +651,17 @@ public class SimplePOJO {
                 Objects.equals(longObject, other.longObject) &&
                 Objects.equals(bigInteger128, other.bigInteger128) &&
                 Objects.equals(bigInteger256, other.bigInteger256) &&
-                Objects.equals(uint8Primitive_Int, other.uint8Primitive_Int) &&
-                Objects.equals(uint8Object_Int, other.uint8Object_Int) &&
-                Objects.equals(uint8Primitive_Short, other.uint8Primitive_Short) &&
-                Objects.equals(uint8Object_Short, other.uint8Object_Short) &&
+                Objects.equals(uint8PrimitiveInt, other.uint8PrimitiveInt) &&
+                Objects.equals(uint8ObjectInt, other.uint8ObjectInt) &&
+                Objects.equals(uint8PrimitiveShort, other.uint8PrimitiveShort) &&
+                Objects.equals(uint8ObjectShort, other.uint8ObjectShort) &&
                 Objects.equals(uint16Primitive, other.uint16Primitive) &&
                 Objects.equals(uint16Object, other.uint16Object) &&
                 Objects.equals(uint32Primitive, other.uint32Primitive) &&
                 Objects.equals(uint32Object, other.uint32Object) &&
-                Objects.equals(uint64Primitive_Long, other.uint64Primitive_Long) &&
-                Objects.equals(uint64Object_Long, other.uint64Object_Long) &&
-                Objects.equals(uint64Object_BigInt, other.uint64Object_BigInt) &&
+                Objects.equals(uint64PrimitiveLong, other.uint64PrimitiveLong) &&
+                Objects.equals(uint64ObjectLong, other.uint64ObjectLong) &&
+                Objects.equals(uint64ObjectBigInt, other.uint64ObjectBigInt) &&
                 Objects.equals(uint128Object, other.uint128Object) &&
                 Objects.equals(uint256Object, other.uint256Object) &&
                 Objects.equals(bigDecimal, other.bigDecimal) &&
@@ -679,10 +679,10 @@ public class SimplePOJO {
                 Objects.equals(fixedStr, other.fixedStr) &&
                 Objects.equals(date, other.date) &&
                 Objects.equals(date32, other.date32) &&
-                Objects.equals(dateTime_Local, other.dateTime_Local) &&
-                Objects.equals(dateTime64_Local, other.dateTime64_Local) &&
-                Objects.equals(dateTime_Zoned, other.dateTime_Zoned) &&
-                Objects.equals(dateTime64_Zoned, other.dateTime64_Zoned) &&
+                Objects.equals(localDateTime, other.localDateTime) &&
+                Objects.equals(localDateTime64, other.localDateTime64) &&
+                Objects.equals(zonedDateTime, other.zonedDateTime) &&
+                Objects.equals(zonedDateTime64, other.zonedDateTime64) &&
                 Objects.equals(uuid, other.uuid) &&
                 Objects.equals(stringList, other.stringList) &&
                 Objects.equals(longList, other.longList) &&
@@ -692,6 +692,6 @@ public class SimplePOJO {
 
     @Override
     public int hashCode() {
-        return Objects.hash(bytePrimitive, byteObject, shortPrimitive, shortObject, intPrimitive, integerObject, longPrimitive, longObject, bigInteger128, bigInteger256, uint8Primitive_Int, uint8Object_Int, uint8Primitive_Short, uint8Object_Short, uint16Primitive, uint16Object, uint32Primitive, uint32Object, uint64Primitive_Long, uint64Object_Long, uint64Object_BigInt, uint128Object, uint256Object, bigDecimal, bigDecimal32, bigDecimal64, bigDecimal128, bigDecimal256, floatPrimitive, floatObject, doublePrimitive, doubleObject, booleanPrimitive, booleanObject, str, fixedStr, date, date32, dateTime_Local, dateTime64_Local, dateTime_Zoned, dateTime64_Zoned, uuid, stringList, longList, mapOfStrings, tupleOfObjects);
+        return Objects.hash(bytePrimitive, byteObject, shortPrimitive, shortObject, intPrimitive, integerObject, longPrimitive, longObject, bigInteger128, bigInteger256, uint8PrimitiveInt, uint8ObjectInt, uint8PrimitiveShort, uint8ObjectShort, uint16Primitive, uint16Object, uint32Primitive, uint32Object, uint64PrimitiveLong, uint64ObjectLong, uint64ObjectBigInt, uint128Object, uint256Object, bigDecimal, bigDecimal32, bigDecimal64, bigDecimal128, bigDecimal256, floatPrimitive, floatObject, doublePrimitive, doubleObject, booleanPrimitive, booleanObject, str, fixedStr, date, date32, localDateTime, localDateTime64, zonedDateTime, zonedDateTime64, uuid, stringList, longList, mapOfStrings, tupleOfObjects);
     }
 }

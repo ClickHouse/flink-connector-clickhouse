@@ -21,4 +21,12 @@ public class SimplePOJOWithJSON {
         return jsonString;
     }
 
+    public static String createTableSql(String database, String tableName) {
+        return "CREATE TABLE `" + database + "`.`" + tableName + "` (" +
+                "longPrimitive Int64," +
+                "jsonPayload JSON," +
+                ") " +
+                "ENGINE = MergeTree " +
+                "ORDER BY (longPrimitive); ";
+    }
 }
