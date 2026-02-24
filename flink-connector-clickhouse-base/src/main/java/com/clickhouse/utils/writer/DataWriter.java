@@ -227,4 +227,12 @@ public class DataWriter {
         }
     }
 
+    public void writeVarInt(long value) throws IOException {
+        SerializerUtils.writeVarInt(out, value);
+    }
+
+    public void writeRawString(String value) throws IOException {
+        BinaryStreamUtils.writeString(out,value);
+    }
+
 }
