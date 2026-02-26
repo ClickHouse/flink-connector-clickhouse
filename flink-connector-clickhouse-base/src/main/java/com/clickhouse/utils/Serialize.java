@@ -115,7 +115,7 @@ public class Serialize {
     }
 
     /**
-     *
+     * TODO: remove these writer functions as necessary
      */
 
     // Method structure write[ClickHouse Type](OutputStream, Java type, ... )

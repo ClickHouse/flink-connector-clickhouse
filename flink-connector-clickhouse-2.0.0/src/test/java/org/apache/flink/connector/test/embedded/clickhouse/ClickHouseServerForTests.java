@@ -24,6 +24,7 @@ public class ClickHouseServerForTests {
     protected static String password = null;
     protected static boolean isSSL = false;
 
+    private static final String SELECT_STATEMENT_TEMPLATE = "select %s from `%s`.`%s` order by `%s` ASC";
 
     public static void initConfiguration() {
         if (isCloud) {
@@ -43,6 +44,7 @@ public class ClickHouseServerForTests {
         }
         isSSL = ClickHouseTestHelpers.isCloud();
     }
+
     public static void setUp() throws InterruptedException, ExecutionException {
         if (!isCloud) {
             db = new ClickHouseContainer(ClickHouseTestHelpers.CLICKHOUSE_DOCKER_IMAGE).withPassword("test_password").withEnv("CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT", "1");
@@ -72,12 +74,25 @@ public class ClickHouseServerForTests {
         }
     }
 
-    public static String getDatabase() { return database; }
+    public static String getDatabase() {
+        return database;
+    }
 
-    public static String getHost() { return host; }
-    public static int getPort() { return port; }
-    public static String getUsername() { return username; }
-    public static String getPassword() { return password; }
+    public static String getHost() {
+        return host;
+    }
+
+    public static int getPort() {
+        return port;
+    }
+
+    public static String getUsername() {
+        return username;
+    }
+
+    public static String getPassword() {
+        return password;
+    }
 
     public static String getURL() {
         return ClickHouseServerForTests.getURL(host, port);
@@ -91,7 +106,9 @@ public class ClickHouseServerForTests {
         }
     }
 
-    public static boolean isCloud() { return isCloud; }
+    public static boolean isCloud() {
+        return isCloud;
+    }
 
     public static void executeSql(String sql) throws ExecutionException, InterruptedException {
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
@@ -108,23 +125,30 @@ public class ClickHouseServerForTests {
         List<GenericRecord> content = client.queryAll(showDataSql);
         for (GenericRecord record : content) {
             System.out.println();
-            for (int i = 0; i< record.getSchema().getColumns().toArray().length; i++) {
-                System.out.print(" | " + record.getObject(i +1));
+            for (int i = 0; i < record.getSchema().getColumns().toArray().length; i++) {
+                System.out.print(" | " + record.getObject(i + 1));
             }
         }
         System.out.println("\n-----------------");
     }
 
-    public static List<GenericRecord> extractData(String database, String tableName, String id) throws ExecutionException, InterruptedException {
-        String showDataSql = String.format("select * from `%s`.`%s` order by `%s` ASC", database, tableName, id);
+    public static List<GenericRecord> extractAllData(String database, String tableName, String orderByCol) throws ExecutionException, InterruptedException {
+        return extractData("*", database, tableName, orderByCol);
+    }
+
+    public static List<GenericRecord> extractData(String selectColsCommaSeparated, String database, String tableName, String orderByCol) throws ExecutionException, InterruptedException {
+        String showDataSql = String.format(SELECT_STATEMENT_TEMPLATE, selectColsCommaSeparated, database, tableName, orderByCol);
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
         return client.queryAll(showDataSql);
     }
 
-    public static List<GenericRecord> extractData(String database, String tableName, String id, String expression) throws ExecutionException, InterruptedException {
-        String showDataSql = String.format("select %s,%s from `%s`.`%s` order by `%s` ASC", id, expression, database, tableName, id);
+    public static <T> List<T> extractAllDataToPOJO(String database, String tableName, String orderByCol, Class<T> pojoClass) throws ExecutionException, InterruptedException {
+        // NOTE: see DefaultColumnToMethodMatchingStrategy.java for rules the pojo class must follow in order to be deserialized correctly
+        String showDataSql = String.format(SELECT_STATEMENT_TEMPLATE, "*", database, tableName, orderByCol);
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
-        return client.queryAll(showDataSql);
+        TableSchema schema = getTableSchema(tableName, database);
+        client.register(pojoClass, schema);
+        return client.queryAll(showDataSql, pojoClass, schema);
     }
 
     public static int countParts(String table) {
@@ -166,6 +190,10 @@ public class ClickHouseServerForTests {
     }
 
     public static TableSchema getTableSchema(String table) throws ExecutionException, InterruptedException {
+        return getTableSchema(table, database);
+    }
+
+    private static TableSchema getTableSchema(String table, String database) {
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
         return client.getTableSchema(table, database);
     }

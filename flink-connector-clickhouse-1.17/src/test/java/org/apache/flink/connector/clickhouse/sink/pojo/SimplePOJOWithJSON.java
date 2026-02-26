@@ -1,16 +1,10 @@
 package org.apache.flink.connector.clickhouse.sink.pojo;
 
-import java.math.BigDecimal;
-import java.math.BigInteger;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.*;
-
 public class SimplePOJOWithJSON {
 
-    private long longPrimitive;
+    private final long longPrimitive;
 
-    private String jsonString;
+    private final String jsonString;
 
     public SimplePOJOWithJSON(int index) {
 
@@ -23,6 +17,16 @@ public class SimplePOJOWithJSON {
         return longPrimitive;
     }
 
-    public String getJsonString() { return jsonString; }
+    public String getJsonString() {
+        return jsonString;
+    }
 
+    public static String createTableSql(String database, String tableName) {
+        return "CREATE TABLE `" + database + "`.`" + tableName + "` (" +
+                "longPrimitive Int64," +
+                "jsonPayload JSON," +
+                ") " +
+                "ENGINE = MergeTree " +
+                "ORDER BY (longPrimitive); ";
+    }
 }

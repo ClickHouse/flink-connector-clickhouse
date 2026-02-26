@@ -30,4 +30,14 @@ public class DateTimePOJO {
         DATETIME,
         DATETIME64
     }
+
+    public static String createTableSql(String database, String tableName, String dateTimeType) {
+        return "CREATE TABLE `" + database + "`.`" + tableName + "` (" +
+                "id String," +
+                String.format("created_at %s,", dateTimeType) +
+                "num_logins Int32," +
+                ") " +
+                "ENGINE = MergeTree " +
+                "ORDER BY (id); ";
+    }
 }
