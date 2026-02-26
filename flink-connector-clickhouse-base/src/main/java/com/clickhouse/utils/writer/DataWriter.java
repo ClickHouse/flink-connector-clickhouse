@@ -118,7 +118,7 @@ public class DataWriter {
     // Int64
     public void writeInt64(Long value, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         if (Serialize.writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
-            BinaryStreamUtils.writeInt64(out, Serialize.convertToInteger(value));
+            BinaryStreamUtils.writeInt64(out, value);
         }
     }
 
