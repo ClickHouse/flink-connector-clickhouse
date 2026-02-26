@@ -207,7 +207,7 @@ public class Serialize {
     // Int64
     public static void writeInt64(OutputStream out, Long value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
         if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
-            BinaryStreamUtils.writeInt64(out, convertToInteger(value));
+            BinaryStreamUtils.writeInt64(out, value);
         }
     }
 
