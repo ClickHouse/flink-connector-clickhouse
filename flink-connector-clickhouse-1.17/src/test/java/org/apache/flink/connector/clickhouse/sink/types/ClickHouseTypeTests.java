@@ -75,7 +75,6 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
     void testSimplePOJOTypes() throws Exception {
         String tableName = "simple_pojo";
 
-        dropTableIfExists(getDatabase(), tableName);
         // create table
         String tableSql = SimplePOJO.createTableSQL(getDatabase(), tableName);
         ClickHouseServerForTests.executeSql(tableSql);
@@ -121,9 +120,8 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
     @ParameterizedTest
     @MethodSource("provideTypeAndPojoList")
     void testDateTime(String type, List<DateTimePOJO> simplePOJOList) throws Exception {
-        String tableName = "simple_pojo_with_datetime";
+        String tableName = String.format("pojo_%s", type.replace("(", "_").replace(")", ""));
 
-        dropTableIfExists(FlinkClusterTests.getDatabase(), tableName);
         // create table
         ClickHouseServerForTests.executeSql(DateTimePOJO.createTableSql(getDatabase(), tableName, type));
 
@@ -173,7 +171,6 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
     void testSimplePOJOWithDefaultsTypes() throws Exception {
         String tableName = "simple_pojo_with_defaults";
 
-        dropTableIfExists(getDatabase(), tableName);
         // create table
         ClickHouseServerForTests.executeSql(SimplePOJOWithDefaults.createTableSql(getDatabase(), tableName));
 
@@ -227,7 +224,6 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
 
         String tableName = "simple_pojo_with_json_data";
 
-        dropTableIfExists(getDatabase(), tableName);
         // create table
         ClickHouseServerForTests.executeSql(SimplePOJOWithJSON.createTableSql(getDatabase(), tableName));
 
@@ -271,10 +267,5 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
             Assertions.assertEquals(longPrimitive, genericRecordList.get(j).getLong("longPrimitive"));
             Assertions.assertEquals("foo", foo);
         }
-    }
-
-    private static void dropTableIfExists(String database, String tableName) throws ExecutionException, InterruptedException {
-        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", database, tableName);
-        ClickHouseServerForTests.executeSql(dropTable);
     }
 }

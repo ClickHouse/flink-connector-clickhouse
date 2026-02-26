@@ -75,7 +75,6 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
     void testSimplePOJOTypes() throws Exception {
         String tableName = "simple_pojo";
 
-        dropTableIfExists(getDatabase(), tableName);
         // create table
         String tableSql = SimplePOJO.createTableSQL(getDatabase(), tableName);
         ClickHouseServerForTests.executeSql(tableSql);
@@ -121,18 +120,10 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
     @ParameterizedTest
     @MethodSource("provideTypeAndPojoList")
     void testDateTime(String type, List<DateTimePOJO> simplePOJOList) throws Exception {
-        String tableName = "simple_pojo_with_datetime";
+        String tableName = String.format("pojo_%s", type.replace("(", "_").replace(")", ""));
 
-        dropTableIfExists(getDatabase(), tableName);
         // create table
-        String tableSql = "CREATE TABLE `" + FlinkClusterTests.getDatabase() + "`.`" + tableName + "` (" +
-                "id String," +
-                String.format("created_at %s,", type) +
-                "num_logins Int32," +
-                ") " +
-                "ENGINE = MergeTree " +
-                "ORDER BY (id); ";
-        ClickHouseServerForTests.executeSql(tableSql);
+        ClickHouseServerForTests.executeSql(DateTimePOJO.createTableSql(getDatabase(), tableName, type));
 
         TableSchema simpleTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
         POJOConvertor<DateTimePOJO> simplePOJOWithDateTimeConvertor = new DateTimePOJOConvertor(simpleTableSchema.hasDefaults());
@@ -180,7 +171,6 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
     void testSimplePOJOWithDefaultsTypes() throws Exception {
         String tableName = "simple_pojo_with_defaults";
 
-        dropTableIfExists(getDatabase(), tableName);
         // create table
         String tableSql = "CREATE TABLE `" + FlinkClusterTests.getDatabase() + "`.`" + tableName + "` (" +
                 "id Int32," +
@@ -240,7 +230,6 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
 
         String tableName = "simple_pojo_with_json_data";
 
-        dropTableIfExists(getDatabase(), tableName);
         // create table
         String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
                 "longPrimitive Int64," +
@@ -290,10 +279,5 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
             Assertions.assertEquals(longPrimitive, genericRecordList.get(j).getLong("longPrimitive"));
             Assertions.assertEquals("foo", foo);
         }
-    }
-
-    private static void dropTableIfExists(String database, String tableName) throws ExecutionException, InterruptedException {
-        String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", database, tableName);
-        ClickHouseServerForTests.executeSql(dropTable);
     }
 }
