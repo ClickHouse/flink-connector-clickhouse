@@ -396,7 +396,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         DataStream<SimplePOJO> simplePOJOs = env.fromData(simplePOJOList.toArray(new SimplePOJO[0]));
         // send to a sink
         simplePOJOs.sinkTo(simplePOJOSink);
-        int rows = executeAsyncJob(env, tableName, 100, EXPECTED_ROWS);
+        int rows = executeAsyncJob(env, tableName, 500, EXPECTED_ROWS);
         Assertions.assertEquals(EXPECTED_ROWS, rows);
         //ClickHouseServerForTests.executeSql(String.format("SYSTEM START MERGES `%s.%s`", getDatabase(), tableName));
     }
