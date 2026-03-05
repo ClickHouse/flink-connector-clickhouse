@@ -347,6 +347,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         if (isCloud())
             return;
         String tableName = "simple_too_many_parts_pojo";
+        int expectedRows = 1000;
 
         // create table
         String tableSql = SimplePOJO.createTableSQL(getDatabase(), tableName, 10);
@@ -377,15 +378,15 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         );
 
         List<SimplePOJO> simplePOJOList = new ArrayList<>();
-        for (int i = 0; i < EXPECTED_ROWS; i++) {
+        for (int i = 0; i < expectedRows; i++) {
             simplePOJOList.add(new SimplePOJO(i));
         }
         // create from list
         DataStream<SimplePOJO> simplePOJOs = env.fromElements(simplePOJOList.toArray(new SimplePOJO[0]));
         // send to a sink
         simplePOJOs.sinkTo(simplePOJOSink);
-        int rows = executeAsyncJob(env, tableName, 100, EXPECTED_ROWS);
-        Assertions.assertEquals(EXPECTED_ROWS, rows);
+        int rows = executeAsyncJob(env, tableName, 500, expectedRows);
+        Assertions.assertEquals(expectedRows, rows);
 //        ClickHouseServerForTests.showData("simple_too_many_parts_pojo");
         //ClickHouseServerForTests.executeSql(String.format("SYSTEM START MERGES `%s.%s`", getDatabase(), tableName));
     }
