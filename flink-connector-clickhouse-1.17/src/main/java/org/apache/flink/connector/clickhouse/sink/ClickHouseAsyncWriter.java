@@ -36,6 +36,7 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
 
     private final ClickHouseClientConfig clickHouseClientConfig;
     private ClickHouseFormat clickHouseFormat = null;
+    private byte[] header = null;
     private int numberOfRetries = DEFAULT_MAX_RETRIES;
 
     private final Counter numBytesSendCounter;
@@ -59,6 +60,7 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
                                  int numberOfRetries,
                                  ClickHouseClientConfig clickHouseClientConfig,
                                  ClickHouseFormat clickHouseFormat,
+                                 byte[] header, 
                                  Collection<BufferedRequestState<ClickHousePayload>> state) {
         super(elementConverter,
                 context,
@@ -73,6 +75,7 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
                 state);
         this.clickHouseClientConfig = clickHouseClientConfig;
         this.clickHouseFormat = clickHouseFormat;
+        this.header = header;
         this.numberOfRetries = numberOfRetries;
         final SinkWriterMetricGroup metricGroup = context.metricGroup();
         this.numBytesSendCounter = metricGroup.getNumBytesSendCounter();
@@ -96,6 +99,7 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
                                  long maxRecordSizeInBytes,
                                  ClickHouseClientConfig clickHouseClientConfig,
                                  ClickHouseFormat clickHouseFormat,
+                                 byte[] header,
                                  Collection<BufferedRequestState<ClickHousePayload>> state) {
         this(elementConverter,
              context,
@@ -108,6 +112,7 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
              clickHouseClientConfig.getNumberOfRetries(),
              clickHouseClientConfig,
              clickHouseFormat,
+             header,
              state
         );
     }
@@ -142,6 +147,10 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
         long writeStartTime = System.currentTimeMillis();
         try {
             CompletableFuture<InsertResponse> response = chClient.insert(tableName, out -> {
+                if (header != null) {
+                    this.numBytesSendCounter.inc(header.length);
+                    out.write(header);
+                }
                 for (ClickHousePayload requestEntry : requestEntries) {
                     if (requestEntry.getPayload() != null) {
                         byte[] payload = requestEntry.getPayload();
