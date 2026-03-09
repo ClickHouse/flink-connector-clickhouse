@@ -397,8 +397,6 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         // send to a sink
         simplePOJOs.sinkTo(simplePOJOSink);
 
-        long testStartSeconds = System.currentTimeMillis() / 1000;
-
         int rows = executeBlockingJob(env, tableName);
 
         // flush ClickHouse's query log so the system.query_log is queryable immediately
@@ -406,7 +404,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
         // directly verify that 'Too Many Parts' errors occurred (code 252) - this means the connector retried the batch at least once
         int tooManyPartsErrors = ClickHouseServerForTests.countQueryLogErrors(
-                getDatabase(), tableName, 252, testStartSeconds);
+                getDatabase(), tableName, 252);
         Assertions.assertTrue(tooManyPartsErrors > 0,
                 "Expected at least one 'Too Many Parts' error in system.query_log, but found none");
 
