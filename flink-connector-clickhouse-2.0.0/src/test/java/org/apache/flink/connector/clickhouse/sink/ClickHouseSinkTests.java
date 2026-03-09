@@ -30,7 +30,7 @@ import java.util.concurrent.ExecutionException;
 
 import static org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests.*;
 import static org.apache.flink.connector.clickhouse.sink.ClickHouseSinkTestUtils.*;
-import static org.apache.flink.connector.test.embedded.flink.EmbeddedFlinkClusterForTests.executeAsyncJob;
+import static org.apache.flink.connector.test.embedded.flink.EmbeddedFlinkClusterForTests.*;
 
 public class ClickHouseSinkTests extends FlinkClusterTests {
 
@@ -399,9 +399,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
         long testStartSeconds = System.currentTimeMillis() / 1000;
 
-        // fromData is bounded — execute() blocks until the job finishes naturally,
-        // including flushing all pending sink batches
-        env.execute("SimplePOJODataTooManyPartsTest");
+        int rows = executeBlockingJob(env, tableName);
 
         // flush ClickHouse's query log so the system.query_log is queryable immediately
         ClickHouseServerForTests.executeSql("SYSTEM FLUSH LOGS");
@@ -413,7 +411,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 "Expected at least one 'Too Many Parts' error in system.query_log, but found none");
 
         // verify all rows landed after retries succeeded
-        Assertions.assertEquals(EXPECTED_ROWS, ClickHouseServerForTests.countRows(tableName));
+        Assertions.assertEquals(EXPECTED_ROWS, rows);
     }
 
     @Test
