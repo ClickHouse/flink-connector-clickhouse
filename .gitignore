@@ -80,3 +80,9 @@ nb-configuration.xml
 ## Miscellaneous
 ##############################
 *.log
+
+##############################
+## AI
+##############################
+.claude/settings.local.json
+.claude/agent-memory/
