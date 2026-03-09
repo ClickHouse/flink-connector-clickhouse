@@ -351,7 +351,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
     /*
         In this test, we lower the parts_to_throw_insert setting (https://clickhouse.com/docs/operations/settings/merge-tree-settings#parts_to_throw_insert) to trigger the "Too Many Parts" error more easily.
         Once we exceed this threshold, ClickHouse will reject INSERT operations with a "Too Many Parts" error.
-        Our retry implementation will demonstrate how it handles these failures by retrying the inserts until all rows are successfully inserted. We will insert one batch containing two records to observe this behavior.
+        Our retry implementation will demonstrate how it handles these failures by retrying the inserts until all rows are successfully inserted. We will make the batch size two records to observe this behavior.
     */
     @Test
     void SimplePOJODataTooManyPartsTest() throws Exception {
@@ -396,9 +396,24 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         DataStream<SimplePOJO> simplePOJOs = env.fromData(simplePOJOList.toArray(new SimplePOJO[0]));
         // send to a sink
         simplePOJOs.sinkTo(simplePOJOSink);
-        int rows = executeAsyncJob(env, tableName, 100, EXPECTED_ROWS);
-        Assertions.assertEquals(EXPECTED_ROWS, rows);
-        //ClickHouseServerForTests.executeSql(String.format("SYSTEM START MERGES `%s.%s`", getDatabase(), tableName));
+
+        long testStartSeconds = System.currentTimeMillis() / 1000;
+
+        // fromData is bounded — execute() blocks until the job finishes naturally,
+        // including flushing all pending sink batches
+        env.execute("SimplePOJODataTooManyPartsTest");
+
+        // flush ClickHouse's query log so the system.query_log is queryable immediately
+        ClickHouseServerForTests.executeSql("SYSTEM FLUSH LOGS");
+
+        // directly verify that 'Too Many Parts' errors occurred (code 252) - this means the connector retried the batch at least once
+        int tooManyPartsErrors = ClickHouseServerForTests.countQueryLogErrors(
+                getDatabase(), tableName, 252, testStartSeconds);
+        Assertions.assertTrue(tooManyPartsErrors > 0,
+                "Expected at least one 'Too Many Parts' error in system.query_log, but found none");
+
+        // verify all rows landed after retries succeeded
+        Assertions.assertEquals(EXPECTED_ROWS, ClickHouseServerForTests.countRows(tableName));
     }
 
     @Test
