@@ -407,4 +407,210 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
             new ClickHouseClientConfig(getServerURL(), getUsername() + "wrong_username", getPassword(), getDatabase(), "dummy");
         });
     }
+
+    @Test
+    void DataCorruptionCovidTest() throws Exception {
+        String tableName = "covid_corruption_test";
+
+        // create table
+        ClickHouseServerForTests.executeSql(CovidPOJO.createTableSql(getDatabase(), tableName));
+
+        TableSchema covidTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
+
+        POJOConvertor<CovidPOJO> covidPOJOConvertor = new CovidPOJOConvertor(covidTableSchema.hasDefaults());
+        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        env.setParallelism(STREAM_PARALLELISM);
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        clickHouseClientConfig.setSupportDefault(covidTableSchema.hasDefaults());
+        ElementConverter<CovidPOJO, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(CovidPOJO.class, covidPOJOConvertor);
+
+        ClickHouseAsyncSink<CovidPOJO> covidPOJOSink = new ClickHouseAsyncSink<>(
+                convertorCovid,
+                MAX_BATCH_SIZE,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                MAX_TIME_IN_BUFFER_MS,
+                MAX_RECORD_SIZE_IN_BYTES,
+                clickHouseClientConfig
+        );
+
+        Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
+
+        FileSource<String> source = FileSource
+                .forRecordStreamFormat(new TextLineInputFormat(), filePath)
+                .build();
+        // read csv data from file
+        DataStreamSource<String> lines = env.fromSource(
+                source,
+                WatermarkStrategy.noWatermarks(),
+                "GzipCsvSource"
+        );
+
+        // First batch: insert only first MAX_BATCH_SIZE records
+        DataStream<CovidPOJO> firstBatch = lines.map(new MapFunction<String, CovidPOJO>() {
+            private int recordCount = 0;
+            
+            @Override
+            public CovidPOJO map(String value) throws Exception {
+                recordCount++;
+                // Only process first MAX_BATCH_SIZE records
+                if (recordCount <= MAX_BATCH_SIZE) {
+                    return new CovidPOJO(value);
+                }
+                // Return null for records we don't want to process in this batch
+                return null;
+            }
+        }).filter(record -> record != null); // Filter out null records
+        
+        // send first batch to sink
+        firstBatch.sinkTo(covidPOJOSink);
+        
+        // Execute first batch and verify it succeeds
+        int firstBatchRows = executeAsyncJob(env, tableName, 10, MAX_BATCH_SIZE);
+        Assertions.assertEquals(MAX_BATCH_SIZE, firstBatchRows, 
+            "Expected exactly " + MAX_BATCH_SIZE + " rows from first batch, but got: " + firstBatchRows);
+        
+        // Now change the table schema to simulate corruption/incompatibility
+        // Drop a critical column that the POJO expects to exist
+        String alterTableSql = "ALTER TABLE `" + getDatabase() + "`.`" + tableName + "` " +
+                "DROP COLUMN new_confirmed";
+        ClickHouseServerForTests.executeSql(alterTableSql);
+        
+        // Try to insert the remaining records with a new sink
+        // This should fail due to schema mismatch
+        ClickHouseAsyncSink<CovidPOJO> secondBatchSink = new ClickHouseAsyncSink<>(
+                convertorCovid,
+                MAX_BATCH_SIZE,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                MAX_TIME_IN_BUFFER_MS,
+                MAX_RECORD_SIZE_IN_BYTES,
+                clickHouseClientConfig
+        );
+        
+        // Create new environment for second batch
+        final StreamExecutionEnvironment env2 = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        env2.setParallelism(STREAM_PARALLELISM);
+        
+        FileSource<String> source2 = FileSource
+                .forRecordStreamFormat(new TextLineInputFormat(), filePath)
+                .build();
+        DataStreamSource<String> lines2 = env2.fromSource(
+                source2,
+                WatermarkStrategy.noWatermarks(),
+                "GzipCsvSource"
+        );
+        
+        // Second batch: process remaining records (records > MAX_BATCH_SIZE)
+        DataStream<CovidPOJO> secondBatch = lines2.map(new MapFunction<String, CovidPOJO>() {
+            private int recordCount = 0;
+            
+            @Override
+            public CovidPOJO map(String value) throws Exception {
+                recordCount++;
+                // Only process records after MAX_BATCH_SIZE
+                if (recordCount > MAX_BATCH_SIZE && recordCount <= EXPECTED_ROWS) {
+                    return new CovidPOJO(value);
+                }
+                return null;
+            }
+        }).filter(record -> record != null);
+        
+        secondBatch.sinkTo(secondBatchSink);
+        
+        // The second batch should fail due to schema changes
+        // We expect 0 additional rows to be inserted
+        int secondBatchRows = executeAsyncJob(env2, tableName, 10, 0);
+        Assertions.assertEquals(0, secondBatchRows, 
+            "Expected 0 rows from second batch due to schema mismatch, but got: " + secondBatchRows);
+        
+        // Total should still be just the first batch
+        int totalRows = ClickHouseServerForTests.countRows(tableName);
+        Assertions.assertEquals(MAX_BATCH_SIZE, totalRows, 
+            "Expected total of " + MAX_BATCH_SIZE + " rows, but got: " + totalRows);
+    }
+
+    @Test
+    void DataCorruptionCSVTest() throws Exception {
+        String tableName = "csv_corruption_test";
+        // create table
+        String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
+                "date Date," +
+                "location_key LowCardinality(String)," +
+                "new_confirmed Int32," +
+                "new_deceased Int32," +
+                "new_recovered Int32," +
+                "new_tested Int32," +
+                "cumulative_confirmed Int32," +
+                "cumulative_deceased Int32," +
+                "cumulative_recovered Int32," +
+                "cumulative_tested Int32" +
+                ") " +
+                "ENGINE = MergeTree " +
+                "ORDER BY (location_key, date); ";
+        ClickHouseServerForTests.executeSql(tableSql);
+
+        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        env.setParallelism(STREAM_PARALLELISM);
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
+        // create sink
+        ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
+                convertorString,
+                MAX_BATCH_SIZE,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                MAX_TIME_IN_BUFFER_MS,
+                MAX_RECORD_SIZE_IN_BYTES,
+                clickHouseClientConfig
+        );
+        csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
+
+        Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
+
+        FileSource<String> source = FileSource
+                .forRecordStreamFormat(new TextLineInputFormat(), filePath)
+                .build();
+        // read csv data from file
+        DataStreamSource<String> lines = env.fromSource(
+                source,
+                WatermarkStrategy.noWatermarks(),
+                "GzipCsvSource"
+        );
+        
+        // Create two distinct batches: first MAX_BATCH_SIZE good records, next MAX_BATCH_SIZE corrupted records
+        DataStream<String> testData = lines.map(new MapFunction<String, String>() {
+            private int recordCount = 0;
+            
+            @Override
+            public String map(String value) throws Exception {
+                recordCount++;
+                // First MAX_BATCH_SIZE records: keep as-is (good records)
+                // Next MAX_BATCH_SIZE records: corrupt the new_confirmed field
+                if (recordCount > MAX_BATCH_SIZE) {
+                    String[] parts = value.split(",");
+                    if (parts.length >= 3) {
+                        parts[2] = "invalid_number"; // corrupt new_confirmed field
+                        return String.join(",", parts);
+                    }
+                }
+                return value;
+            }
+        });
+        
+        testData.sinkTo(csvSink);
+        
+        // We expect only the first MAX_BATCH_SIZE good records to be inserted
+        // The corrupted batch should be rejected
+        int rows = executeAsyncJob(env, tableName, 10, MAX_BATCH_SIZE);
+        
+        // Should have exactly MAX_BATCH_SIZE rows (the good batch)
+        Assertions.assertEquals(MAX_BATCH_SIZE, rows, 
+            "Expected exactly " + MAX_BATCH_SIZE + " rows from good batch, but got: " + rows);
+    }
 }
