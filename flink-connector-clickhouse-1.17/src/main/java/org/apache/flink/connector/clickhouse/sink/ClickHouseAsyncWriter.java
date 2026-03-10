@@ -217,7 +217,6 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
                         LOG.warn("Retriable exception occurred while processing request. Left attempts {}.", this.retryPolicy.getValue() - (firstElement.getAttemptCount() - 1) );
                         // We are not in retry threshold we can send data again
                         requestToRetry.accept(requestEntries);
-                        return;
                     } else {
                         LOG.warn("Fatal — stop retrying, fail the Flink job", e);
                         getFatalExceptionCons().accept(e);

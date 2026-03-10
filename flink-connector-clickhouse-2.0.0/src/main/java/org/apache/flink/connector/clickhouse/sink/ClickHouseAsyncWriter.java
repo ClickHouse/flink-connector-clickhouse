@@ -42,7 +42,6 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
     private ClickHouseFormat clickHouseFormat = null;
     private RetryPolicy retryPolicy = RetryPolicy.forever();
     private BatchFailureStrategy batchFailureStrategy = BatchFailureStrategy.DROP_BATCH;
-    private int numberOfRetries = DEFAULT_MAX_RETRIES;
 
     private final Counter numBytesSendCounter;
     private final Counter numRecordsSendCounter;
@@ -79,7 +78,6 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
         this.clickHouseClientConfig = clickHouseClientConfig;
         this.clickHouseFormat = clickHouseFormat;
         this.retryPolicy = retryPolicy;
-        this.numberOfRetries = clickHouseClientConfig.getNumberOfRetries();
         final SinkWriterMetricGroup metricGroup = context.metricGroup();
         this.numBytesSendCounter = metricGroup.getNumBytesSendCounter();
         this.numRecordsSendCounter = metricGroup.getNumRecordsSendCounter();
@@ -220,7 +218,6 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
                         LOG.warn("Retriable exception occurred while processing request. Left attempts {}.", this.retryPolicy.getValue() - (firstElement.getAttemptCount() - 1) );
                         // We are not in retry threshold we can send data again
                         resultHandler.retryForEntries(requestEntries);
-                        return;
                     } else {
                         LOG.warn("Fatal — stop retrying, fail the Flink job", e);
                         resultHandler.completeExceptionally((Exception) e);

@@ -520,17 +520,17 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         }).filter(record -> record != null);
         
         secondBatch.sinkTo(secondBatchSink);
-        
+
         // The second batch should fail due to schema changes
         // We expect 0 additional rows to be inserted
         int secondBatchRows = executeAsyncJob(env2, tableName, 10, 0);
-        Assertions.assertEquals(0, secondBatchRows, 
-            "Expected 0 rows from second batch due to schema mismatch, but got: " + secondBatchRows);
-        
+        Assertions.assertEquals(MAX_BATCH_SIZE, secondBatchRows,
+                "Expected 0 rows from second batch due to schema mismatch, but table have already : " + MAX_BATCH_SIZE);
+
         // Total should still be just the first batch
         int totalRows = ClickHouseServerForTests.countRows(tableName);
-        Assertions.assertEquals(MAX_BATCH_SIZE, totalRows, 
-            "Expected total of " + MAX_BATCH_SIZE + " rows, but got: " + totalRows);
+        Assertions.assertEquals(MAX_BATCH_SIZE, totalRows,
+                "Expected total of " + MAX_BATCH_SIZE + " rows, but got: " + totalRows);
     }
 
     @Test
