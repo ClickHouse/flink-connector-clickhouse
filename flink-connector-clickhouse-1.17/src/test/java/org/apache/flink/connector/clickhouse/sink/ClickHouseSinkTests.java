@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
@@ -362,6 +363,9 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         clickHouseClientConfig.setNumberOfRetries(NUMBER_OF_RETRIES);
         clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
+        // disable server-side async insert batching (default ON in ClickHouse 26.2+) so each
+        // connector batch creates its own part, ensuring parts_to_throw_insert is triggered.
+        clickHouseClientConfig.setServerSettings(Collections.singletonMap("async_insert", "0"));
 
         ElementConverter<SimplePOJO, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
 
