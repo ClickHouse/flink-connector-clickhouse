@@ -66,14 +66,6 @@ public class Utils {
                 case 41:  // CANNOT_PARSE_DATETIME
                 case 72:  // CANNOT_PARSE_NUMBER
                 case 117: // INCORRECT_DATA
-
-//                // Schema / structural mismatch
-//                case 7:   // INCORRECT_NUMBER_OF_COLUMNS
-//                case 16:  // NO_SUCH_COLUMN_IN_TABLE
-//                case 20:  // NUMBER_OF_COLUMNS_DOESNT_MATCH
-//                case 53:  // TYPE_MISMATCH
-//                case 70:  // CANNOT_CONVERT_TYPE
-//                case 122: // INCOMPATIBLE_COLUMNS
                     throw new DataCorruptionException(e);
             }
 

@@ -233,7 +233,10 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
                     // since we do not want retry again we send empty list to the queue
                     requestToRetry.accept(Collections.emptyList());
                     break;
-
+                case STOP_FLINK:
+                    LOG.warn("Fatal — data corruption, fail the Flink job", e);
+                    getFatalExceptionCons().accept(e);
+                    break;
                 // TODO: DLQ implementation
 //                case MOVE_TO_DLQ:
 //                    break;
