@@ -5,6 +5,8 @@ import com.clickhouse.client.api.ClientConfigProperties;
 import com.clickhouse.client.api.insert.InsertResponse;
 import com.clickhouse.client.api.insert.InsertSettings;
 import com.clickhouse.client.api.internal.ServerSettings;
+import com.clickhouse.config.BatchFailureStrategy;
+import com.clickhouse.config.RetryPolicy;
 import com.clickhouse.data.ClickHouseFormat;
 import com.clickhouse.utils.Utils;
 import org.apache.flink.api.connector.sink2.WriterInitContext;
@@ -14,6 +16,8 @@ import org.apache.flink.connector.base.sink.writer.ElementConverter;
 import org.apache.flink.connector.base.sink.writer.ResultHandler;
 import org.apache.flink.connector.base.sink.writer.config.AsyncSinkWriterConfiguration;
 import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
+import org.apache.flink.connector.clickhouse.exception.DataCorruptionException;
+import org.apache.flink.connector.clickhouse.exception.FlinkWriteException;
 import org.apache.flink.connector.clickhouse.exception.RetriableException;
 import org.apache.flink.connector.clickhouse.sink.writer.ExtendedAsyncSinkWriter;
 import org.apache.flink.metrics.Counter;
@@ -24,9 +28,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<InputT, ClickHousePayload> {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseAsyncWriter.class);
@@ -34,7 +40,8 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
 
     private final ClickHouseClientConfig clickHouseClientConfig;
     private ClickHouseFormat clickHouseFormat = null;
-    private int numberOfRetries = DEFAULT_MAX_RETRIES;
+    private RetryPolicy retryPolicy = RetryPolicy.forever();
+    private BatchFailureStrategy batchFailureStrategy = BatchFailureStrategy.DROP_BATCH;
 
     private final Counter numBytesSendCounter;
     private final Counter numRecordsSendCounter;
@@ -53,7 +60,7 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
                                  long maxBatchSizeInBytes,
                                  long maxTimeInBufferMS,
                                  long maxRecordSizeInBytes,
-                                 int numberOfRetries,
+                                 RetryPolicy retryPolicy,
                                  ClickHouseClientConfig clickHouseClientConfig,
                                  ClickHouseFormat clickHouseFormat,
                                  Collection<BufferedRequestState<ClickHousePayload>> state) {
@@ -70,7 +77,7 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
                 state);
         this.clickHouseClientConfig = clickHouseClientConfig;
         this.clickHouseFormat = clickHouseFormat;
-        this.numberOfRetries = numberOfRetries;
+        this.retryPolicy = retryPolicy;
         final SinkWriterMetricGroup metricGroup = context.metricGroup();
         this.numBytesSendCounter = metricGroup.getNumBytesSendCounter();
         this.numRecordsSendCounter = metricGroup.getNumRecordsSendCounter();
@@ -102,7 +109,7 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
              maxBatchSizeInBytes,
              maxTimeInBufferMS,
              maxRecordSizeInBytes,
-             clickHouseClientConfig.getNumberOfRetries(),
+             clickHouseClientConfig.getRetryPolicy(),
              clickHouseClientConfig,
              clickHouseFormat,
              state
@@ -189,6 +196,7 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
             ResultHandler<ClickHousePayload> resultHandler,
             Throwable error, long writeStartTime) {
         // TODO: extract from error if we can retry
+        System.out.println(error.getCause());
         long writeEndTime = System.currentTimeMillis();
         this.writeFailureLatencyHistogram.update(writeEndTime - writeStartTime);
         try {
@@ -198,24 +206,47 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
             // Let's try to retry
             if (requestEntries != null && !requestEntries.isEmpty()) {
                 ClickHousePayload firstElement = requestEntries.get(0);
-                LOG.warn("Retry number [{}] out of [{}]", firstElement.getAttemptCount(), this.numberOfRetries);
                 firstElement.incrementAttempts();
-                if (firstElement.getAttemptCount() <= this.numberOfRetries) {
+                if (retryPolicy.isForever()) {
                     totalBatchRetriesCounter.inc();
-                    LOG.warn("Retriable exception occurred while processing request. Left attempts {}.", this.numberOfRetries - (firstElement.getAttemptCount() - 1) );
+                    LOG.warn("Retry forever number [{}]", firstElement.getAttemptCount());
                     // We are not in retry threshold we can send data again
                     resultHandler.retryForEntries(requestEntries);
-                    return;
                 } else {
-                    LOG.warn("No attempts left going to drop batch");
+                    if (firstElement.getAttemptCount() <= this.retryPolicy.getValue()) {
+                        totalBatchRetriesCounter.inc();
+                        LOG.warn("Retriable exception occurred while processing request. Left attempts {}.", this.retryPolicy.getValue() - (firstElement.getAttemptCount() - 1) );
+                        // We are not in retry threshold we can send data again
+                        resultHandler.retryForEntries(requestEntries);
+                    } else {
+                        LOG.warn("Fatal — stop retrying, fail the Flink job", e);
+                        resultHandler.completeExceptionally((Exception) e);
+                    }
+
                 }
             }
-
+        } catch (DataCorruptionException e) {
+            switch (this.batchFailureStrategy) {
+                case DROP_BATCH:
+                    LOG.info("Dropping {} request entries due to non-retryable failure: {}", requestEntries.size(), error.getLocalizedMessage());
+                    numOfDroppedBatchesCounter.inc();
+                    numOfDroppedRecordsCounter.inc(requestEntries.size());
+                    // since we do not want retry again we send empty list to the queue
+                    resultHandler.complete();
+                    break;
+                case STOP_FLINK:
+                    LOG.warn("Fatal — data corruption, fail the Flink job", e);
+                    resultHandler.completeExceptionally((Exception) e);
+                    break;
+                // TODO: DLQ implementation
+//                case MOVE_TO_DLQ:
+//                    break;
+            }
+        } catch (FlinkWriteException e) {
+            // currently default behavior is
+            LOG.warn("Fatal — stop retrying, fail the Flink job", e);
+            resultHandler.completeExceptionally((Exception) e);
         }
-        LOG.info("Dropping {} request entries due to non-retryable failure: {}", requestEntries.size(), error.getLocalizedMessage());
-        numOfDroppedBatchesCounter.inc();
-        numOfDroppedRecordsCounter.inc(requestEntries.size());
-        resultHandler.completeExceptionally((Exception) error);
     }
 
 }
