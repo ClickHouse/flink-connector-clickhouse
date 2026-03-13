@@ -581,6 +581,12 @@ public class SimplePOJO {
         return createTable.trim().substring(0, createTable.trim().length() - 1) + " " + String.format("SETTINGS parts_to_throw_insert = %d;", partsToThrowInsert);
     }
 
+    public static String createTableSQLWithDedupWindow(String database, String tableName, int dedupWindow) {
+        String createTable = createTableSQL(database, tableName);
+        return createTable.trim().substring(0, createTable.trim().length() - 1)
+                + " " + String.format("SETTINGS non_replicated_deduplication_window = %d;", dedupWindow);
+    }
+
     public static String createTableSQL(String database, String tableName) {
         return "CREATE TABLE `" + database + "`.`" + tableName + "` (" +
                 "bytePrimitive Int8," +

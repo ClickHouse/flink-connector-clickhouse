@@ -25,7 +25,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ExecutionException;
 
 import static org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests.*;
 import static org.apache.flink.connector.clickhouse.sink.ClickHouseSinkTestUtils.*;
@@ -388,6 +387,74 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         Assertions.assertEquals(EXPECTED_ROWS, rows);
 //        ClickHouseServerForTests.showData("simple_too_many_parts_pojo");
         //ClickHouseServerForTests.executeSql(String.format("SYSTEM START MERGES `%s.%s`", getDatabase(), tableName));
+    }
+
+    /*
+        In this test, we try sending an identical batch to ClickHouse twice under two different configurations:
+        1. non_replicated_deduplication_window = 0 (default): block-level retry deduplication is disabled - this is a potential source of duplicates in the connector
+        2. non_replicated_deduplication_window > 0: block-level retry deduplication is enabled
+
+        The goal of sending the same batch twice is to simulate a retry, which would happen in response to a retryable exception.
+        We intentionally set the maxBatchSize to be greater than the number of rows being sent to ensure all rows fit in a single batch.
+        On the server side, this batch becomes a single block and its hash is flushed to the dedup log before the server responds.
+        We assert that if deduplication is disabled, the rows should appear twice when retried, and that if its enabled, the rows should appear only once.
+    */
+    @Test
+    void testDeduplicateOnRetryNonReplicated() throws Exception {
+        if (isCloud()) return; // non_replicated_deduplication_window only for non-replicated MergeTree
+
+        int numRows = 10;
+        // maxBatchSize > numRows ensures all rows are sent as one block (required for block-hash dedup)
+        int maxBatchSize = numRows * 2;
+
+        List<SimplePOJO> data = new ArrayList<>();
+        for (int i = 0; i < numRows; i++) data.add(new SimplePOJO(i));
+        SimplePOJO[] dataArray = data.toArray(new SimplePOJO[0]);
+
+        // scenario A: no dedup window (default=0) — inserting the same data twice produces duplicates
+        {
+            String tableName = "dedup_no_window_pojo";
+            ClickHouseServerForTests.executeSql(SimplePOJO.createTableSQL(getDatabase(), tableName));
+            TableSchema schema = ClickHouseServerForTests.getTableSchema(tableName);
+            ClickHouseClientConfig config = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+            config.setSupportDefault(schema.hasDefaults());
+            ElementConverter<SimplePOJO, ClickHousePayload> converter = new ClickHouseConvertor<>(SimplePOJO.class, new SimplePOJOConvertor(schema.hasDefaults()));
+
+            StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+            env.setParallelism(1);
+
+            // first insert; executeAsync clears transformations after compiling the graph
+            env.fromElements(dataArray).sinkTo(new ClickHouseAsyncSink<>(converter, maxBatchSize, MAX_IN_FLIGHT_REQUESTS, MAX_BUFFERED_REQUESTS, MAX_BATCH_SIZE_IN_BYTES, MAX_TIME_IN_BUFFER_MS, MAX_RECORD_SIZE_IN_BYTES, config));
+            executeAsyncJob(env, tableName, 30, numRows);
+
+            // second insert of identical data (simulates a retry) — no dedup, expect duplicates
+            env.fromElements(dataArray).sinkTo(new ClickHouseAsyncSink<>(converter, maxBatchSize, MAX_IN_FLIGHT_REQUESTS, MAX_BUFFERED_REQUESTS, MAX_BATCH_SIZE_IN_BYTES, MAX_TIME_IN_BUFFER_MS, MAX_RECORD_SIZE_IN_BYTES, config));
+            int rows = executeAsyncJob(env, tableName, 30, numRows * 2);
+            Assertions.assertEquals(numRows * 2, rows, "Without dedup window, inserting the same data twice should produce duplicates");
+        }
+
+        // scenario B: dedup window=100 — inserting the same data twice is deduplicated
+        {
+            String tableName = "dedup_with_window_pojo";
+            ClickHouseServerForTests.executeSql(SimplePOJO.createTableSQLWithDedupWindow(getDatabase(), tableName, 100));
+            TableSchema schema = ClickHouseServerForTests.getTableSchema(tableName);
+            ClickHouseClientConfig config = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+            config.setSupportDefault(schema.hasDefaults());
+            ElementConverter<SimplePOJO, ClickHousePayload> converter = new ClickHouseConvertor<>(SimplePOJO.class, new SimplePOJOConvertor(schema.hasDefaults()));
+
+            StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+            env.setParallelism(1);
+
+            // first insert
+            env.fromElements(dataArray).sinkTo(new ClickHouseAsyncSink<>(converter, maxBatchSize, MAX_IN_FLIGHT_REQUESTS, MAX_BUFFERED_REQUESTS, MAX_BATCH_SIZE_IN_BYTES, MAX_TIME_IN_BUFFER_MS, MAX_RECORD_SIZE_IN_BYTES, config));
+            executeAsyncJob(env, tableName, 30, numRows);
+
+            // second insert of identical data (simulates a retry) — CH recognizes the same block hash, ignores it
+            env.fromElements(dataArray).sinkTo(new ClickHouseAsyncSink<>(converter, maxBatchSize, MAX_IN_FLIGHT_REQUESTS, MAX_BUFFERED_REQUESTS, MAX_BATCH_SIZE_IN_BYTES, MAX_TIME_IN_BUFFER_MS, MAX_RECORD_SIZE_IN_BYTES, config));
+            env.execute("dedup second insert");
+            int rows = ClickHouseServerForTests.countRows(tableName);
+            Assertions.assertEquals(numRows, rows, "With dedup window, inserting the same data twice should be deduplicated");
+        }
     }
 
     @Test
