@@ -403,8 +403,8 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
     /*
         In this test, we try sending an identical batch to ClickHouse twice under two different configurations:
-        1. non_replicated_deduplication_window=0 (default): block-level retry deduplication is disabled
-        2. non_replicated_deduplication_window=1: block-level retry deduplication is enabled
+        1. non_replicated_deduplication_window = 0 (default): block-level retry deduplication is disabled - this is a potential source of duplicates in the connector
+        2. non_replicated_deduplication_window > 0: block-level retry deduplication is enabled
 
         The goal of sending the same batch twice is to simulate a retry, which would happen in response to a retryable exception.
         We intentionally set the maxBatchSize to be greater than the number of rows being sent to ensure all rows fit in a single batch.
