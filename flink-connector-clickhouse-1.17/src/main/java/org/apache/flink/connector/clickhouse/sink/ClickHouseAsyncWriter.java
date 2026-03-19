@@ -38,7 +38,7 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
     private final ClickHouseClientConfig clickHouseClientConfig;
     private ClickHouseFormat clickHouseFormat = null;
     private RetryPolicy retryPolicy = RetryPolicy.forever();
-    private BatchFailureStrategy batchFailureStrategy = BatchFailureStrategy.DROP_BATCH;
+    private BatchFailureStrategy batchFailureStrategy = BatchFailureStrategy.STOP_FLINK;
 
     private final Counter numBytesSendCounter;
     private final Counter numRecordsSendCounter;
