@@ -170,13 +170,18 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         Assertions.assertEquals(EXPECTED_ROWS, rows);
     }
 
+    // This test validates that data can be inserted using the RowBinaryWithNames format,
+    // and specifically tests inserting into a table when not all the columns in the table 
+    // are present in the convertor or underlying data. The missing columns should be 
+    // left as null or their default value.
     @Test
     void CovidPOJOHeaderDataTest() throws Exception {
         String tableName = "covid_pojo";
 
         String dropTable = String.format("DROP TABLE IF EXISTS `%s`.`%s`", getDatabase(), tableName);
         ClickHouseServerForTests.executeSql(dropTable);
-        // create table
+        // create table that has two extra columns  (dummy and dummy2) that aren't available
+        // in the data being inserted. 
         String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
                 "date Date," +
                 "location_key LowCardinality(String)," +
