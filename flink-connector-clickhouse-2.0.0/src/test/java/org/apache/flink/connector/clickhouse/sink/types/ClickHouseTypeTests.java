@@ -172,13 +172,8 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
         String tableName = "simple_pojo_with_defaults";
 
         // create table
-        String tableSql = "CREATE TABLE `" + FlinkClusterTests.getDatabase() + "`.`" + tableName + "` (" +
-                "id Int32," +
-                "created_on DateTime64(6, 'UTC') DEFAULT YYYYMMDDhhmmssToDateTime64(20230911131415, 6, 'UTC')" +
-                ") " +
-                "ENGINE = MergeTree " +
-                "ORDER BY (id); ";
-        ClickHouseServerForTests.executeSql(tableSql);
+        ClickHouseServerForTests.executeSql(SimplePOJOWithDefaults.createTableSql(getDatabase(), tableName));
+
 
 
         TableSchema simpleTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
