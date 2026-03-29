@@ -462,7 +462,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 // Return null for records we don't want to process in this batch
                 return null;
             }
-        }).filter(record -> record != null); // Filter out null records
+        }).setParallelism(1).filter(record -> record != null); // Filter out null records
         
         // send first batch to sink
         firstBatch.sinkTo(covidPOJOSink);
@@ -523,7 +523,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
         // The second batch should fail due to schema changes
         // We expect 0 additional rows to be inserted
-        int secondBatchRows = executeAsyncJob(env2, tableName, 10, 0);
+        int secondBatchRows = executeAsyncJob(env2, tableName, 10, MAX_BATCH_SIZE);
         Assertions.assertEquals(MAX_BATCH_SIZE, secondBatchRows,
                 "Expected 0 rows from second batch due to schema mismatch, but table have already : " + MAX_BATCH_SIZE);
 

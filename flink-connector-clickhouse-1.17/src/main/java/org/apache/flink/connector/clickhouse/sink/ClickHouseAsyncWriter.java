@@ -195,7 +195,7 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
             Consumer<List<ClickHousePayload>> requestToRetry,
             Throwable error, long writeStartTime) {
         // TODO: extract from error if we can retry
-        System.out.println(error.getCause());
+        LOG.error("Error while processing ClickHouse request", error);
         long writeEndTime = System.currentTimeMillis();
         this.writeFailureLatencyHistogram.update(writeEndTime - writeStartTime);
         try {
