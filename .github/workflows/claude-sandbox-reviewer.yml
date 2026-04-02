@@ -1,0 +1,162 @@
+name: Claude Sandbox Review
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    # Only run on PR comments containing the trigger phrase
+    if: |
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@claude-sandbox-reviewer')
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.issue.number }}
+      COMMENT_ID: ${{ github.event.comment.id }}
+      COMMENTER: ${{ github.event.comment.user.login }}
+      REPO: ${{ github.repository }}
+
+    steps:
+      # ── 1. Permission check ────────────────────────────────────────────────────
+      - name: Check commenter permissions
+        run: |
+          PERMISSION=$(gh api "repos/${REPO}/collaborators/${COMMENTER}/permission" --jq '.permission')
+          if [[ "$PERMISSION" != "admin" && "$PERMISSION" != "write" ]]; then
+            gh pr comment "$PR_NUMBER" --repo "$REPO" \
+              --body "Sorry @${COMMENTER}, only repo collaborators with write access can trigger sandbox reviews."
+            echo "::error::User ${COMMENTER} has '${PERMISSION}' permission, needs 'write' or 'admin'"
+            exit 1
+          fi
+          echo "User ${COMMENTER} has '${PERMISSION}' permission — authorized"
+
+      # ── 2. Acknowledge with reaction ────────────────────────────────────────────
+      - name: Add eyes reaction
+        run: |
+          gh api "repos/${REPO}/issues/comments/${COMMENT_ID}/reactions" \
+            -f content='eyes' --silent
+
+      # ── 3. Checkout repo and fetch PR branch ─────────────────────────────────────
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Fetch PR branch and stay on default branch
+        id: pr-branch
+        run: |
+          # Get the PR branch name
+          PR_BRANCH=$(gh pr view "$PR_NUMBER" --json headRefName --jq '.headRefName')
+          echo "name=${PR_BRANCH}" >> "$GITHUB_OUTPUT"
+
+          # Fetch the PR branch so tachikoma can create a worktree for it.
+          # We stay on the default branch (from actions/checkout) to avoid
+          # conflicting with tachikoma's worktree creation.
+          gh pr checkout "$PR_NUMBER"
+          git checkout -
+
+      # ── 4. Install Tart ─────────────────────────────────────────────────────────
+      - name: Install Tart
+        run: brew install cirruslabs/cli/tart
+
+      # ── 5. Pull base image ──────────────────────────────────────────────────────
+      - name: Pull and prepare base image
+        run: |
+          tart pull ghcr.io/cirruslabs/ubuntu:latest
+          tart clone ghcr.io/cirruslabs/ubuntu:latest ubuntu
+
+      # ── 6. Download tachikoma binary ────────────────────────────────────────────
+      - name: Install tachikoma
+        run: |
+          gh release download --repo ClickHouse/tachikoma \
+            --pattern 'tachikoma-macos-arm64' --dir /usr/local/bin
+          chmod +x /usr/local/bin/tachikoma-macos-arm64
+          mv /usr/local/bin/tachikoma-macos-arm64 /usr/local/bin/tachikoma
+          tachikoma --version
+
+      # ── 7. Configure tachikoma ──────────────────────────────────────────────────
+      - name: Write tachikoma config
+        run: |
+          mkdir -p ~/.config/tachikoma
+          cat > ~/.config/tachikoma/config.toml << 'EOF'
+          credential_proxy = true
+          sync_gh_auth = true
+          EOF
+
+      # ── 8. Set up gh auth on host ───────────────────────────────────────────────
+      - name: Authenticate gh CLI
+        run: echo "$GH_TOKEN" | gh auth login --with-token
+
+      # ── 9. Write prompt file ────────────────────────────────────────────────────
+      - name: Prepare review prompt
+        run: |
+          PR_TITLE=$(gh pr view "$PR_NUMBER" --json title --jq '.title')
+          PR_BODY=$(gh pr view "$PR_NUMBER" --json body --jq '.body')
+          PR_DIFF=$(gh pr diff "$PR_NUMBER")
+          COMMENT_BODY=$(gh api "repos/${REPO}/issues/comments/${COMMENT_ID}" --jq '.body')
+
+          cat > .claude-review-prompt.md << PROMPT_EOF
+          # Code Review Request
+
+          ## PR #${PR_NUMBER}: ${PR_TITLE}
+
+          ${PR_BODY}
+
+          ## Triggering Comment
+
+          ${COMMENT_BODY}
+
+          ## Diff
+
+          \`\`\`diff
+          ${PR_DIFF}
+          \`\`\`
+
+          ## Instructions
+
+          - Use the code-reviewer agent to review this PR
+          - Do NOT make any commits to the branch
+          - Only propose suggestions via PR review comments (inline comments)
+          - Use \`gh pr review ${PR_NUMBER}\` to submit your review with inline comments on specific lines
+          - Focus on bugs, logic errors, security issues, and code quality
+          - Be constructive and specific in your feedback
+          PROMPT_EOF
+
+      # ── 10. Spawn VM ────────────────────────────────────────────────────────────
+      - name: Spawn tachikoma VM
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: tachikoma spawn "${{ steps.pr-branch.outputs.name }}" --no-interactive
+
+      # ── 11. Execute Claude ──────────────────────────────────────────────────────
+      - name: Run Claude review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          tachikoma exec -- claude --dangerously-skip-permissions \
+            -p "Read the review instructions and PR context from ~/code/.claude-review-prompt.md and follow them precisely."
+
+      # ── 12. Cleanup ─────────────────────────────────────────────────────────────
+      - name: Destroy VM
+        if: always()
+        run: tachikoma destroy --force
+
+      # ── 13. Success reaction ────────────────────────────────────────────────────
+      - name: Add success reaction
+        if: success()
+        run: |
+          gh api "repos/${REPO}/issues/comments/${COMMENT_ID}/reactions" \
+            -f content='rocket' --silent
+
+      # ── 14. Failure comment ─────────────────────────────────────────────────────
+      - name: Comment on failure
+        if: failure()
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          gh pr comment "$PR_NUMBER" --repo "$REPO" \
+            --body "Sandbox review failed. See the [workflow run](${RUN_URL}) for details."
