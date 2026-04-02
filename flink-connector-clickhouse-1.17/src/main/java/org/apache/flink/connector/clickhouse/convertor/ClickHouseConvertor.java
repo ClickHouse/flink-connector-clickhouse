@@ -20,6 +20,7 @@ public class ClickHouseConvertor<InputT> implements ElementConverter<InputT, Cli
         POJO,
     }
     private final Types type;
+    // this is a test
 
     public ClickHouseConvertor(Class<?> clazz) {
         if (clazz == null) {
