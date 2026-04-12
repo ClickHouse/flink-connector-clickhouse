@@ -41,17 +41,68 @@ public class ClickHouseSinkStateTests {
         byte[] data = {'H', 'e', 'l', 'l', 'o', 'W', 'o', 'r', 'l', 'd'};
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         DataOutputStream dos = new DataOutputStream(baos);
-        DataOutputStream dataOutputStream = new DataOutputStream(baos);
-        int V2 = 2;
-        dataOutputStream.writeInt(V2);
-        dataOutputStream.writeInt(data.length);
-        dataOutputStream.write(data);
+        int V3 = 3;
+        dos.writeInt(V3);
+        dos.writeInt(data.length);
+        dos.write(data);
         DataInputStream dis = new DataInputStream(new ByteArrayInputStream(baos.toByteArray()));
 
         ClickHouseAsyncSinkSerializer serializer = new ClickHouseAsyncSinkSerializer();
         Exception exception = Assertions.assertThrows(IOException.class, () -> {
-            serializer.deserializeRequestFromStream(dataOutputStream.size(), dis);
+            serializer.deserializeRequestFromStream(dos.size(), dis);
         });
-        Assertions.assertEquals("Unsupported serialization version: 2", exception.getMessage());
+        Assertions.assertEquals("Unsupported serialization version: 3", exception.getMessage());
+    }
+
+    @Test
+    void testSerializeAndDeserializeWithOriginalInput() throws Exception {
+        String originalInput = "Hello World";
+        byte[] data = originalInput.getBytes();
+        ClickHousePayload clickHousePayload = new ClickHousePayload(data, originalInput);
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        DataOutputStream dos = new DataOutputStream(baos);
+        ClickHouseAsyncSinkSerializer serializer = new ClickHouseAsyncSinkSerializer();
+        serializer.serializeRequestToStream(clickHousePayload, dos);
+        DataInputStream dis = new DataInputStream(new ByteArrayInputStream(baos.toByteArray()));
+
+        ClickHousePayload restored = serializer.deserializeRequestFromStream(baos.size(), dis);
+        Assertions.assertNull(restored.getPayload(), "Payload should be null after V2 deserialization");
+        Assertions.assertTrue(restored.needsRehydration(), "Restored payload should need rehydration");
+        Assertions.assertEquals(originalInput, restored.getOriginalInput());
+    }
+
+    @Test
+    void testV1BackwardCompatibility() throws Exception {
+        // Manually write V1 format (as old code would)
+        byte[] data = {'T', 'e', 's', 't'};
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        DataOutputStream dos = new DataOutputStream(baos);
+        dos.writeInt(1); // V1
+        dos.writeInt(data.length);
+        dos.write(data);
+
+        DataInputStream dis = new DataInputStream(new ByteArrayInputStream(baos.toByteArray()));
+        ClickHouseAsyncSinkSerializer serializer = new ClickHouseAsyncSinkSerializer();
+        ClickHousePayload restored = serializer.deserializeRequestFromStream(baos.size(), dis);
+
+        Assertions.assertArrayEquals(data, restored.getPayload());
+        Assertions.assertNull(restored.getOriginalInput(), "V1 restored payload should have no originalInput");
+        Assertions.assertFalse(restored.needsRehydration());
+    }
+
+    @Test
+    void testNeedsRehydration() {
+        // Payload with both byte[] and originalInput — does not need rehydration
+        ClickHousePayload full = new ClickHousePayload(new byte[]{1, 2}, "test");
+        Assertions.assertFalse(full.needsRehydration());
+
+        // Payload with only originalInput — needs rehydration
+        ClickHousePayload dehydrated = new ClickHousePayload((java.io.Serializable) "test");
+        Assertions.assertTrue(dehydrated.needsRehydration());
+
+        // Payload with only byte[] — does not need rehydration
+        ClickHousePayload legacy = new ClickHousePayload(new byte[]{1, 2});
+        Assertions.assertFalse(legacy.needsRehydration());
     }
 }

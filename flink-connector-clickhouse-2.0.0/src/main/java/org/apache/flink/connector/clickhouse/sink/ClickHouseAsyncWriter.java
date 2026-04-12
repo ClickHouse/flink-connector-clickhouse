@@ -27,6 +27,9 @@ import org.apache.flink.runtime.metrics.DescriptiveStatisticsHistogram;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.flink.connector.base.sink.writer.RequestEntryWrapper;
+
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -39,6 +42,7 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
     private static final int DEFAULT_MAX_RETRIES = 3;
 
     private final ClickHouseClientConfig clickHouseClientConfig;
+    private final ElementConverter<InputT, ClickHousePayload> elementConverter;
     private ClickHouseFormat clickHouseFormat = null;
     private RetryPolicy retryPolicy = RetryPolicy.forever();
     private BatchFailureStrategy batchFailureStrategy = BatchFailureStrategy.STOP_FLINK;
@@ -74,8 +78,9 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
                         .setMaxTimeInBufferMS(maxTimeInBufferMS)
                         .setMaxRecordSizeInBytes(maxRecordSizeInBytes)
                         .build(),
-                state);
+                rehydrateStates(state, elementConverter));
         this.clickHouseClientConfig = clickHouseClientConfig;
+        this.elementConverter = elementConverter;
         this.clickHouseFormat = clickHouseFormat;
         this.retryPolicy = retryPolicy;
         final SinkWriterMetricGroup metricGroup = context.metricGroup();
@@ -247,6 +252,31 @@ public class ClickHouseAsyncWriter<InputT> extends ExtendedAsyncSinkWriter<Input
             LOG.warn("Fatal — stop retrying, fail the Flink job", e);
             resultHandler.completeExceptionally((Exception) e);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> Collection<BufferedRequestState<ClickHousePayload>> rehydrateStates(
+            Collection<BufferedRequestState<ClickHousePayload>> states,
+            ElementConverter<T, ClickHousePayload> converter) {
+        if (states == null || states.isEmpty()) {
+            return states;
+        }
+        List<BufferedRequestState<ClickHousePayload>> result = new ArrayList<>();
+        for (BufferedRequestState<ClickHousePayload> state : states) {
+            List<RequestEntryWrapper<ClickHousePayload>> rehydrated = new ArrayList<>();
+            for (RequestEntryWrapper<ClickHousePayload> wrapper : state.getBufferedRequestEntries()) {
+                ClickHousePayload entry = wrapper.getRequestEntry();
+                if (entry.needsRehydration()) {
+                    LOG.info("Rehydrating payload from original input after checkpoint restore");
+                    ClickHousePayload fresh = converter.apply((T) entry.getOriginalInput(), null);
+                    rehydrated.add(new RequestEntryWrapper<>(fresh, fresh.getPayloadLength()));
+                } else {
+                    rehydrated.add(wrapper);
+                }
+            }
+            result.add(new BufferedRequestState<>(rehydrated));
+        }
+        return result;
     }
 
 }

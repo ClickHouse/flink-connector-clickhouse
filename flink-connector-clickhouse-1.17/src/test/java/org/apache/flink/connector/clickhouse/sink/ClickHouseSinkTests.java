@@ -12,6 +12,7 @@ import org.apache.flink.connector.clickhouse.sink.convertor.CovidPOJOConvertor;
 import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOConvertor;
 import org.apache.flink.connector.clickhouse.sink.pojo.CovidPOJO;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJO;
+import org.apache.flink.connector.clickhouse.sink.source.FailingSource;
 import org.apache.flink.connector.file.src.FileSource;
 import org.apache.flink.connector.file.src.reader.TextLineInputFormat;
 import org.apache.flink.connector.test.FlinkClusterTests;
@@ -601,5 +602,135 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         // Should have exactly 5000 rows (the good batch)
         Assertions.assertEquals(MAX_BATCH_SIZE, rows,
             "Expected exactly 5000 rows from good batch, but got: " + rows);
+    }
+
+    /**
+     * Tests that POJO data survives checkpoint/restore via the rehydration path.
+     *
+     * A FailingSource emits all records, waits for a checkpoint to complete,
+     * then throws an exception. After Flink restarts from checkpoint, the source
+     * emits nothing. Any data that arrives in ClickHouse after the restart
+     * must have come from checkpoint state — proving the originalInput was
+     * persisted and re-serialized (rehydrated) correctly.
+     */
+    @Test
+    void CheckpointRestoreWithRehydrationTest() throws Exception {
+        if (isCloud()) return;
+
+        String tableName = "checkpoint_rehydration_pojo";
+        int expectedRows = 100;
+
+        ClickHouseServerForTests.executeSql(SimplePOJO.createTableSQL(getDatabase(), tableName));
+
+        com.clickhouse.client.api.metadata.TableSchema tableSchema = ClickHouseServerForTests.getTableSchema(tableName);
+        POJOConvertor<SimplePOJO> simplePOJOConvertor = new org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOConvertor(tableSchema.hasDefaults());
+
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        // Enable checkpointing every 1 second
+        env.enableCheckpointing(1000);
+        env.getCheckpointConfig().setCheckpointingMode(org.apache.flink.streaming.api.CheckpointingMode.EXACTLY_ONCE);
+        // Allow 1 restart after failure
+        env.setRestartStrategy(org.apache.flink.api.common.restartstrategy.RestartStrategies.fixedDelayRestart(1, 1000));
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        clickHouseClientConfig.setSupportDefault(tableSchema.hasDefaults());
+
+        ElementConverter<SimplePOJO, ClickHousePayload> converter =
+                new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
+
+        // Use a large buffer time so records stay buffered (not flushed) before checkpoint
+        ClickHouseAsyncSink<SimplePOJO> sink = new ClickHouseAsyncSink<>(
+                converter,
+                MAX_BATCH_SIZE,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                10 * 1000, // 10 seconds buffer time
+                MAX_RECORD_SIZE_IN_BYTES,
+                clickHouseClientConfig
+        );
+
+        List<SimplePOJO> pojoList = new ArrayList<>();
+        for (int i = 0; i < expectedRows; i++) {
+            pojoList.add(new SimplePOJO(i));
+        }
+
+        final String checkTableName = tableName;
+        FailingSource.RowCountChecker rowCountChecker = () -> ClickHouseServerForTests.countRows(checkTableName);
+        DataStream<SimplePOJO> stream = env.addSource(new FailingSource<>(pojoList, rowCountChecker))
+                .returns(SimplePOJO.class);
+        stream.sinkTo(sink);
+
+        // The job will: emit records → checkpoint → fail → restore → flush from state → data arrives
+        int rows = executeAsyncJob(env, tableName, 60, expectedRows);
+        Assertions.assertEquals(expectedRows, rows,
+                "All records should arrive via checkpoint restore + rehydration");
+    }
+
+    /**
+     * Tests that partial flush + checkpoint restore works correctly.
+     *
+     * Uses a small batch size to force the sink to flush some records to ClickHouse
+     * before the checkpoint. After the failure and restore, the remaining records
+     * (from checkpoint state) are rehydrated and flushed. The total must equal all records.
+     *
+     * Verifies: rows_before_checkpoint + rows_from_rehydration = total_records
+     */
+    @Test
+    void CheckpointRestoreWithPartialFlushTest() throws Exception {
+        if (isCloud()) return;
+
+        String tableName = "checkpoint_partial_flush_pojo";
+        int expectedRows = 200;
+        int smallBatchSize = 10; // Force frequent flushes
+
+        ClickHouseServerForTests.executeSql(SimplePOJO.createTableSQL(getDatabase(), tableName));
+
+        com.clickhouse.client.api.metadata.TableSchema tableSchema = ClickHouseServerForTests.getTableSchema(tableName);
+        POJOConvertor<SimplePOJO> simplePOJOConvertor = new org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOConvertor(tableSchema.hasDefaults());
+
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        env.enableCheckpointing(2000);
+        env.getCheckpointConfig().setCheckpointingMode(org.apache.flink.streaming.api.CheckpointingMode.EXACTLY_ONCE);
+        env.setRestartStrategy(org.apache.flink.api.common.restartstrategy.RestartStrategies.fixedDelayRestart(1, 1000));
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        clickHouseClientConfig.setSupportDefault(tableSchema.hasDefaults());
+
+        ElementConverter<SimplePOJO, ClickHousePayload> converter =
+                new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
+
+        // Small batch size + short buffer time → some records flush before checkpoint
+        ClickHouseAsyncSink<SimplePOJO> sink = new ClickHouseAsyncSink<>(
+                converter,
+                smallBatchSize,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                1000, // 1 second buffer time
+                MAX_RECORD_SIZE_IN_BYTES,
+                clickHouseClientConfig
+        );
+
+        List<SimplePOJO> pojoList = new ArrayList<>();
+        for (int i = 0; i < expectedRows; i++) {
+            pojoList.add(new SimplePOJO(i));
+        }
+
+        final String checkTableName = tableName;
+        FailingSource.RowCountChecker rowCountChecker = () -> ClickHouseServerForTests.countRows(checkTableName);
+        // requireAllBuffered=false: we expect some rows already flushed at checkpoint time
+        DataStream<SimplePOJO> stream = env.addSource(
+                        new FailingSource<>(pojoList, rowCountChecker, false))
+                .returns(SimplePOJO.class);
+        stream.sinkTo(sink);
+
+        int rows = executeAsyncJob(env, tableName, 60, expectedRows);
+        Assertions.assertEquals(expectedRows, rows,
+                "All records should arrive: some flushed before checkpoint + rest from rehydration");
     }
 }
