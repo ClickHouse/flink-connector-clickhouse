@@ -121,13 +121,10 @@ public class ClickHouseClientConfig implements Serializable {
         }
     }
 
-    public void setNumberOfRetries(int numberOfRetries) {
-        this.numberOfRetries = numberOfRetries;
+    public void setRetryPolicy(RetryPolicy retryPolicy) {
+        this.retryPolicy = retryPolicy;
     }
 
-    public int getNumberOfRetries() {
-        return numberOfRetries;
-    }
 
     public void setEnableJsonSupportAsString(boolean enableJsonSupportAsString) {
         this.enableJsonSupportAsString = enableJsonSupportAsString;

@@ -82,6 +82,6 @@ public class Utils {
                 throw new RetriableException(e);
             }
         }
-        throw new FlinkWriteException(e);
+        throw new FlinkWriteException(e.getMessage(), e);
     }
 }

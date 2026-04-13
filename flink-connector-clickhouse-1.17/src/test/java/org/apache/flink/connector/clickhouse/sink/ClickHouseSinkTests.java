@@ -1,6 +1,7 @@
 package org.apache.flink.connector.clickhouse.sink;
 
 import com.clickhouse.client.api.metadata.TableSchema;
+import com.clickhouse.config.RetryPolicy;
 import com.clickhouse.data.ClickHouseFormat;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
@@ -361,7 +362,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         env.setParallelism(STREAM_PARALLELISM);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
-        clickHouseClientConfig.setNumberOfRetries(NUMBER_OF_RETRIES);
+        clickHouseClientConfig.setRetryPolicy(RetryPolicy.limited(NUMBER_OF_RETRIES));
         clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
 
         ElementConverter<SimplePOJO, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
