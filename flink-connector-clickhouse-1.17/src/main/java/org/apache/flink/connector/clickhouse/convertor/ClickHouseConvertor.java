@@ -56,18 +56,20 @@ public class ClickHouseConvertor<InputT> implements ElementConverter<InputT, Cli
             if (payload.isEmpty()) {
                 return new ClickHousePayload(null);
             }
+            byte[] bytes;
             if (payload.endsWith("\n"))
-                return new ClickHousePayload(payload.getBytes(StandardCharsets.UTF_8));
-            return new ClickHousePayload((payload + "\n").getBytes());
+                bytes = payload.getBytes(StandardCharsets.UTF_8);
+            else
+                bytes = (payload + "\n").getBytes(StandardCharsets.UTF_8);
+            return new ClickHousePayload(bytes, (java.io.Serializable) o);
         }
         if (type == Types.POJO) {
-            // TODO Convert POJO to bytes
             try {
                 byte[] payload = this.pojoConvertor.convert(o);
-                return new ClickHousePayload(payload);
+                java.io.Serializable originalInput = (o instanceof java.io.Serializable) ? (java.io.Serializable) o : null;
+                return new ClickHousePayload(payload, originalInput);
             } catch (Exception e) {
-                LOG.error("Failed to convert ClickHouse payload", e);
-                return new ClickHousePayload(null);
+                throw new RuntimeException("Failed to convert POJO to ClickHouse payload", e);
             }
         }
         throw new IllegalArgumentException("unable to convert " + o + " to " + type);

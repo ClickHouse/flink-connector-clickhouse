@@ -7,7 +7,7 @@ import java.time.ZonedDateTime;
 /**
  * For testing writing to a CH table with a default column.
  */
-public class SimplePOJOWithDefaults {
+public class SimplePOJOWithDefaults implements java.io.Serializable {
 
     private final int id;
 

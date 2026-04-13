@@ -1,6 +1,6 @@
 package org.apache.flink.connector.clickhouse.sink.pojo;
 
-public class SimplePOJOWithJSON {
+public class SimplePOJOWithJSON implements java.io.Serializable {
 
     private final long longPrimitive;
 

@@ -1,6 +1,7 @@
 package org.apache.flink.connector.clickhouse.sink;
 
 import com.clickhouse.client.api.metadata.TableSchema;
+import com.clickhouse.config.RetryPolicy;
 import com.clickhouse.data.ClickHouseFormat;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
@@ -12,6 +13,7 @@ import org.apache.flink.connector.clickhouse.sink.convertor.CovidPOJOConvertor;
 import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOConvertor;
 import org.apache.flink.connector.clickhouse.sink.pojo.CovidPOJO;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJO;
+import org.apache.flink.connector.clickhouse.sink.source.FailingSource;
 import org.apache.flink.connector.file.src.FileSource;
 import org.apache.flink.connector.file.src.reader.TextLineInputFormat;
 import org.apache.flink.connector.test.FlinkClusterTests;
@@ -373,7 +375,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         env.setParallelism(STREAM_PARALLELISM);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
-        clickHouseClientConfig.setNumberOfRetries(NUMBER_OF_RETRIES);
+        clickHouseClientConfig.setRetryPolicy(RetryPolicy.limited(NUMBER_OF_RETRIES));
         clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
         // disable server-side async insert batching (default ON in ClickHouse 26.2+) so each
         // connector batch creates its own part, ensuring parts_to_throw_insert is triggered.
@@ -421,5 +423,347 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         Assertions.assertThrows(RuntimeException.class, () -> {
             new ClickHouseClientConfig(getServerURL(), getUsername() + "wrong_username", getPassword(), getDatabase(), "dummy");
         });
+    }
+
+    @Test
+    void DataCorruptionCovidTest() throws Exception {
+        String tableName = "covid_corruption_test";
+
+        // create table
+        ClickHouseServerForTests.executeSql(CovidPOJO.createTableSql(getDatabase(), tableName));
+
+        TableSchema covidTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
+
+        POJOConvertor<CovidPOJO> covidPOJOConvertor = new CovidPOJOConvertor(covidTableSchema.hasDefaults());
+        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        env.setParallelism(STREAM_PARALLELISM);
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        clickHouseClientConfig.setSupportDefault(covidTableSchema.hasDefaults());
+        ElementConverter<CovidPOJO, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(CovidPOJO.class, covidPOJOConvertor);
+
+        ClickHouseAsyncSink<CovidPOJO> covidPOJOSink = new ClickHouseAsyncSink<>(
+                convertorCovid,
+                MAX_BATCH_SIZE,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                MAX_TIME_IN_BUFFER_MS,
+                MAX_RECORD_SIZE_IN_BYTES,
+                clickHouseClientConfig
+        );
+
+        Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
+
+        FileSource<String> source = FileSource
+                .forRecordStreamFormat(new TextLineInputFormat(), filePath)
+                .build();
+        // read csv data from file
+        DataStreamSource<String> lines = env.fromSource(
+                source,
+                WatermarkStrategy.noWatermarks(),
+                "GzipCsvSource"
+        );
+
+        // First batch: insert only first MAX_BATCH_SIZE records
+        DataStream<CovidPOJO> firstBatch = lines.map(new MapFunction<String, CovidPOJO>() {
+            private int recordCount = 0;
+            
+            @Override
+            public CovidPOJO map(String value) throws Exception {
+                recordCount++;
+                // Only process first MAX_BATCH_SIZE records
+                if (recordCount <= MAX_BATCH_SIZE) {
+                    return new CovidPOJO(value);
+                }
+                // Return null for records we don't want to process in this batch
+                return null;
+            }
+        }).setParallelism(1).filter(record -> record != null); // Filter out null records
+        
+        // send first batch to sink
+        firstBatch.sinkTo(covidPOJOSink);
+        
+        // Execute first batch and verify it succeeds
+        int firstBatchRows = executeAsyncJob(env, tableName, 10, MAX_BATCH_SIZE);
+        Assertions.assertEquals(MAX_BATCH_SIZE, firstBatchRows, 
+            "Expected exactly " + MAX_BATCH_SIZE + " rows from first batch, but got: " + firstBatchRows);
+        
+        // Now change the table schema to simulate corruption/incompatibility
+        // Drop a critical column that the POJO expects to exist
+        String alterTableSql = "ALTER TABLE `" + getDatabase() + "`.`" + tableName + "` " +
+                "DROP COLUMN new_confirmed";
+        ClickHouseServerForTests.executeSql(alterTableSql);
+        
+        // Try to insert the remaining records with a new sink
+        // This should fail due to schema mismatch
+        ClickHouseAsyncSink<CovidPOJO> secondBatchSink = new ClickHouseAsyncSink<>(
+                convertorCovid,
+                MAX_BATCH_SIZE,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                MAX_TIME_IN_BUFFER_MS,
+                MAX_RECORD_SIZE_IN_BYTES,
+                clickHouseClientConfig
+        );
+        
+        // Create new environment for second batch
+        final StreamExecutionEnvironment env2 = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        env2.setParallelism(STREAM_PARALLELISM);
+        
+        FileSource<String> source2 = FileSource
+                .forRecordStreamFormat(new TextLineInputFormat(), filePath)
+                .build();
+        DataStreamSource<String> lines2 = env2.fromSource(
+                source2,
+                WatermarkStrategy.noWatermarks(),
+                "GzipCsvSource"
+        );
+        
+        // Second batch: process remaining records (records > MAX_BATCH_SIZE)
+        DataStream<CovidPOJO> secondBatch = lines2.map(new MapFunction<String, CovidPOJO>() {
+            private int recordCount = 0;
+            
+            @Override
+            public CovidPOJO map(String value) throws Exception {
+                recordCount++;
+                // Only process records after MAX_BATCH_SIZE
+                if (recordCount > MAX_BATCH_SIZE && recordCount <= EXPECTED_ROWS) {
+                    return new CovidPOJO(value);
+                }
+                return null;
+            }
+        }).filter(record -> record != null);
+        
+        secondBatch.sinkTo(secondBatchSink);
+
+        // The second batch should fail due to schema changes
+        // We expect 0 additional rows to be inserted
+        int secondBatchRows = executeAsyncJob(env2, tableName, 10, MAX_BATCH_SIZE);
+        Assertions.assertEquals(MAX_BATCH_SIZE, secondBatchRows,
+                "Expected 0 rows from second batch due to schema mismatch, but table have already : " + MAX_BATCH_SIZE);
+
+        // Total should still be just the first batch
+        int totalRows = ClickHouseServerForTests.countRows(tableName);
+        Assertions.assertEquals(MAX_BATCH_SIZE, totalRows,
+                "Expected total of " + MAX_BATCH_SIZE + " rows, but got: " + totalRows);
+    }
+
+    @Test
+    void DataCorruptionCSVTest() throws Exception {
+        String tableName = "csv_corruption_test";
+        // create table
+        String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
+                "date Date," +
+                "location_key LowCardinality(String)," +
+                "new_confirmed Int32," +
+                "new_deceased Int32," +
+                "new_recovered Int32," +
+                "new_tested Int32," +
+                "cumulative_confirmed Int32," +
+                "cumulative_deceased Int32," +
+                "cumulative_recovered Int32," +
+                "cumulative_tested Int32" +
+                ") " +
+                "ENGINE = MergeTree " +
+                "ORDER BY (location_key, date); ";
+        ClickHouseServerForTests.executeSql(tableSql);
+
+        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        env.setParallelism(STREAM_PARALLELISM);
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
+        // create sink
+        ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
+                convertorString,
+                MAX_BATCH_SIZE,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                MAX_TIME_IN_BUFFER_MS,
+                MAX_RECORD_SIZE_IN_BYTES,
+                clickHouseClientConfig
+        );
+        csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
+
+        Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
+
+        FileSource<String> source = FileSource
+                .forRecordStreamFormat(new TextLineInputFormat(), filePath)
+                .build();
+        // read csv data from file
+        DataStreamSource<String> lines = env.fromSource(
+                source,
+                WatermarkStrategy.noWatermarks(),
+                "GzipCsvSource"
+        );
+        
+        // Create two distinct batches: first MAX_BATCH_SIZE good records, next MAX_BATCH_SIZE corrupted records
+        DataStream<String> testData = lines.map(new MapFunction<String, String>() {
+            private int recordCount = 0;
+            
+            @Override
+            public String map(String value) throws Exception {
+                recordCount++;
+                // First MAX_BATCH_SIZE records: keep as-is (good records)
+                // Next MAX_BATCH_SIZE records: corrupt the new_confirmed field
+                if (recordCount > MAX_BATCH_SIZE) {
+                    String[] parts = value.split(",");
+                    if (parts.length >= 3) {
+                        parts[2] = "invalid_number"; // corrupt new_confirmed field
+                        return String.join(",", parts);
+                    }
+                }
+                return value;
+            }
+        });
+        
+        testData.sinkTo(csvSink);
+        
+        // We expect only the first MAX_BATCH_SIZE good records to be inserted
+        // The corrupted batch should be rejected
+        int rows = executeAsyncJob(env, tableName, 10, MAX_BATCH_SIZE);
+        
+        // Should have exactly MAX_BATCH_SIZE rows (the good batch)
+        Assertions.assertEquals(MAX_BATCH_SIZE, rows,
+            "Expected exactly " + MAX_BATCH_SIZE + " rows from good batch, but got: " + rows);
+    }
+
+    /**
+     * Tests that POJO data survives checkpoint/restore via the rehydration path.
+     *
+     * A FailingSource emits all records, waits for a checkpoint to complete,
+     * then throws an exception. After Flink restarts from checkpoint, the source
+     * emits nothing. Any data that arrives in ClickHouse after the restart
+     * must have come from checkpoint state — proving the originalInput was
+     * persisted and re-serialized (rehydrated) correctly.
+     */
+    @Test
+    void CheckpointRestoreWithRehydrationTest() throws Exception {
+        if (isCloud()) return;
+
+        String tableName = "checkpoint_rehydration_pojo";
+        int expectedRows = 100;
+
+        ClickHouseServerForTests.executeSql(SimplePOJO.createTableSQL(getDatabase(), tableName));
+
+        TableSchema tableSchema = ClickHouseServerForTests.getTableSchema(tableName);
+        POJOConvertor<SimplePOJO> simplePOJOConvertor = new SimplePOJOConvertor(tableSchema.hasDefaults());
+
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        // Enable checkpointing every 1 second
+        env.enableCheckpointing(1000);
+        env.getCheckpointConfig().setCheckpointingMode(org.apache.flink.streaming.api.CheckpointingMode.EXACTLY_ONCE);
+        // Allow 1 restart after failure via configuration
+        org.apache.flink.configuration.Configuration config = new org.apache.flink.configuration.Configuration();
+        config.set(org.apache.flink.configuration.RestartStrategyOptions.RESTART_STRATEGY, "fixed-delay");
+        config.set(org.apache.flink.configuration.RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_ATTEMPTS, 1);
+        config.set(org.apache.flink.configuration.RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_DELAY, java.time.Duration.ofSeconds(1));
+        env.configure(config);
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        clickHouseClientConfig.setSupportDefault(tableSchema.hasDefaults());
+
+        ElementConverter<SimplePOJO, ClickHousePayload> converter =
+                new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
+
+        // Use a large buffer time so records stay buffered (not flushed) before checkpoint
+        ClickHouseAsyncSink<SimplePOJO> sink = new ClickHouseAsyncSink<>(
+                converter,
+                MAX_BATCH_SIZE,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                10 * 1000, // 10 seconds buffer time
+                MAX_RECORD_SIZE_IN_BYTES,
+                clickHouseClientConfig
+        );
+
+        List<SimplePOJO> pojoList = new ArrayList<>();
+        for (int i = 0; i < expectedRows; i++) {
+            pojoList.add(new SimplePOJO(i));
+        }
+
+        final String checkTableName = tableName;
+        FailingSource.RowCountChecker rowCountChecker = () -> ClickHouseServerForTests.countRows(checkTableName);
+        DataStream<SimplePOJO> stream = env.addSource(new FailingSource<>(pojoList, rowCountChecker))
+                .returns(SimplePOJO.class);
+        stream.sinkTo(sink);
+
+        // The job will: emit records → checkpoint → fail → restore → flush from state → data arrives
+        int rows = executeAsyncJob(env, tableName, 60, expectedRows);
+        Assertions.assertEquals(expectedRows, rows,
+                "All records should arrive via checkpoint restore + rehydration");
+    }
+
+    /**
+     * Tests that partial flush + checkpoint restore works correctly.
+     *
+     * Uses a small batch size to force the sink to flush some records to ClickHouse
+     * before the checkpoint. After the failure and restore, the remaining records
+     * (from checkpoint state) are rehydrated and flushed. The total must equal all records.
+     *
+     * Verifies: rows_before_checkpoint + rows_from_rehydration = total_records
+     */
+    @Test
+    void CheckpointRestoreWithPartialFlushTest() throws Exception {
+        if (isCloud()) return;
+
+        String tableName = "checkpoint_partial_flush_pojo";
+        int expectedRows = 200;
+        int smallBatchSize = 10;
+
+        ClickHouseServerForTests.executeSql(SimplePOJO.createTableSQL(getDatabase(), tableName));
+
+        TableSchema tableSchema = ClickHouseServerForTests.getTableSchema(tableName);
+        POJOConvertor<SimplePOJO> simplePOJOConvertor = new SimplePOJOConvertor(tableSchema.hasDefaults());
+
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        env.enableCheckpointing(2000);
+        env.getCheckpointConfig().setCheckpointingMode(org.apache.flink.streaming.api.CheckpointingMode.EXACTLY_ONCE);
+        org.apache.flink.configuration.Configuration config = new org.apache.flink.configuration.Configuration();
+        config.set(org.apache.flink.configuration.RestartStrategyOptions.RESTART_STRATEGY, "fixed-delay");
+        config.set(org.apache.flink.configuration.RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_ATTEMPTS, 1);
+        config.set(org.apache.flink.configuration.RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_DELAY, java.time.Duration.ofSeconds(1));
+        env.configure(config);
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        clickHouseClientConfig.setSupportDefault(tableSchema.hasDefaults());
+
+        ElementConverter<SimplePOJO, ClickHousePayload> converter =
+                new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
+
+        ClickHouseAsyncSink<SimplePOJO> sink = new ClickHouseAsyncSink<>(
+                converter,
+                smallBatchSize,
+                MAX_IN_FLIGHT_REQUESTS,
+                MAX_BUFFERED_REQUESTS,
+                MAX_BATCH_SIZE_IN_BYTES,
+                1000,
+                MAX_RECORD_SIZE_IN_BYTES,
+                clickHouseClientConfig
+        );
+
+        List<SimplePOJO> pojoList = new ArrayList<>();
+        for (int i = 0; i < expectedRows; i++) {
+            pojoList.add(new SimplePOJO(i));
+        }
+
+        final String checkTableName = tableName;
+        FailingSource.RowCountChecker rowCountChecker = () -> ClickHouseServerForTests.countRows(checkTableName);
+        DataStream<SimplePOJO> stream = env.addSource(
+                        new FailingSource<>(pojoList, rowCountChecker, false))
+                .returns(SimplePOJO.class);
+        stream.sinkTo(sink);
+
+        int rows = executeAsyncJob(env, tableName, 60, expectedRows);
+        Assertions.assertEquals(expectedRows, rows,
+                "All records should arrive: some flushed before checkpoint + rest from rehydration");
     }
 }
