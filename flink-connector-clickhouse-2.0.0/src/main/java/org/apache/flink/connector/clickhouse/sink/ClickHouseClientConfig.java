@@ -95,6 +95,23 @@ public class ClickHouseClientConfig implements Serializable {
         return createClient(this.database);
     }
 
+    /**
+     * Close and drop the cached client so the next {@link #createClient()} call returns a
+     * freshly-initialized instance. Used by the exactly-once committer to recycle the HTTP
+     * pool after repeated connection-level failures, matching the fresh-client-per-attempt
+     * pattern used in eBay's Block Aggregator.
+     */
+    public synchronized void resetClient() {
+        if (this.client != null) {
+            try {
+                this.client.close();
+            } catch (Exception ignored) {
+                // swallow; we're discarding anyway
+            }
+            this.client = null;
+        }
+    }
+
     public String getTableName() {
         return tableName;
     }
