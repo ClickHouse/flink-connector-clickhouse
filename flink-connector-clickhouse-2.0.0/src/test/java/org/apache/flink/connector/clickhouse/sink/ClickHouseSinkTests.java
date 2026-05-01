@@ -245,7 +245,17 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         covidPOJOs.sinkTo(covidPOJOSink);
         int rows = executeAsyncJob(env, tableName, 10, EXPECTED_ROWS);
         Assertions.assertEquals(EXPECTED_ROWS, rows);
-    }
+
+        // verify that missing columns are left as NULL/default via header-based column mapping  
+        List<GenericRecord> records =  
+                ClickHouseServerForTests.extractData(ClickHouseServerForTests.getDatabase(), tableName, "date");  
+        Assertions.assertFalse(records.isEmpty(), "No records found in ClickHouse table " + tableName);  
+        GenericRecord firstRecord = records.get(0);  
+        // column "dummy" should be NULL when not provided in the header-based mapping  
+        Assertions.assertNull(firstRecord.getValues().get("dummy"));  
+        // column "dummy2" should take its default value (e.g. 'orig') when not provided  
+        Assertions.assertEquals("orig", firstRecord.getString("dummy2"));  
+}
 
     @Test
     void ProductNameTest() throws Exception {

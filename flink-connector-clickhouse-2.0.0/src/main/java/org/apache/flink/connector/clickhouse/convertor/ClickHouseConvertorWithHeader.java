@@ -21,10 +21,6 @@ import java.io.IOException;
 import com.clickhouse.utils.writer.DataWriter;
 
 public class ClickHouseConvertorWithHeader<InputT> extends ClickHouseConvertor<InputT> implements SupportsHeader {
-    public ClickHouseConvertorWithHeader(Class<?> clazz) {
-        super(clazz);
-    }
-
     public <T extends POJOConvertor<InputT> & SupportsHeader> ClickHouseConvertorWithHeader(Class<?> clazz,
             T pojoConvertor) {
         super(clazz, pojoConvertor);

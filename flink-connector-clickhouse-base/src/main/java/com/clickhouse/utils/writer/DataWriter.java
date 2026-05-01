@@ -232,7 +232,7 @@ public class DataWriter {
     }
 
     public void writeRawString(String value) throws IOException {
-        BinaryStreamUtils.writeString(out,value);
+        BinaryStreamUtils.writeString(out, Serialize.convertToString(value));
     }
 
 }
