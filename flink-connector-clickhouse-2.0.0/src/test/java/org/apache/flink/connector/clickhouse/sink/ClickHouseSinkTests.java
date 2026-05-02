@@ -65,19 +65,19 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         env.setParallelism(STREAM_PARALLELISM);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
-        ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
+        ClickHouseConvertor<String> convertorString = new ClickHouseConvertor<>(String.class);
         // create sink
-        ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
-                convertorString,
-                MAX_BATCH_SIZE,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                MAX_TIME_IN_BUFFER_MS,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
-        csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
+        ClickHouseAsyncSink<String> csvSink = ClickHouseAsyncSink.<String>builder()
+                .setElementConverter(convertorString)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .setClickHouseFormat(ClickHouseFormat.CSV)
+                .build();
 
         Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
 
@@ -124,18 +124,18 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         clickHouseClientConfig.setSupportDefault(covidTableSchema.hasDefaults());
-        ElementConverter<CovidPOJO, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(CovidPOJO.class, covidPOJOConvertor);
+        ClickHouseConvertor<CovidPOJO> convertorCovid = new ClickHouseConvertor<>(CovidPOJO.class, covidPOJOConvertor);
 
-        ClickHouseAsyncSink<CovidPOJO> covidPOJOSink = new ClickHouseAsyncSink<>(
-                convertorCovid,
-                MAX_BATCH_SIZE,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                MAX_TIME_IN_BUFFER_MS,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
+        ClickHouseAsyncSink<CovidPOJO> covidPOJOSink = ClickHouseAsyncSink.<CovidPOJO>builder()
+                .setElementConverter(convertorCovid)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .build();
 
         Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
 
@@ -186,19 +186,19 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         env.setParallelism(1);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
-        ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
+        ClickHouseConvertor<String> convertorString = new ClickHouseConvertor<>(String.class);
         // create sink
-        ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
-                convertorString,
-                MAX_BATCH_SIZE,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                MAX_TIME_IN_BUFFER_MS,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
-        csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
+        ClickHouseAsyncSink<String> csvSink = ClickHouseAsyncSink.<String>builder()
+                .setElementConverter(convertorString)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .setClickHouseFormat(ClickHouseFormat.CSV)
+                .build();
 
         Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
 
@@ -258,19 +258,19 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         env.setParallelism(STREAM_PARALLELISM);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
-        ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
+        ClickHouseConvertor<String> convertorString = new ClickHouseConvertor<>(String.class);
         // create sink
-        ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
-                convertorString,
-                MAX_BATCH_SIZE,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                MAX_TIME_IN_BUFFER_MS,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
-        csvSink.setClickHouseFormat(ClickHouseFormat.TSV);
+        ClickHouseAsyncSink<String> csvSink = ClickHouseAsyncSink.<String>builder()
+                .setElementConverter(convertorString)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .setClickHouseFormat(ClickHouseFormat.TSV)
+                .build();
 
         Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
 
@@ -319,19 +319,19 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
-        ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
+        ClickHouseConvertor<String> convertorString = new ClickHouseConvertor<>(String.class);
         // create sink
-        ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
-                convertorString,
-                MAX_BATCH_SIZE,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                MAX_TIME_IN_BUFFER_MS,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
-        csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
+        ClickHouseAsyncSink<String> csvSink = ClickHouseAsyncSink.<String>builder()
+                .setElementConverter(convertorString)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .setClickHouseFormat(ClickHouseFormat.CSV)
+                .build();
 
         Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
 
@@ -377,18 +377,18 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         clickHouseClientConfig.setRetryPolicy(RetryPolicy.limited(NUMBER_OF_RETRIES));
         clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
 
-        ElementConverter<SimplePOJO, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
+        ClickHouseConvertor<SimplePOJO> convertorCovid = new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
 
-        ClickHouseAsyncSink<SimplePOJO> simplePOJOSink = new ClickHouseAsyncSink<>(
-                convertorCovid,
-                MIN_BATCH_SIZE * 2,
-                MAX_IN_FLIGHT_REQUESTS,
-                10,
-                MAX_BATCH_SIZE_IN_BYTES,
-                MAX_TIME_IN_BUFFER_MS,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
+        ClickHouseAsyncSink<SimplePOJO> simplePOJOSink = ClickHouseAsyncSink.<SimplePOJO>builder()
+                .setElementConverter(convertorCovid)
+                .setMaxBatchSize(MIN_BATCH_SIZE * 2)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(10)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .build();
 
         List<SimplePOJO> simplePOJOList = new ArrayList<>();
         for (int i = 0; i < EXPECTED_ROWS; i++) {
@@ -425,18 +425,18 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         clickHouseClientConfig.setSupportDefault(covidTableSchema.hasDefaults());
-        ElementConverter<CovidPOJO, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(CovidPOJO.class, covidPOJOConvertor);
+        ClickHouseConvertor<CovidPOJO> convertorCovid = new ClickHouseConvertor<>(CovidPOJO.class, covidPOJOConvertor);
 
-        ClickHouseAsyncSink<CovidPOJO> covidPOJOSink = new ClickHouseAsyncSink<>(
-                convertorCovid,
-                MAX_BATCH_SIZE,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                MAX_TIME_IN_BUFFER_MS,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
+        ClickHouseAsyncSink<CovidPOJO> covidPOJOSink = ClickHouseAsyncSink.<CovidPOJO>builder()
+                .setElementConverter(convertorCovid)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .build();
 
         Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
 
@@ -482,16 +482,16 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         
         // Try to insert the remaining records with a new sink
         // This should fail due to schema mismatch
-        ClickHouseAsyncSink<CovidPOJO> secondBatchSink = new ClickHouseAsyncSink<>(
-                convertorCovid,
-                MAX_BATCH_SIZE,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                MAX_TIME_IN_BUFFER_MS,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
+        ClickHouseAsyncSink<CovidPOJO> secondBatchSink = ClickHouseAsyncSink.<CovidPOJO>builder()
+                .setElementConverter(convertorCovid)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .build();
         
         // Create new environment for second batch
         final StreamExecutionEnvironment env2 = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
@@ -519,7 +519,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 }
                 return null;
             }
-        }).filter(record -> record != null);
+        }).setParallelism(1).filter(record -> record != null);
         
         secondBatch.sinkTo(secondBatchSink);
 
@@ -559,19 +559,19 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         env.setParallelism(STREAM_PARALLELISM);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
-        ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
+        ClickHouseConvertor<String> convertorString = new ClickHouseConvertor<>(String.class);
         // create sink
-        ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
-                convertorString,
-                MAX_BATCH_SIZE,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                MAX_TIME_IN_BUFFER_MS,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
-        csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
+        ClickHouseAsyncSink<String> csvSink = ClickHouseAsyncSink.<String>builder()
+                .setElementConverter(convertorString)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .setClickHouseFormat(ClickHouseFormat.CSV)
+                .build();
 
         Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
 
@@ -653,20 +653,20 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         clickHouseClientConfig.setSupportDefault(tableSchema.hasDefaults());
 
-        ElementConverter<SimplePOJO, ClickHousePayload> converter =
+        ClickHouseConvertor<SimplePOJO> converter =
                 new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
 
         // Use a large buffer time so records stay buffered (not flushed) before checkpoint
-        ClickHouseAsyncSink<SimplePOJO> sink = new ClickHouseAsyncSink<>(
-                converter,
-                MAX_BATCH_SIZE,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                10 * 1000, // 10 seconds buffer time
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
+        ClickHouseAsyncSink<SimplePOJO> sink = ClickHouseAsyncSink.<SimplePOJO>builder()
+                .setElementConverter(converter)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(10 * 1000) // 10 seconds buffer time
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .build();
 
         List<SimplePOJO> pojoList = new ArrayList<>();
         for (int i = 0; i < expectedRows; i++) {
@@ -721,19 +721,19 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         clickHouseClientConfig.setSupportDefault(tableSchema.hasDefaults());
 
-        ElementConverter<SimplePOJO, ClickHousePayload> converter =
+        ClickHouseConvertor<SimplePOJO> converter =
                 new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
 
-        ClickHouseAsyncSink<SimplePOJO> sink = new ClickHouseAsyncSink<>(
-                converter,
-                smallBatchSize,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                1000,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
+        ClickHouseAsyncSink<SimplePOJO> sink = ClickHouseAsyncSink.<SimplePOJO>builder()
+                .setElementConverter(converter)
+                .setMaxBatchSize(smallBatchSize)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(1000)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .build();
 
         List<SimplePOJO> pojoList = new ArrayList<>();
         for (int i = 0; i < expectedRows; i++) {

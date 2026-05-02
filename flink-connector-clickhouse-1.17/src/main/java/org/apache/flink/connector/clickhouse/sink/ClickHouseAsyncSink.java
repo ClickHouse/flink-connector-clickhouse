@@ -1,7 +1,10 @@
 package org.apache.flink.connector.clickhouse.sink;
 
-
 import com.clickhouse.data.ClickHouseFormat;
+
+import org.apache.flink.api.common.ExecutionConfig;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.connector.sink2.Sink;
 import org.apache.flink.connector.base.sink.AsyncSinkBase;
 import org.apache.flink.connector.base.sink.writer.BufferedRequestState;
@@ -16,46 +19,57 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Objects;
 
-public class ClickHouseAsyncSink<InputT> extends AsyncSinkBase<InputT, ClickHousePayload> {
+public class ClickHouseAsyncSink<InputT>
+        extends AsyncSinkBase<InputT, ClickHousePayload<InputT>> {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseAsyncSink.class);
 
-    protected ClickHouseClientConfig clickHouseClientConfig;
-    protected ClickHouseFormat clickHouseFormat = null;
+    protected final ClickHouseClientConfig clickHouseClientConfig;
+    protected final ClickHouseFormat clickHouseFormat;
+    private final TypeInformation<InputT> inputTypeInfo;
 
-    public ClickHouseAsyncSink(
-        ElementConverter<InputT, ClickHousePayload> converter,
-        int maxBatchSize,
-        int maxInFlightRequests,
-        int maxBufferedRequests,
-        long maxBatchSizeInBytes,
-        long maxTimeInBufferMS,
-        long maxRecordSizeInByte,
-        ClickHouseClientConfig clickHouseClientConfig
-    ) {
+    /** Package-private — construct via {@link #builder()}. */
+    ClickHouseAsyncSink(
+            ElementConverter<InputT, ClickHousePayload<InputT>> converter,
+            int maxBatchSize,
+            int maxInFlightRequests,
+            int maxBufferedRequests,
+            long maxBatchSizeInBytes,
+            long maxTimeInBufferMS,
+            long maxRecordSizeInByte,
+            ClickHouseClientConfig clickHouseClientConfig,
+            ClickHouseFormat clickHouseFormat,
+            TypeInformation<InputT> inputTypeInfo) {
         super(converter,
-              maxBatchSize,
-              maxInFlightRequests,
-              maxBufferedRequests,
-              maxBatchSizeInBytes,
-              maxTimeInBufferMS,
-              maxRecordSizeInByte);
-
-        this.clickHouseClientConfig = Objects.requireNonNull(clickHouseClientConfig, "ClickHouse config cannot be null");;
+                maxBatchSize,
+                maxInFlightRequests,
+                maxBufferedRequests,
+                maxBatchSizeInBytes,
+                maxTimeInBufferMS,
+                maxRecordSizeInByte);
+        this.clickHouseClientConfig =
+                Objects.requireNonNull(clickHouseClientConfig, "ClickHouse config cannot be null");
+        this.clickHouseFormat = clickHouseFormat;
+        this.inputTypeInfo =
+                Objects.requireNonNull(inputTypeInfo, "inputTypeInfo cannot be null");
     }
 
-    public void setClickHouseFormat(ClickHouseFormat clickHouseFormat) {
-        this.clickHouseFormat = clickHouseFormat;
+    public static <InputT> ClickHouseAsyncSinkBuilder<InputT> builder() {
+        return new ClickHouseAsyncSinkBuilder<>();
     }
 
     public ClickHouseFormat getClickHouseFormat() { return this.clickHouseFormat; }
 
     @Override
-    public StatefulSinkWriter<InputT, BufferedRequestState<ClickHousePayload>> createWriter(InitContext context) throws IOException {
+    public StatefulSinkWriter<InputT, BufferedRequestState<ClickHousePayload<InputT>>> createWriter(
+            InitContext context) throws IOException {
         return restoreWriter(context, Collections.emptyList());
     }
 
     @Override
-    public StatefulSinkWriter<InputT, BufferedRequestState<ClickHousePayload>> restoreWriter(Sink.InitContext context, Collection<BufferedRequestState<ClickHousePayload>> collection) throws IOException {
+    public StatefulSinkWriter<InputT, BufferedRequestState<ClickHousePayload<InputT>>> restoreWriter(
+            Sink.InitContext context,
+            Collection<BufferedRequestState<ClickHousePayload<InputT>>> collection)
+            throws IOException {
         return new ClickHouseAsyncWriter<>(
                 getElementConverter(),
                 context,
@@ -67,13 +81,14 @@ public class ClickHouseAsyncSink<InputT> extends AsyncSinkBase<InputT, ClickHous
                 getMaxRecordSizeInBytes(),
                 clickHouseClientConfig,
                 clickHouseFormat,
-                collection
-        );
+                collection);
     }
 
     @Override
-    public SimpleVersionedSerializer<BufferedRequestState<ClickHousePayload>> getWriterStateSerializer() {
-        return new ClickHouseAsyncSinkSerializer();
+    public SimpleVersionedSerializer<BufferedRequestState<ClickHousePayload<InputT>>>
+            getWriterStateSerializer() {
+        TypeSerializer<InputT> inputSerializer =
+                inputTypeInfo.createSerializer(new ExecutionConfig());
+        return new ClickHouseAsyncSinkSerializer<>(inputSerializer);
     }
 }
-

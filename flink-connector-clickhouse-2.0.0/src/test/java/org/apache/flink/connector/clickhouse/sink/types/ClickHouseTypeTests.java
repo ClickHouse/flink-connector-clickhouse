@@ -88,18 +88,18 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
 
-        ElementConverter<SimplePOJO, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
+        ClickHouseConvertor<SimplePOJO> convertorCovid = new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
 
-        ClickHouseAsyncSink<SimplePOJO> simplePOJOSink = new ClickHouseAsyncSink<>(
-                convertorCovid,
-                MAX_BATCH_SIZE,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                MAX_TIME_IN_BUFFER_MS,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
+        ClickHouseAsyncSink<SimplePOJO> simplePOJOSink = ClickHouseAsyncSink.<SimplePOJO>builder()
+                .setElementConverter(convertorCovid)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .build();
 
         List<SimplePOJO> simplePOJOList = new ArrayList<>();
         for (int i = 0; i < EXPECTED_ROWS; i++) {
@@ -134,18 +134,18 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(FlinkClusterTests.getServerURL(), FlinkClusterTests.getUsername(), FlinkClusterTests.getPassword(), FlinkClusterTests.getDatabase(), tableName);
         clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
 
-        ElementConverter<DateTimePOJO, ClickHousePayload> convertorSimplePOJOWithDateTimeConvertor = new ClickHouseConvertor<>(DateTimePOJO.class, simplePOJOWithDateTimeConvertor);
+        ClickHouseConvertor<DateTimePOJO> convertorSimplePOJOWithDateTimeConvertor = new ClickHouseConvertor<>(DateTimePOJO.class, simplePOJOWithDateTimeConvertor);
 
-        ClickHouseAsyncSink<DateTimePOJO> simplePOJOSink = new ClickHouseAsyncSink<>(
-                convertorSimplePOJOWithDateTimeConvertor,
-                MAX_BATCH_SIZE,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                MAX_TIME_IN_BUFFER_MS,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
+        ClickHouseAsyncSink<DateTimePOJO> simplePOJOSink = ClickHouseAsyncSink.<DateTimePOJO>builder()
+                .setElementConverter(convertorSimplePOJOWithDateTimeConvertor)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .build();
 
         // create from list
         DataStream<DateTimePOJO> simplePOJOs = env.fromCollection(simplePOJOList, TypeInformation.of(DateTimePOJO.class));
@@ -185,18 +185,18 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
 
-        ElementConverter<SimplePOJOWithDefaults, ClickHousePayload> convertorSimplePOJOWithDefaults = new ClickHouseConvertor<>(SimplePOJOWithDefaults.class, simplePOJOConvertor);
+        ClickHouseConvertor<SimplePOJOWithDefaults> convertorSimplePOJOWithDefaults = new ClickHouseConvertor<>(SimplePOJOWithDefaults.class, simplePOJOConvertor);
 
-        ClickHouseAsyncSink<SimplePOJOWithDefaults> simplePOJOWithDefaultsSink = new ClickHouseAsyncSink<>(
-                convertorSimplePOJOWithDefaults,
-                MAX_BATCH_SIZE,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                MAX_TIME_IN_BUFFER_MS,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
+        ClickHouseAsyncSink<SimplePOJOWithDefaults> simplePOJOWithDefaultsSink = ClickHouseAsyncSink.<SimplePOJOWithDefaults>builder()
+                .setElementConverter(convertorSimplePOJOWithDefaults)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .build();
 
         List<SimplePOJOWithDefaults> simplePOJOList = new ArrayList<>();
         for (int i = 0; i < EXPECTED_ROWS; i++) {
@@ -242,18 +242,18 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName, true);
         clickHouseClientConfig.setSupportDefault(simplePOJOWithJSONTableSchema.hasDefaults());
-        ElementConverter<SimplePOJOWithJSON, ClickHousePayload> convertorCovid = new ClickHouseConvertor<>(SimplePOJOWithJSON.class, simplePOJOWithJSONConvertor);
+        ClickHouseConvertor<SimplePOJOWithJSON> convertorCovid = new ClickHouseConvertor<>(SimplePOJOWithJSON.class, simplePOJOWithJSONConvertor);
 
-        ClickHouseAsyncSink<SimplePOJOWithJSON> simplePOJOWithJSONSink = new ClickHouseAsyncSink<>(
-                convertorCovid,
-                MAX_BATCH_SIZE,
-                MAX_IN_FLIGHT_REQUESTS,
-                MAX_BUFFERED_REQUESTS,
-                MAX_BATCH_SIZE_IN_BYTES,
-                MAX_TIME_IN_BUFFER_MS,
-                MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
-        );
+        ClickHouseAsyncSink<SimplePOJOWithJSON> simplePOJOWithJSONSink = ClickHouseAsyncSink.<SimplePOJOWithJSON>builder()
+                .setElementConverter(convertorCovid)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .build();
 
         List<SimplePOJOWithJSON> simplePOJOWithJSONList = new ArrayList<>();
         for (int i = 0; i < EXPECTED_ROWS; i++) {
