@@ -169,6 +169,12 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
 
     @Test
     void testSimplePOJOWithDefaultsTypes() throws Exception {
+        // The DEFAULT clause uses YYYYMMDDhhmmssToDateTime64(...), added in ClickHouse 23.9.
+        // Skip on older versions in the test matrix.
+        Assumptions.assumeFalse(
+                "23.7".equalsIgnoreCase(ClickHouseTestHelpers.getClickhouseVersion()),
+                "DEFAULT YYYYMMDDhhmmssToDateTime64 requires ClickHouse 23.9+");
+
         String tableName = "simple_pojo_with_defaults";
 
         // create table
