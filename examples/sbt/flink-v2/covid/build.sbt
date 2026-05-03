@@ -1,5 +1,3 @@
-
-
 ThisBuild / scalaVersion := "2.12.17"
 
 name := "covid"
@@ -7,15 +5,15 @@ organization := "clickhouse"
 version := "1.0"
 
 val flinkVersion = "2.0.0"
-val clickHouseVersion = "0.1.3"
+val clickHouseConnectorVersion = "0.1.3"
 
 resolvers += "Local Maven Repository" at "file://" + Path.userHome.absolutePath + "/.m2/repository"
 
 libraryDependencies ++= Seq(
-  "org.apache.flink" % "flink-streaming-java" % flinkVersion % "provided",
-  "org.apache.flink" % "flink-clients" % flinkVersion % "provided",
-  "org.apache.flink" % "flink-connector-files" % "2.0.0" % "provided",
-  "org.apache.flink.connector" % "clickhouse" % clickHouseVersion classifier "all"
+  "org.apache.flink" % "flink-streaming-java"  % flinkVersion              % "provided",
+  "org.apache.flink" % "flink-clients"         % flinkVersion              % "provided",
+  "org.apache.flink" % "flink-connector-files" % flinkVersion              % "provided",
+  "com.clickhouse.flink" % "flink-connector-clickhouse-2.0.0" % clickHouseConnectorVersion classifier "all"
 )
 
 assembly / assemblyJarName := "covid.jar"

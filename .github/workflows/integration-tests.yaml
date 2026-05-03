@@ -1,4 +1,4 @@
-name: Integration Tests CI (Java)
+name: Integration Tests CI (Java + Scala)
 
 on:
   push:
@@ -45,14 +45,25 @@ jobs:
         uses: gradle/gradle-build-action@v2
         with:
           arguments: :flink-connector-clickhouse-2.0.0:publishToMavenLocal
-      - name: Generate Flink Covid App example 2.X
+      - name: Generate Flink Covid App example 2.X (Java)
         if: env.SKIP_STEP != 'true'
         working-directory: ./examples/maven/flink-v2/covid
         run: mvn clean install
-      - name: Generate Flink Covid App example 1.17+
+      - name: Generate Flink Covid App example 1.17+ (Java)
         if: env.SKIP_STEP != 'true'
         working-directory: ./examples/maven/flink-v1.7/covid
         run: mvn clean install
+      - name: Set up sbt
+        if: env.SKIP_STEP != 'true'
+        uses: sbt/setup-sbt@v1
+      - name: Generate Flink Covid App example 2.X (Scala)
+        if: env.SKIP_STEP != 'true'
+        working-directory: ./examples/sbt/flink-v2/covid
+        run: sbt clean compile
+      - name: Generate Flink Covid App example 1.17+ (Scala)
+        if: env.SKIP_STEP != 'true'
+        working-directory: ./examples/sbt/flink-v1.7/covid
+        run: sbt clean compile
       - name: Setup and execute Gradle 'integration-test' task
         if: env.SKIP_STEP != 'true'
         uses: gradle/gradle-build-action@v2

@@ -114,8 +114,13 @@ More examples and snippets can be found in our tests [flink-connector-clickhouse
 We have created maven based example for easy start with ClickHouse Sink 
 Different versions for Flink 
 
+**Java (Maven)**
 - [Flink 1.17+](examples/maven/flink-v1.7/covid)
 - [Flink 2.0.0+](examples/maven/flink-v2/covid)
+
+**Scala (sbt)**
+- [Flink 1.17+](examples/sbt/flink-v1.7/covid)
+- [Flink 2.0.0+](examples/sbt/flink-v2/covid)
 
 For more detailed instructions, see the [Example Guide](examples#readme)
 

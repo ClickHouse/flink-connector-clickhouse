@@ -28,7 +28,12 @@ If you wish to build the connector locally run before building the example
 
 #### Java Covid App
 
-From the project directory, run the following command, which will create  a `covid-1.0-SNAPSHOT.jar` artifact that can be found in your target folder
+Two parallel Maven projects, one per Flink major version:
+
+- `examples/maven/flink-v1.7/covid` — Flink 1.17/1.18/1.19/1.20 (uses connector artifact `flink-connector-clickhouse-1.17`)
+- `examples/maven/flink-v2/covid`  — Flink 2.0+ (uses connector artifact `flink-connector-clickhouse-2.0.0`)
+
+From the chosen project directory, run the following — produces a `covid-1.0-SNAPSHOT.jar` in `target/`:
 
 ```bash
 mvn clean package -DskipTests
@@ -36,9 +41,12 @@ mvn clean package -DskipTests
 
 #### Scala Covid App
 
-From project directory run this will create a `covid.jar` can be found in `target/scala-2.12` folder
+Two parallel sbt projects mirroring the Java layout:
 
-Build Covid Scala App
+- `examples/sbt/flink-v1.7/covid` — Flink 1.17 (uses connector artifact `flink-connector-clickhouse-1.17`)
+- `examples/sbt/flink-v2/covid`  — Flink 2.0 (uses connector artifact `flink-connector-clickhouse-2.0.0`)
+
+From the chosen project directory, run the following — produces a `covid.jar` in `target/scala-2.12/`:
 
 ```bash
 sbt clean assembly
