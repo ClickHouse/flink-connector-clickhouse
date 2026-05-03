@@ -79,27 +79,26 @@ ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(url, 
 ```
 If you are planning to insert RAW CSV data as is 
 
-Create an ElementConverter 
+Create a ClickHouseConvertor
 
 ```java
-ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
+ClickHouseConvertor<String> convertorString = new ClickHouseConvertor<>(String.class);
 ```
 
-Create the sink and set the format using `setClickHouseFormat`  
+Build the sink (optional knobs have sensible defaults — set only what you need):
 
 ```java
-ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
-				convertorString,
-				MAX_BATCH_SIZE,
-				MAX_IN_FLIGHT_REQUESTS,
-				MAX_BUFFERED_REQUESTS,
-				MAX_BATCH_SIZE_IN_BYTES,
-				MAX_TIME_IN_BUFFER_MS,
-				MAX_RECORD_SIZE_IN_BYTES,
-				clickHouseClientConfig
-		);
-
-csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
+ClickHouseAsyncSink<String> csvSink = ClickHouseAsyncSink.<String>builder()
+        .setElementConverter(convertorString)
+        .setClickHouseClientConfig(clickHouseClientConfig)
+        .setClickHouseFormat(ClickHouseFormat.CSV)
+        .setMaxBatchSize(MAX_BATCH_SIZE)
+        .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+        .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+        .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+        .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+        .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+        .build();
 ```
 
 Finally, connect your DataStream to the sink.
