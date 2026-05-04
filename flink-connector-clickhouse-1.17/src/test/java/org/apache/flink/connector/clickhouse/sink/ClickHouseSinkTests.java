@@ -596,7 +596,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 }
                 return value;
             }
-        });
+        }).setParallelism(1);
         
         testData.sinkTo(csvSink);
         

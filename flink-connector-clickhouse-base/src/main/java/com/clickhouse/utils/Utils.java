@@ -66,7 +66,7 @@ public class Utils {
                 case 41:  // CANNOT_PARSE_DATETIME
                 case 72:  // CANNOT_PARSE_NUMBER
                 case 117: // INCORRECT_DATA
-                    throw new DataCorruptionException(e.getMessage(), e);
+                    throw new DataCorruptionException(e);
             }
 
         } else if (rootCause instanceof ConnectionInitiationException) {

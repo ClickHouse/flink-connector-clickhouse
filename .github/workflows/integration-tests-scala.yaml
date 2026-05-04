@@ -5,7 +5,7 @@ on:
     paths-ignore:
       - '**.md'
       - 'LICENSE'
-      - 'examples'
+      - 'examples/**'
 
 jobs:
   test-integration-tests-scala:

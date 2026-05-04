@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 public class ClickHouseClientConfig implements Serializable {
@@ -122,7 +123,7 @@ public class ClickHouseClientConfig implements Serializable {
     }
 
     public void setRetryPolicy(RetryPolicy retryPolicy) {
-        this.retryPolicy = retryPolicy;
+        this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy must not be null");
     }
 
     public void setEnableJsonSupportAsString(boolean enableJsonSupportAsString) {
