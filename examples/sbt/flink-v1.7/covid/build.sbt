@@ -1,0 +1,27 @@
+ThisBuild / scalaVersion := "2.12.17"
+
+name := "covid"
+organization := "clickhouse"
+version := "1.0"
+
+val flinkVersion = "1.17.2"
+val clickHouseConnectorVersion = "0.1.3"
+
+resolvers += "Local Maven Repository" at "file://" + Path.userHome.absolutePath + "/.m2/repository"
+
+libraryDependencies ++= Seq(
+  "org.apache.flink" % "flink-streaming-java"  % flinkVersion              % "provided",
+  "org.apache.flink" % "flink-clients"         % flinkVersion              % "provided",
+  "org.apache.flink" % "flink-connector-files" % flinkVersion              % "provided",
+  "com.clickhouse.flink" % "flink-connector-clickhouse-1.17" % clickHouseConnectorVersion classifier "all"
+)
+
+assembly / assemblyJarName := "covid.jar"
+
+assembly / assemblyExcludedJars := {
+  val cp = (assembly / fullClasspath).value
+  cp filter { jar =>
+    jar.data.getName.contains("flink-") ||
+    jar.data.getName.contains("scala-library")
+  }
+}
