@@ -20,8 +20,5 @@ assembly / assemblyJarName := "covid.jar"
 
 assembly / assemblyExcludedJars := {
   val cp = (assembly / fullClasspath).value
-  cp filter { jar =>
-    jar.data.getName.contains("flink-") ||
-    jar.data.getName.contains("scala-library")
-  }
+  cp filter { _.data.getName.startsWith("scala-library") }
 }

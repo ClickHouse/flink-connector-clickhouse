@@ -17,10 +17,18 @@ import java.util.List;
 public class FlinkTests {
     static int NUMBERS_OF_RECORDS = 100000;
     static String flinkVersion = "latest";
+    static ExampleLang exampleLang = ExampleLang.JAVA;
+
+    enum ExampleLang { JAVA, SCALA }
+
     @BeforeAll
     public static void setUp() throws Exception {
         flinkVersion = (System.getenv("FLINK_VERSION") != null ? System.getenv("FLINK_VERSION") : "latest");
+        exampleLang = "scala".equalsIgnoreCase(System.getProperty("example.lang", "java"))
+                ? ExampleLang.SCALA
+                : ExampleLang.JAVA;
         System.out.println("FLINK_VERSION: " + flinkVersion);
+        System.out.println("EXAMPLE_LANG: " + exampleLang);
         ClickHouseServerForTests.setUp(false);
     }
 
@@ -46,6 +54,18 @@ public class FlinkTests {
         return "flink-v1.7";
     }
 
+    private String jarLocation(String root, String exampleSubFolder) {
+        if (exampleLang == ExampleLang.SCALA)
+            return String.format("%s/examples/sbt/%s/covid/target/scala-2.12/covid.jar", root, exampleSubFolder);
+        return String.format("%s/examples/maven/%s/covid/target/covid-1.0-SNAPSHOT.jar", root, exampleSubFolder);
+    }
+
+    private String mainClass() {
+        if (exampleLang == ExampleLang.SCALA)
+            return "Main";
+        return "com.clickhouse.example.covid.DataStreamJob";
+    }
+
     private String getResourcePath(String resourceName) throws URISyntaxException {
         URI resourceUri = getClass().getResource("/data/" + resourceName).toURI();
         Path resourcePath = Paths.get(resourceUri);
@@ -57,7 +77,8 @@ public class FlinkTests {
     void testFlinkCluster() throws Exception {
         String root = getRoot();
         String exampleSubFolder = exampleSubFolder(flinkVersion);
-        String jarLocation = String.format("%s/examples/maven/%s/covid/target/covid-1.0-SNAPSHOT.jar", root, exampleSubFolder);
+        String jarLocation = jarLocation(root, exampleSubFolder);
+        System.out.println("exampleSubFolder: " + exampleSubFolder);
         String dataFile = "100k_epidemiology.csv.gz";
         String tableName = "covid";
 
@@ -102,7 +123,7 @@ public class FlinkTests {
         String jarId = cluster.uploadJar(jarLocation);
         List<String> jars = cluster.listAllJars();
         String jobId = cluster.runJob(jars.get(0),
-                "com.clickhouse.example.covid.DataStreamJob",
+                mainClass(),
                 1,
                 "-input",
                 "/tmp/" + dataFile,

@@ -58,3 +58,7 @@ sourceSets {
         }
     }
 }
+
+tasks.named<Test>("test") {
+    System.getProperty("example.lang")?.let { systemProperty("example.lang", it) }
+}
