@@ -152,6 +152,14 @@ public class ClickHouseServerForTests {
         List<GenericRecord> countResult = client.queryAll(countSql);
         return countResult.get(0).getInteger(1);
     }
+
+    public static int countRowsWhere(String table, String whereClause) {
+        String countSql = String.format(
+                "SELECT COUNT(*) FROM `%s`.`%s` WHERE %s", database, table, whereClause);
+        Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
+        List<GenericRecord> countResult = client.queryAll(countSql);
+        return countResult.get(0).getInteger(1);
+    }
     // http_user_agent
     public static String extractProductName(String databaseName, String tableName) {
         String extractProductName = String.format("SELECT http_user_agent, tables FROM clusterAllReplicas('default', system.query_log) WHERE type = 'QueryStart' AND query_kind = 'Insert' AND has(databases,'%s') AND has(tables,'%s.%s') LIMIT 100", databaseName, databaseName, tableName);

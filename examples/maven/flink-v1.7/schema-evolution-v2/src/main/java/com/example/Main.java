@@ -1,0 +1,71 @@
+package com.example;
+
+import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.connector.clickhouse.convertor.ClickHouseConvertor;
+import org.apache.flink.connector.clickhouse.sink.ClickHouseAsyncSink;
+import org.apache.flink.connector.clickhouse.sink.ClickHouseClientConfig;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Flink 1.17 variant of the V2 schema-evolution demo. Restored from the V1
+ * savepoint; flushes V1-migrated and freshly-emitted V2 records to the
+ * 3-column ClickHouse table.
+ */
+public class Main {
+    static final int MAX_BATCH_SIZE = 5000;
+    static final int MAX_IN_FLIGHT_REQUESTS = 2;
+    static final int MAX_BUFFERED_REQUESTS = 20000;
+    static final long MAX_BATCH_SIZE_IN_BYTES = 1024 * 1024L;
+    static final long MAX_TIME_IN_BUFFER_MS = 5_000L;  // short — flush after restore
+    static final long MAX_RECORD_SIZE_IN_BYTES = 1000L;
+
+    public static void main(String[] args) throws Exception {
+        ParameterTool params = ParameterTool.fromArgs(args);
+        String url = params.get("url");
+        String username = params.get("username");
+        String password = params.get("password");
+        String database = params.get("database");
+        String table = params.get("table");
+        int recordCount = params.getInt("records", 100);
+        int idStart = params.getInt("idStart", 100);
+        long ts = params.getLong("ts", 42000L);
+
+        ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(
+                url, username, password, database, table);
+        clientConfig.setSupportDefault(true);
+
+        ClickHouseConvertor<EvolvingPOJO> converter = new ClickHouseConvertor<>(
+                EvolvingPOJO.class, new EvolvingPOJOConvertor(true));
+
+        ClickHouseAsyncSink<EvolvingPOJO> sink = ClickHouseAsyncSink.<EvolvingPOJO>builder()
+                .setElementConverter(converter)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clientConfig)
+                .build();
+
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        env.enableCheckpointing(2000);
+
+        List<EvolvingPOJO> records = new ArrayList<>();
+        for (int i = 0; i < recordCount; i++) {
+            int id = idStart + i;
+            records.add(new EvolvingPOJO(id, "name-" + id, ts));
+        }
+
+        env.addSource(new IdleAfterEmitSource<>(records))
+                .returns(EvolvingPOJO.class)
+                .uid("evolving-source").name("evolving-source")
+                .sinkTo(sink).uid("clickhouse-sink").name("clickhouse-sink");
+
+        env.execute("schema-evolution-v2");
+    }
+}
