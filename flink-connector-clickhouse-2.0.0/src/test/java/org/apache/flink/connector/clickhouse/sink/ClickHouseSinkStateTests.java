@@ -4,7 +4,6 @@ import org.apache.flink.api.common.serialization.SerializerConfigImpl;
 import org.apache.flink.api.common.typeinfo.BasicTypeInfo;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.java.typeutils.GenericTypeInfo;
-import org.apache.flink.connector.base.sink.writer.ElementConverter;
 import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -17,9 +16,6 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 
 public class ClickHouseSinkStateTests {
@@ -184,29 +180,10 @@ public class ClickHouseSinkStateTests {
                 "data is transient — must not survive Java native serialization");
     }
 
-    @Test
-    void testRehydrationLoopConvertsV2RestoredEntries() {
-        ElementConverter<String, ClickHousePayload<String>> stubConverter = (s, ctx) ->
-                new ClickHousePayload<>(("converted-" + s).getBytes(StandardCharsets.UTF_8), s);
-
-        List<ClickHousePayload<String>> entries = new ArrayList<>();
-        entries.add(new ClickHousePayload<>("input1"));
-        entries.add(new ClickHousePayload<>(new byte[]{1, 2, 3}, "input2"));
-        entries.add(new ClickHousePayload<>(new byte[]{4, 5, 6}));
-
-        ClickHouseAsyncWriter.rehydrateIfNeeded(entries, stubConverter);
-
-        Assertions.assertArrayEquals(
-                "converted-input1".getBytes(StandardCharsets.UTF_8),
-                entries.get(0).getCachedBytes());
-        Assertions.assertEquals("input1", entries.get(0).getData());
-
-        Assertions.assertArrayEquals(new byte[]{1, 2, 3}, entries.get(1).getCachedBytes());
-        Assertions.assertEquals("input2", entries.get(1).getData());
-
-        Assertions.assertArrayEquals(new byte[]{4, 5, 6}, entries.get(2).getCachedBytes());
-        Assertions.assertNull(entries.get(2).getData());
-    }
+    // testRehydrationLoopConvertsV2RestoredEntries removed when rehydrateIfNeeded
+    // became an instance method. The boolean cases are covered by
+    // testNeedsRehydration; the V2-restored loop is exercised end-to-end by
+    // FlinkTests.testSchemaEvolution.
 
     public static class NonPojoRecord implements Serializable {
         private static final long serialVersionUID = 1L;

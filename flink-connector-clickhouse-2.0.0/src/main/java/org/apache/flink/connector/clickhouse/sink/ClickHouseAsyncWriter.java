@@ -122,17 +122,13 @@ public class ClickHouseAsyncWriter<InputT>
      * {@code cachedBytes}. This loop produces bytes via the current converter (picking up
      * any deployed bug fix or schema change since the checkpoint was written) before send.
      *
-     * <p>Package-private + static so it can be unit-tested without constructing a writer.
-     *
      * <p>Mutates entries in place: sets {@code cachedBytes} on those that need it, leaves
      * V1-restored and steady-state entries untouched.
      */
-    static <T> void rehydrateIfNeeded(
-            List<ClickHousePayload<T>> entries,
-            ElementConverter<T, ClickHousePayload<T>> converter) {
-        for (ClickHousePayload<T> entry : entries) {
+    private void rehydrateIfNeeded(List<ClickHousePayload<InputT>> entries) {
+        for (ClickHousePayload<InputT> entry : entries) {
             if (entry.needsRehydration()) {
-                ClickHousePayload<T> fresh = converter.apply(entry.getData(), null);
+                ClickHousePayload<InputT> fresh = elementConverter.apply(entry.getData(), null);
                 entry.setCachedBytes(fresh.getCachedBytes());
             }
         }
@@ -149,7 +145,7 @@ public class ClickHouseAsyncWriter<InputT>
         this.numRequestSubmittedCounter.inc();
         LOG.info("Submitting request entries...");
 
-        rehydrateIfNeeded(requestEntries, elementConverter);
+        rehydrateIfNeeded(requestEntries);
 
         Client chClient = this.clickHouseClientConfig.createClient();
         String tableName = clickHouseClientConfig.getTableName();
