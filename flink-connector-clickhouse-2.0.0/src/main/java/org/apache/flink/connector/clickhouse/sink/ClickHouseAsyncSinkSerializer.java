@@ -51,10 +51,6 @@ public class ClickHouseAsyncSinkSerializer extends AsyncSinkWriterStateSerialize
         return new ClickHousePayload(bytes);
     }
 
-    /**
-     * Discards checkpoints written by the broken V1 serializer to prevent
-     * restore loops. Everything else delegates to the base implementation.
-     */
     @Override
     public BufferedRequestState<ClickHousePayload> deserialize(int version, byte[] serialized) throws IOException {
         if (version == V1) {
