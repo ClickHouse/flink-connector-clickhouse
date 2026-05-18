@@ -14,27 +14,16 @@ import java.util.Optional;
  *
  * <p>Required:
  * <ul>
- *   <li>{@link #setElementConverter} — must be a {@link ClickHouseConvertor}; supplies
- *       both the conversion logic and the {@code TypeInformation} used for state
- *       serialization. Single source of truth for the input type.
- *   <li>{@link #setClickHouseClientConfig}
+ *   <li>{@link #setElementConverter} — a {@link ClickHouseConvertor}</li>
+ *   <li>{@link #setClickHouseClientConfig}</li>
  * </ul>
  *
- * <p>Optional, with defaults:
- * <ul>
- *   <li>{@code maxBatchSize} = 500
- *   <li>{@code maxInFlightRequests} = 50
- *   <li>{@code maxBufferedRequests} = 10000
- *   <li>{@code maxBatchSizeInBytes} = 5 MB
- *   <li>{@code maxTimeInBufferMS} = 5000
- *   <li>{@code maxRecordSizeInBytes} = 1 MB
- *   <li>{@code clickHouseFormat} — falls back to {@code RowBinary} or
- *       {@code RowBinaryWithDefaults} based on {@code clickHouseClientConfig.getSupportDefault()}
- * </ul>
+ * <p>Optional with defaults: batch tuning, format. In typed (POJO) mode the format
+ * is forced to {@code RowBinaryWithNamesAndTypes} regardless of configuration.
  */
 public class ClickHouseAsyncSinkBuilder<InputT>
         extends AsyncSinkBaseBuilder<
-                InputT, ClickHousePayload<InputT>, ClickHouseAsyncSinkBuilder<InputT>> {
+                InputT, ClickHousePayload, ClickHouseAsyncSinkBuilder<InputT>> {
 
     private static final int DEFAULT_MAX_BATCH_SIZE = 500;
     private static final int DEFAULT_MAX_IN_FLIGHT_REQUESTS = 50;
@@ -81,6 +70,6 @@ public class ClickHouseAsyncSinkBuilder<InputT>
                 Optional.ofNullable(getMaxRecordSizeInBytes()).orElse(DEFAULT_MAX_RECORD_SIZE_IN_BYTES),
                 clickHouseClientConfig,
                 clickHouseFormat,
-                elementConverter.getInputTypeInfo());
+                elementConverter.isStringMode());
     }
 }

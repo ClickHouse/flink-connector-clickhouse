@@ -23,57 +23,29 @@ import java.util.UUID;
 
 public class Serialize {
     private static final Logger LOG = LoggerFactory.getLogger(Serialize.class);
-    public static boolean writePrimitiveValuePreamble(OutputStream out, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        // since it is primitive we always have a value that is not null
-        if (defaultsSupport) {
-            // Add indicator since the table has default values
-            SerializerUtils.writeNonNull(out);
-        }
-        // if the column is Nullable need to add an indicator for nullable
+    public static boolean writePrimitiveValuePreamble(OutputStream out, boolean isNullable,
+                                                       ClickHouseDataType dataType, String column)
+            throws IOException {
         if (isNullable) {
             SerializerUtils.writeNonNull(out);
         }
         return true;
     }
-    public static boolean writeValuePreamble(OutputStream out, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, Object value) throws IOException {
-        LOG.debug("writeValuePreamble[defaultsSupport='%s', isNullable='%s', dataType='%s', column='%s', value='%s']");
-        if (defaultsSupport) {
-            if (value != null) {
-                SerializerUtils.writeNonNull(out);
-                if (isNullable) {
-                    SerializerUtils.writeNonNull(out);
-                }
-            } else {
-                if (hasDefault) {
-                    SerializerUtils.writeNull(out);
-                    return false;
-                }
 
-                if (isNullable) {
-                    SerializerUtils.writeNonNull(out);
-                    SerializerUtils.writeNull(out);
-                    return false;
-                }
-
-                if (dataType == ClickHouseDataType.Array) {
-                    SerializerUtils.writeNonNull(out);
-                } else if (dataType != ClickHouseDataType.Dynamic) {
-                    throw new IllegalArgumentException(String.format("An attempt to write null into not nullable column '%s' of type '%s'", column, dataType));
-                }
-            }
-        } else if (isNullable) {
-            if (value == null) {
+    public static boolean writeValuePreamble(OutputStream out, boolean isNullable,
+                                              ClickHouseDataType dataType, String column, Object value)
+            throws IOException {
+        LOG.debug("writeValuePreamble[isNullable={}, dataType={}, column={}, value={}]",
+                  isNullable, dataType, column, value);
+        if (value == null) {
+            if (isNullable) {
                 SerializerUtils.writeNull(out);
                 return false;
             }
-
+            throw new IOException("Null value for non-nullable column: " + column);
+        }
+        if (isNullable) {
             SerializerUtils.writeNonNull(out);
-        } else if (value == null) {
-            if (dataType == ClickHouseDataType.Array) {
-                SerializerUtils.writeNonNull(out);
-            } else if (dataType != ClickHouseDataType.Dynamic) {
-                throw new IllegalArgumentException(String.format("An attempt to write null into not nullable column '%s' of type '%s'", column, dataType));
-            }
         }
         return true;
     }
@@ -120,177 +92,177 @@ public class Serialize {
 
     // Method structure write[ClickHouse Type](OutputStream, Java type, ... )
     // Date support
-    public static void writeDate(OutputStream out, LocalDate value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeDate(OutputStream out, LocalDate value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             SerializerUtils.writeDate(out, value, ZoneId.of("UTC")); // TODO: check
         }
     }
 
-    public static void writeDate(OutputStream out, ZonedDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeDate(OutputStream out, ZonedDateTime value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             SerializerUtils.writeDate(out, value, ZoneId.of("UTC")); // TODO: check
         }
     }
 
-    public static void writeDate32(OutputStream out, LocalDate value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeDate32(OutputStream out, LocalDate value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             SerializerUtils.writeDate32(out, value, ZoneId.of("UTC")); // TODO: check
         }
     }
 
-    public static void writeDate32(OutputStream out, ZonedDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeDate32(OutputStream out, ZonedDateTime value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             SerializerUtils.writeDate32(out, value, ZoneId.of("UTC")); // TODO: check
         }
     }
 
     // Support for DateTime section
-    public static void writeTimeDate(OutputStream out, LocalDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeTimeDate(OutputStream out, LocalDateTime value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             SerializerUtils.writeDateTime(out, value, ZoneId.of("UTC")); // TODO: check
         }
     }
 
-    public static void writeTimeDate(OutputStream out, ZonedDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeTimeDate(OutputStream out, ZonedDateTime value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             SerializerUtils.writeDateTime(out, value, ZoneId.of("UTC")); // TODO: check
         }
     }
 
-    public static void writeTimeDate64(OutputStream out, LocalDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, int scale) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeTimeDate64(OutputStream out, LocalDateTime value, boolean isNullable, ClickHouseDataType dataType, String column, int scale) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             SerializerUtils.writeDateTime64(out, value, scale, ZoneId.of("UTC")); // TODO: check
         }
     }
 
-    public static void writeTimeDate64(OutputStream out, ZonedDateTime value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, int scale) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeTimeDate64(OutputStream out, ZonedDateTime value, boolean isNullable, ClickHouseDataType dataType, String column, int scale) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             SerializerUtils.writeDateTime64(out, value, scale, ZoneId.of("UTC")); // TODO: check
         }
     }
 
     // clickhouse type String support
-    public static void writeString(OutputStream out, String value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeString(OutputStream out, String value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeString(out, convertToString(value));
         }
     }
 
     // Add a boundary check before inserting
-    public static void writeFixedString(OutputStream out, String value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, int size) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeFixedString(OutputStream out, String value, boolean isNullable, ClickHouseDataType dataType, String column, int size) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeFixedString(out, convertToString(value), size);
         }
     }
 
     // Int8
-    public static void writeInt8(OutputStream out, Byte value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeInt8(OutputStream out, Byte value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeInt8(out, convertToInteger(value));
         }
     }
 
     // Int16
-    public static void writeInt16(OutputStream out, Short value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeInt16(OutputStream out, Short value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeInt16(out, convertToInteger(value));
         }
     }
 
     // Int32
-    public static void writeInt32(OutputStream out, Integer value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeInt32(OutputStream out, Integer value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeInt32(out, convertToInteger(value));
         }
     }
 
     // Int64
-    public static void writeInt64(OutputStream out, Long value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeInt64(OutputStream out, Long value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeInt64(out, convertToInteger(value));
         }
     }
 
     // Int128
-    public static void writeInt128(OutputStream out, BigInteger value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeInt128(OutputStream out, BigInteger value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeInt128(out, SerializerUtils.convertToBigInteger(value));
         }
     }
 
     // Int256
-    public static void writeInt256(OutputStream out, BigInteger value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeInt256(OutputStream out, BigInteger value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeInt256(out, SerializerUtils.convertToBigInteger(value));
         }
     }
 
-    public static void writeUInt8(OutputStream out, int value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeUInt8(OutputStream out, int value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeUnsignedInt8(out, value);
         }
     }
 
-    public static void writeUInt16(OutputStream out, int value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeUInt16(OutputStream out, int value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeUnsignedInt16(out, value);
         }
     }
 
-    public static void writeUInt32(OutputStream out, long value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeUInt32(OutputStream out, long value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeUnsignedInt32(out, value);
         }
     }
 
-    public static void writeUInt64(OutputStream out, long value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeUInt64(OutputStream out, long value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeUnsignedInt64(out, value);
         }
     }
 
-    public static void writeUInt128(OutputStream out, BigInteger value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeUInt128(OutputStream out, BigInteger value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeUnsignedInt128(out, value);
         }
     }
 
-    public static void writeUInt256(OutputStream out, BigInteger value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeUInt256(OutputStream out, BigInteger value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeUnsignedInt256(out, value);
         }
     }
     // Decimal
-    public static void writeDecimal(OutputStream out, BigDecimal value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column, int precision, int scale) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeDecimal(OutputStream out, BigDecimal value, boolean isNullable, ClickHouseDataType dataType, String column, int precision, int scale) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeDecimal(out, value, precision, scale);
         }
     }
 
     // Float32
-    public static void writeFloat32(OutputStream out, Float value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeFloat32(OutputStream out, Float value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeFloat32(out, value);
         }
     }
 
     // Float64
-    public static void writeFloat64(OutputStream out, Double value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeFloat64(OutputStream out, Double value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeFloat64(out,  value);
         }
     }
 
     // Boolean
-    public static void writeBoolean(OutputStream out, Boolean value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeBoolean(OutputStream out, Boolean value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeBoolean(out, value);
         }
     }
 
     // UUID
-    public static void writeUUID(OutputStream out, UUID value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeUUID(OutputStream out, UUID value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeUuid(out, value);
         }
     }
@@ -310,8 +282,8 @@ public class Serialize {
         SerializerUtils.serializeData(out, value, column);
     }
 
-    public static void writeJSON(OutputStream out, String value, boolean defaultsSupport, boolean isNullable, ClickHouseDataType dataType, boolean hasDefault, String column) throws IOException {
-        if (writeValuePreamble(out, defaultsSupport, isNullable, dataType, hasDefault, column, value)) {
+    public static void writeJSON(OutputStream out, String value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (writeValuePreamble(out, isNullable, dataType, column, value)) {
             BinaryStreamUtils.writeString(out, convertToString(value));
         }
     }

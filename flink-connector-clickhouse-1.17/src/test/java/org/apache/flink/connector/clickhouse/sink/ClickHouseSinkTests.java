@@ -7,10 +7,10 @@ import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.connector.base.sink.writer.ElementConverter;
 import org.apache.flink.connector.clickhouse.convertor.ClickHouseConvertor;
-import org.apache.flink.connector.clickhouse.convertor.POJOConvertor;
+import org.apache.flink.connector.clickhouse.convertor.DataMapper;
 import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
-import org.apache.flink.connector.clickhouse.sink.convertor.CovidPOJOConvertor;
-import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOConvertor;
+import org.apache.flink.connector.clickhouse.sink.convertor.CovidPOJODataMapper;
+import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJODataMapper;
 import org.apache.flink.connector.clickhouse.sink.pojo.CovidPOJO;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJO;
 import org.apache.flink.connector.clickhouse.sink.source.FailingSource;
@@ -103,13 +103,13 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
         TableSchema covidTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
 
-        POJOConvertor<CovidPOJO> covidPOJOConvertor = new CovidPOJOConvertor(covidTableSchema.hasDefaults());
+        DataMapper<CovidPOJO> covidPOJOMapper = new CovidPOJODataMapper();
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(STREAM_PARALLELISM);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         clickHouseClientConfig.setSupportDefault(covidTableSchema.hasDefaults());
-        ClickHouseConvertor<CovidPOJO> convertorCovid = new ClickHouseConvertor<>(CovidPOJO.class, covidPOJOConvertor);
+        ClickHouseConvertor<CovidPOJO> convertorCovid = new ClickHouseConvertor<>(CovidPOJO.class, covidPOJOMapper);
 
         ClickHouseAsyncSink<CovidPOJO> covidPOJOSink = ClickHouseAsyncSink.<CovidPOJO>builder()
                 .setElementConverter(convertorCovid)
@@ -356,7 +356,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         //ClickHouseServerForTests.executeSql(String.format("SYSTEM STOP MERGES `%s.%s`", getDatabase(), tableName));
 
         TableSchema simpleTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
-        POJOConvertor<SimplePOJO> simplePOJOConvertor = new SimplePOJOConvertor(simpleTableSchema.hasDefaults());
+        DataMapper<SimplePOJO> simplePOJOMapper = new SimplePOJODataMapper();
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(STREAM_PARALLELISM);
@@ -369,7 +369,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         clickHouseClientConfig.setRetryPolicy(RetryPolicy.forever());
         clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
 
-        ClickHouseConvertor<SimplePOJO> convertorCovid = new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
+        ClickHouseConvertor<SimplePOJO> convertorCovid = new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOMapper);
 
         ClickHouseAsyncSink<SimplePOJO> simplePOJOSink = ClickHouseAsyncSink.<SimplePOJO>builder()
                 .setElementConverter(convertorCovid)
@@ -412,13 +412,13 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
         TableSchema covidTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
 
-        POJOConvertor<CovidPOJO> covidPOJOConvertor = new CovidPOJOConvertor(covidTableSchema.hasDefaults());
+        DataMapper<CovidPOJO> covidPOJOMapper = new CovidPOJODataMapper();
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(STREAM_PARALLELISM);
 
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         clickHouseClientConfig.setSupportDefault(covidTableSchema.hasDefaults());
-        ClickHouseConvertor<CovidPOJO> convertorCovid = new ClickHouseConvertor<>(CovidPOJO.class, covidPOJOConvertor);
+        ClickHouseConvertor<CovidPOJO> convertorCovid = new ClickHouseConvertor<>(CovidPOJO.class, covidPOJOMapper);
 
         ClickHouseAsyncSink<CovidPOJO> covidPOJOSink = ClickHouseAsyncSink.<CovidPOJO>builder()
                 .setElementConverter(convertorCovid)
@@ -467,10 +467,13 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         Assertions.assertEquals(MAX_BATCH_SIZE, firstBatchRows, 
             "Expected exactly " + MAX_BATCH_SIZE + " rows from first batch, but got: " + firstBatchRows);
         
-        // Now change the table schema to simulate corruption/incompatibility
-        // Drop a critical column that the POJO expects to exist
+        // Simulate schema drift: change a column's type to something incompatible.
+        // The client still sends `new_confirmed Int32` in its names+types header
+        // (DataMapper bindings unchanged); the server now has `new_confirmed String`.
+        // Type mismatch is enforced strictly by RowBinaryWithNamesAndTypes →
+        // server rejects → DataCorruptionException → STOP_FLINK.
         String alterTableSql = "ALTER TABLE `" + getDatabase() + "`.`" + tableName + "` " +
-                "DROP COLUMN new_confirmed";
+                "MODIFY COLUMN new_confirmed String";
         ClickHouseServerForTests.executeSql(alterTableSql);
         
         // Try to insert the remaining records with a new sink
@@ -516,15 +519,18 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         
         secondBatch.sinkTo(secondBatchSink);
 
-        // The second batch should fail due to schema changes
-        // We expect 0 additional rows to be inserted
+        // The second batch should fail: the client's names+types header says
+        // `new_confirmed Int32`; the table now says `new_confirmed String`.
+        // Strict type checking in RowBinaryWithNamesAndTypes rejects the insert.
         int secondBatchRows = executeAsyncJob(env2, tableName, 10, MAX_BATCH_SIZE);
         Assertions.assertEquals(MAX_BATCH_SIZE, secondBatchRows,
-            "Expected 0 rows from second batch due to schema mismatch, but table have already : " + MAX_BATCH_SIZE);
+            "Expected 0 additional rows from second batch — the column-type mismatch "
+            + "between client header (Int32) and table column (String) should be rejected. "
+            + "Table currently has: " + secondBatchRows);
 
-        // Total should still be just the first batch
+        // Total should still be just the first batch.
         int totalRows = ClickHouseServerForTests.countRows(tableName);
-        Assertions.assertEquals(MAX_BATCH_SIZE, totalRows, 
+        Assertions.assertEquals(MAX_BATCH_SIZE, totalRows,
             "Expected total of " + MAX_BATCH_SIZE + " rows, but got: " + totalRows);
     }
 
@@ -628,7 +634,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         ClickHouseServerForTests.executeSql(SimplePOJO.createTableSQL(getDatabase(), tableName));
 
         com.clickhouse.client.api.metadata.TableSchema tableSchema = ClickHouseServerForTests.getTableSchema(tableName);
-        POJOConvertor<SimplePOJO> simplePOJOConvertor = new org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOConvertor(tableSchema.hasDefaults());
+        DataMapper<SimplePOJO> simplePOJOMapper = new SimplePOJODataMapper();
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(1);
@@ -643,7 +649,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         clickHouseClientConfig.setSupportDefault(tableSchema.hasDefaults());
 
         ClickHouseConvertor<SimplePOJO> converter =
-                new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
+                new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOMapper);
 
         // Use a large buffer time so records stay buffered (not flushed) before checkpoint
         ClickHouseAsyncSink<SimplePOJO> sink = ClickHouseAsyncSink.<SimplePOJO>builder()
@@ -694,7 +700,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         ClickHouseServerForTests.executeSql(SimplePOJO.createTableSQL(getDatabase(), tableName));
 
         com.clickhouse.client.api.metadata.TableSchema tableSchema = ClickHouseServerForTests.getTableSchema(tableName);
-        POJOConvertor<SimplePOJO> simplePOJOConvertor = new org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOConvertor(tableSchema.hasDefaults());
+        DataMapper<SimplePOJO> simplePOJOMapper = new SimplePOJODataMapper();
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(1);
@@ -707,7 +713,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         clickHouseClientConfig.setSupportDefault(tableSchema.hasDefaults());
 
         ClickHouseConvertor<SimplePOJO> converter =
-                new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOConvertor);
+                new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOMapper);
 
         // Small batch size + short buffer time → some records flush before checkpoint
         ClickHouseAsyncSink<SimplePOJO> sink = ClickHouseAsyncSink.<SimplePOJO>builder()

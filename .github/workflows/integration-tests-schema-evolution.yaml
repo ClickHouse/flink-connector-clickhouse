@@ -7,10 +7,8 @@ on:
       - 'flink-connector-clickhouse-1.17/**'
       - 'flink-connector-clickhouse-2.0.0/**'
       - 'flink-connector-clickhouse-integration/**'
-      - 'examples/maven/flink-v1.7/schema-evolution-v1/**'
-      - 'examples/maven/flink-v1.7/schema-evolution-v2/**'
-      - 'examples/maven/flink-v2/schema-evolution-v1/**'
-      - 'examples/maven/flink-v2/schema-evolution-v2/**'
+      - 'examples/maven/flink-v1.7/map-evolution/**'
+      - 'examples/maven/flink-v2/map-evolution/**'
       - '.github/workflows/integration-tests-schema-evolution.yaml'
 
 jobs:
@@ -23,9 +21,9 @@ jobs:
         # Schema-evolution test exercises connector writer-state migration, not
         # ClickHouse-version compatibility — a single CH is enough.
         clickhouse: [ "latest" ]
-        # The v1.7 example POMs pin Flink 1.17.2 and the v2 examples pin 2.0.0.
-        # Running them against newer 1.x / 2.x runtimes verifies the same JARs
-        # remain forward-compatible on the runtime side.
+        # The flink-v1.7 example POM pins Flink 1.17.2 and the flink-v2 example
+        # pins 2.0.0. Running them against newer 1.x / 2.x runtimes verifies the
+        # same JARs remain forward-compatible on the runtime side.
         flink: [ "1.17.2", "1.18.1", "1.19.3", "1.20.2", "2.0.0", "2.1.0", "latest" ]
     steps:
       - uses: actions/checkout@v3
@@ -43,17 +41,11 @@ jobs:
         uses: gradle/gradle-build-action@v2
         with:
           arguments: :flink-connector-clickhouse-2.0.0:publishToMavenLocal
-      - name: Build schema-evolution-v1 example (Flink 1.17)
-        working-directory: ./examples/maven/flink-v1.7/schema-evolution-v1
+      - name: Build map-evolution example (Flink 1.17)
+        working-directory: ./examples/maven/flink-v1.7/map-evolution
         run: mvn -q clean package
-      - name: Build schema-evolution-v2 example (Flink 1.17)
-        working-directory: ./examples/maven/flink-v1.7/schema-evolution-v2
-        run: mvn -q clean package
-      - name: Build schema-evolution-v1 example (Flink 2.0)
-        working-directory: ./examples/maven/flink-v2/schema-evolution-v1
-        run: mvn -q clean package
-      - name: Build schema-evolution-v2 example (Flink 2.0)
-        working-directory: ./examples/maven/flink-v2/schema-evolution-v2
+      - name: Build map-evolution example (Flink 2.0)
+        working-directory: ./examples/maven/flink-v2/map-evolution
         run: mvn -q clean package
       - name: Run testSchemaEvolution
         uses: gradle/gradle-build-action@v2

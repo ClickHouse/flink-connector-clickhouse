@@ -154,70 +154,73 @@ public class FlinkTests {
         cluster.tearDown();
     }
 
-    private String schemaEvolutionV1Jar(String root, String exampleSubFolder) {
+    private String mapEvolutionJar(String root, String exampleSubFolder) {
         return String.format(
-                "%s/examples/maven/%s/schema-evolution-v1/target/schema-evolution-v1-1.0-SNAPSHOT.jar",
-                root, exampleSubFolder);
-    }
-
-    private String schemaEvolutionV2Jar(String root, String exampleSubFolder) {
-        return String.format(
-                "%s/examples/maven/%s/schema-evolution-v2/target/schema-evolution-v2-1.0-SNAPSHOT.jar",
+                "%s/examples/maven/%s/map-evolution/target/map-evolution-1.0-SNAPSHOT.jar",
                 root, exampleSubFolder);
     }
 
     /**
-     * Production schema-evolution flow: a job running with
-     * {@code com.example.EvolvingPOJO (id, name)} takes a savepoint, the team
-     * deploys a release that adds a {@code ts} field, the table gets
-     * {@code ALTER ADD COLUMN ts}, and the new job restarts from the
-     * savepoint. The test runs the two pre-built example apps from
-     * {@code examples/maven/flink-v2/schema-evolution-{v1,v2}} as separate
-     * jobs against the same Flink cluster.
+     * Production schema-evolution flow under the v0.2.0 Map-based payload design:
      *
-     * <p>Both apps ship the same FQ class name {@code com.example.EvolvingPOJO}
-     * with different field structures, which is the only configuration Flink's
-     * {@code PojoSerializerSnapshot} schema migration supports.
+     * <ol>
+     *   <li><b>Build A</b> runs with {@code MapEvolutionMapperA} (columns
+     *       {@code a Int32, b String}). It emits 100 records but doesn't flush —
+     *       the sink's {@code maxTimeInBufferMS = 600_000} keeps them buffered.</li>
+     *   <li>A savepoint is taken. The Map-based state checkpointed is
+     *       {@code {a: int, b: string}} per row — no {@code c} key.</li>
+     *   <li>The table is altered: {@code ADD COLUMN c Nullable(String) DEFAULT 'omg'}.</li>
+     *   <li><b>Build B</b> restarts from the savepoint with {@code MapEvolutionMapperB}
+     *       (which adds {@code c String}). It also emits 100 fresh records carrying
+     *       {@code c = "extra-{i}"}.</li>
+     *   <li>The restored entries have no {@code c} key in their Map — Build B's mapper
+     *       reads {@code Map.get("c") == null} and writes NULL on a Nullable column.
+     *       The fresh Build B entries carry actual values.</li>
+     * </ol>
      *
-     * <p>Skipped when running in Scala mode — these examples are Java-only.
+     * <p>Asserts the resulting table has 200 rows total: 100 from Build A's restored
+     * checkpoint state (with {@code c IS NULL}) and 100 from fresh Build B emission
+     * (with {@code c} populated).
+     *
+     * <p>Both builds share the same JAR; the {@code -build A|B} argument selects the
+     * mapper. That's the whole point of the design: schema evolution lives in user
+     * code (DataMapper), not in Flink's {@code TypeSerializerSnapshot}.
+     *
+     * <p>Skipped when running in Scala mode — the map-evolution example is Java-only.
      */
     @Test
     void testSchemaEvolution() throws Exception {
         if (exampleLang == ExampleLang.SCALA) return;
 
         String root = getRoot();
-        // Pick example variant matching the Flink version under test:
-        // flink-v2 for 2.x/latest, flink-v1.7 for 1.x.
         String exampleSubFolder = exampleSubFolder(flinkVersion);
-        String v1JarPath = schemaEvolutionV1Jar(root, exampleSubFolder);
-        String v2JarPath = schemaEvolutionV2Jar(root, exampleSubFolder);
+        String jarPath = mapEvolutionJar(root, exampleSubFolder);
 
-        File v1Jar = new File(v1JarPath);
-        File v2Jar = new File(v2JarPath);
-        if (!v1Jar.exists() || !v2Jar.exists()) {
-            System.out.println("Skipping testSchemaEvolution — example JARs not built. "
-                    + "Run mvn -q clean package in examples/maven/flink-v2/schema-evolution-{v1,v2}");
+        File jar = new File(jarPath);
+        if (!jar.exists()) {
+            System.out.println("Skipping testSchemaEvolution — example JAR not built. "
+                    + "Run mvn -q clean package in examples/maven/" + exampleSubFolder
+                    + "/map-evolution");
             return;
         }
 
-        String tableName = "evolving";
+        String tableName = "map_evolution";
         String clickHouseURL = ClickHouseServerForTests.getURLForCluster();
         String username = ClickHouseServerForTests.getUsername();
         String password = ClickHouseServerForTests.getPassword();
         String database = ClickHouseServerForTests.getDatabase();
 
-        // 1. Create the V1-shape table.
+        // 1. Build-A-shape table: just (a, b).
         ClickHouseServerForTests.executeSql(
                 String.format("DROP TABLE IF EXISTS `%s`.`%s`", database, tableName));
         ClickHouseServerForTests.executeSql(
-                String.format("CREATE TABLE `%s`.`%s` (id Int32, name String) "
-                        + "ENGINE = MergeTree ORDER BY id", database, tableName));
+                String.format("CREATE TABLE `%s`.`%s` (a Int32, b String) "
+                        + "ENGINE = MergeTree ORDER BY a", database, tableName));
 
-        // 2. Bring up Flink with a host-mounted shared state directory so savepoints
-        //    survive across the two distinct JARs / jobs.
+        // 2. Flink cluster with a host-mounted shared state dir so savepoints
+        //    survive across the two jobs.
         Network network = ClickHouseServerForTests.getNetwork();
-        Path sharedStateDir = Files.createTempDirectory("flink-schema-evo-state-");
-        // Permissive perms so the in-container Flink user can write here.
+        Path sharedStateDir = Files.createTempDirectory("flink-map-evo-state-");
         sharedStateDir.toFile().setWritable(true, false);
         sharedStateDir.toFile().setReadable(true, false);
         sharedStateDir.toFile().setExecutable(true, false);
@@ -230,46 +233,51 @@ public class FlinkTests {
                 .build();
 
         try {
-            // 3. Upload + run V1.
-            String v1JarId = cluster.uploadJar(v1JarPath);
-            String v1JobId = cluster.runJob(v1JarId, "com.example.Main", 1,
+            // 3. Upload + run Build A.
+            String jarId = cluster.uploadJar(jarPath);
+            String buildAJobId = cluster.runJob(jarId, "com.example.MapEvolutionJob", 1,
                     "-url", clickHouseURL,
                     "-username", username,
                     "-password", password,
                     "-database", database,
                     "-table", tableName,
-                    "-records", "100");
+                    "-build", "A",
+                    "-records", "100",
+                    "-idStart", "0");
 
-            // 4. Wait for source emission and at least one checkpoint to land. The
-            //    sink uses maxTimeInBufferMS = 600_000 so nothing flushes meanwhile.
+            // 4. Wait for source emission and at least one checkpoint to land.
+            //    The sink keeps records buffered (maxTimeInBufferMS = 600_000).
             Thread.sleep(8000);
             Assertions.assertEquals(0, ClickHouseServerForTests.countRows(tableName),
-                    "V1 records should still be in writer buffer at savepoint time, not in ClickHouse");
+                    "Build-A records should still be in writer buffer at savepoint time, not in ClickHouse");
 
-            // 5. Take savepoint, then cancel V1.
-            String savepointPath = cluster.triggerSavepoint(v1JobId, Cluster.CONTAINER_SAVEPOINT_DIR);
+            // 5. Take savepoint, then cancel Build A.
+            String savepointPath = cluster.triggerSavepoint(buildAJobId, Cluster.CONTAINER_SAVEPOINT_DIR);
             Assertions.assertNotNull(savepointPath, "Savepoint trigger should return a location");
-            cluster.cancelJob(v1JobId);
+            cluster.cancelJob(buildAJobId);
 
-            // 6. Schema migration on the table itself.
+            // 6. Schema migration on the table.
             ClickHouseServerForTests.executeSql(String.format(
-                    "ALTER TABLE `%s`.`%s` ADD COLUMN ts Int64 DEFAULT 0", database, tableName));
+                    "ALTER TABLE `%s`.`%s` ADD COLUMN c Nullable(String) DEFAULT 'omg'",
+                    database, tableName));
 
-            // 7. Upload + run V2 from the V1 savepoint.
-            String v2JarId = cluster.uploadJar(v2JarPath);
-            String v2JobId = cluster.runJobFromSavepoint(v2JarId, "com.example.Main", 1, savepointPath,
+            // 7. Run Build B from the Build-A savepoint. The restored Map entries
+            //    have no "c" key; Build B's mapper writes null for them. Fresh
+            //    Build B entries (idStart=100) carry c = "extra-{i}".
+            String buildBJobId = cluster.runJobFromSavepoint(jarId, "com.example.MapEvolutionJob", 1,
+                    savepointPath,
                     "-url", clickHouseURL,
                     "-username", username,
                     "-password", password,
                     "-database", database,
                     "-table", tableName,
+                    "-build", "B",
                     "-records", "100",
-                    "-idStart", "100",
-                    "-ts", "42000");
-            Assertions.assertNotNull(v2JobId, "V2 job submission should succeed");
+                    "-idStart", "100");
+            Assertions.assertNotNull(buildBJobId, "Build-B job submission should succeed");
 
-            // 8. Wait for restored V1 records (migrated to V2 with ts=0) and fresh V2
-            //    records (ts=42000) to flush.
+            // 8. Wait for restored Build-A records (null c) + fresh Build-B records
+            //    (populated c) to flush.
             int expectedTotal = 200;
             int rows = 0;
             for (int i = 0; i < 60; i++) {
@@ -278,18 +286,20 @@ public class FlinkTests {
                 if (rows == expectedTotal) break;
             }
 
-            cluster.cancelJob(v2JobId);
+            cluster.cancelJob(buildBJobId);
 
             Assertions.assertEquals(expectedTotal, rows,
-                    "After schema-evolved restore, all V1 buffered records must arrive as V2 with "
-                            + "ts=0 alongside the 100 freshly emitted V2 records.");
+                    "After schema-evolved restore, all Build-A buffered records must arrive with "
+                            + "c=NULL alongside the 100 freshly emitted Build-B records.");
 
-            int v1Origin = ClickHouseServerForTests.countRowsWhere(tableName, "ts = 0");
-            int v2Origin = ClickHouseServerForTests.countRowsWhere(tableName, "ts = 42000");
-            Assertions.assertEquals(100, v1Origin,
-                    "Expected 100 rows from V1 origin (ts defaulted to 0 by schema migration)");
-            Assertions.assertEquals(100, v2Origin,
-                    "Expected 100 rows from fresh V2 emission (ts=42000)");
+            int buildAOrigin = ClickHouseServerForTests.countRowsWhere(tableName, "c IS NULL");
+            int buildBOrigin = ClickHouseServerForTests.countRowsWhere(tableName,
+                    "c IS NOT NULL AND c LIKE 'extra-%'");
+            Assertions.assertEquals(100, buildAOrigin,
+                    "Expected 100 rows from Build-A origin — restored Map had no 'c' key, "
+                            + "Build B's mapper writes null on the Nullable column.");
+            Assertions.assertEquals(100, buildBOrigin,
+                    "Expected 100 rows from fresh Build-B emission (c = 'extra-{i}').");
         } finally {
             cluster.tearDown();
         }

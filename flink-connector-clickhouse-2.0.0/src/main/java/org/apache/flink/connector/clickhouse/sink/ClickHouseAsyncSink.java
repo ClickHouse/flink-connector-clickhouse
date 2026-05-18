@@ -3,9 +3,6 @@ package org.apache.flink.connector.clickhouse.sink;
 
 import com.clickhouse.data.ClickHouseFormat;
 
-import org.apache.flink.api.common.serialization.SerializerConfigImpl;
-import org.apache.flink.api.common.typeinfo.TypeInformation;
-import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.connector.sink2.SinkWriter;
 import org.apache.flink.api.connector.sink2.StatefulSinkWriter;
 import org.apache.flink.api.connector.sink2.WriterInitContext;
@@ -23,16 +20,16 @@ import java.util.Collections;
 import java.util.Objects;
 
 public class ClickHouseAsyncSink<InputT>
-        extends AsyncSinkBase<InputT, ClickHousePayload<InputT>> {
+        extends AsyncSinkBase<InputT, ClickHousePayload> {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseAsyncSink.class);
 
     protected final ClickHouseClientConfig clickHouseClientConfig;
     protected final ClickHouseFormat clickHouseFormat;
-    private final TypeInformation<InputT> inputTypeInfo;
+    private final boolean stringMode;
 
     /** Package-private — construct via {@link #builder()}. */
     ClickHouseAsyncSink(
-            ElementConverter<InputT, ClickHousePayload<InputT>> converter,
+            ElementConverter<InputT, ClickHousePayload> converter,
             int maxBatchSize,
             int maxInFlightRequests,
             int maxBufferedRequests,
@@ -41,7 +38,7 @@ public class ClickHouseAsyncSink<InputT>
             long maxRecordSizeInByte,
             ClickHouseClientConfig clickHouseClientConfig,
             ClickHouseFormat clickHouseFormat,
-            TypeInformation<InputT> inputTypeInfo) {
+            boolean stringMode) {
         super(converter,
                 maxBatchSize,
                 maxInFlightRequests,
@@ -52,8 +49,7 @@ public class ClickHouseAsyncSink<InputT>
         this.clickHouseClientConfig =
                 Objects.requireNonNull(clickHouseClientConfig, "ClickHouse config cannot be null");
         this.clickHouseFormat = clickHouseFormat;
-        this.inputTypeInfo =
-                Objects.requireNonNull(inputTypeInfo, "inputTypeInfo cannot be null");
+        this.stringMode = stringMode;
     }
 
     public static <InputT> ClickHouseAsyncSinkBuilder<InputT> builder() {
@@ -68,9 +64,9 @@ public class ClickHouseAsyncSink<InputT>
     }
 
     @Override
-    public StatefulSinkWriter<InputT, BufferedRequestState<ClickHousePayload<InputT>>> restoreWriter(
+    public StatefulSinkWriter<InputT, BufferedRequestState<ClickHousePayload>> restoreWriter(
             WriterInitContext writerInitContext,
-            Collection<BufferedRequestState<ClickHousePayload<InputT>>> collection)
+            Collection<BufferedRequestState<ClickHousePayload>> collection)
             throws IOException {
         return new ClickHouseAsyncWriter<>(
                 getElementConverter(),
@@ -87,10 +83,8 @@ public class ClickHouseAsyncSink<InputT>
     }
 
     @Override
-    public SimpleVersionedSerializer<BufferedRequestState<ClickHousePayload<InputT>>>
+    public SimpleVersionedSerializer<BufferedRequestState<ClickHousePayload>>
             getWriterStateSerializer() {
-        TypeSerializer<InputT> inputSerializer =
-                inputTypeInfo.createSerializer(new SerializerConfigImpl());
-        return new ClickHouseAsyncSinkSerializer<>(inputSerializer);
+        return new ClickHouseAsyncSinkSerializer(stringMode);
     }
 }
