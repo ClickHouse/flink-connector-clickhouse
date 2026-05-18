@@ -1,5 +1,6 @@
 package org.apache.flink.connector.test.embedded.flink;
 
+import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.RestOptions;
 import org.apache.flink.configuration.TaskManagerOptions;
@@ -14,8 +15,8 @@ public class EmbeddedFlinkClusterForTests {
     static MiniClusterWithClientResource flinkCluster = null;
     static int REST_PORT = getFromEnvOrDefault("REST_PORT", 9091);
     static int NUM_TASK_SLOTS = getFromEnvOrDefault("NUM_TASK_SLOTS", 2);
-    static int NUM_TASK_SLOTS_PER_TASK = getFromEnvOrDefault("NUM_TASK_SLOTS_PER_TASK" , 2);
-    static int NUM_TASK_MANAGERS = getFromEnvOrDefault("NUM_TASK_MANAGERS",3);
+    static int NUM_TASK_SLOTS_PER_TASK = getFromEnvOrDefault("NUM_TASK_SLOTS_PER_TASK", 2);
+    static int NUM_TASK_MANAGERS = getFromEnvOrDefault("NUM_TASK_MANAGERS", 3);
 
     static int getFromEnvOrDefault(String key, int defaultValue) {
         String value = System.getenv().getOrDefault(key, String.valueOf(defaultValue));
@@ -67,5 +68,10 @@ public class EmbeddedFlinkClusterForTests {
         // cancel job
         jobClient.cancel();
         return rows;
+    }
+
+    public static int executeBlockingJob(StreamExecutionEnvironment env, String tableName) throws Exception {
+        JobExecutionResult jobResult = env.execute("Read GZipped CSV with FileSource");
+        return ClickHouseServerForTests.countRows(tableName);
     }
 }

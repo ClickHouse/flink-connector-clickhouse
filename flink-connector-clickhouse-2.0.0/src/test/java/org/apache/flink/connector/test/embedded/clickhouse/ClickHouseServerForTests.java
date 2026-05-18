@@ -165,6 +165,18 @@ public class ClickHouseServerForTests {
         return countResult.get(0).getInteger(1);
     }
 
+    public static int countQueryLogErrors(String databaseName, String tableName, int exceptionCode) {
+        String sql = String.format(
+                "SELECT count() FROM system.query_log" +
+                        " WHERE type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing')" +
+                        " AND exception_code = %d" +
+                        " AND has(tables, '%s.%s')",
+                exceptionCode, databaseName, tableName);
+        Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);
+        List<GenericRecord> result = client.queryAll(sql);
+        return result.get(0).getInteger(1);
+    }
+
     public static int countRows(String table) throws ExecutionException, InterruptedException {
         String countSql = String.format("SELECT COUNT(*) FROM `%s`.`%s`", database, table);
         Client client = ClickHouseTestHelpers.getClient(host, port, isSSL, username, password);

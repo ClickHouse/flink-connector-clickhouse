@@ -27,12 +27,13 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 import static org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests.*;
 import static org.apache.flink.connector.clickhouse.sink.ClickHouseSinkTestUtils.*;
-import static org.apache.flink.connector.test.embedded.flink.EmbeddedFlinkClusterForTests.executeAsyncJob;
+import static org.apache.flink.connector.test.embedded.flink.EmbeddedFlinkClusterForTests.*;
 
 public class ClickHouseSinkTests extends FlinkClusterTests {
 
@@ -353,7 +354,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
     /*
         In this test, we lower the parts_to_throw_insert setting (https://clickhouse.com/docs/operations/settings/merge-tree-settings#parts_to_throw_insert) to trigger the "Too Many Parts" error more easily.
         Once we exceed this threshold, ClickHouse will reject INSERT operations with a "Too Many Parts" error.
-        Our retry implementation will demonstrate how it handles these failures by retrying the inserts until all rows are successfully inserted. We will insert one batch containing two records to observe this behavior.
+        Our retry implementation will demonstrate how it handles these failures by retrying the inserts until all rows are successfully inserted. We will make the batch size two records to observe this behavior.
     */
     @Test
     void SimplePOJODataTooManyPartsTest() throws Exception {
@@ -380,6 +381,9 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         // path in ClickHouseAsyncWriter.handleFailedRequest.
         clickHouseClientConfig.setRetryPolicy(RetryPolicy.forever());
         clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
+        // disable server-side async insert batching (default ON in ClickHouse 26.2+) so each
+        // connector batch creates its own part, ensuring parts_to_throw_insert is triggered.
+        clickHouseClientConfig.setServerSettings(Collections.singletonMap("async_insert", "0"));
 
         ClickHouseConvertor<SimplePOJO> convertorCovid = new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOMapper);
 
@@ -402,9 +406,20 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         DataStream<SimplePOJO> simplePOJOs = env.fromData(simplePOJOList.toArray(new SimplePOJO[0]));
         // send to a sink
         simplePOJOs.sinkTo(simplePOJOSink);
-        int rows = executeAsyncJob(env, tableName, 100, EXPECTED_ROWS);
+
+        int rows = executeBlockingJob(env, tableName);
+
+        // flush ClickHouse's query log so the system.query_log is queryable immediately
+        ClickHouseServerForTests.executeSql("SYSTEM FLUSH LOGS");
+
+        // directly verify that 'Too Many Parts' errors occurred (code 252) - this means the connector retried the batch at least once
+        int tooManyPartsErrors = ClickHouseServerForTests.countQueryLogErrors(
+                getDatabase(), tableName, 252);
+        Assertions.assertTrue(tooManyPartsErrors > 0,
+                "Expected at least one 'Too Many Parts' error in system.query_log, but found none");
+
+        // verify all rows landed after retries succeeded
         Assertions.assertEquals(EXPECTED_ROWS, rows);
-        //ClickHouseServerForTests.executeSql(String.format("SYSTEM START MERGES `%s.%s`", getDatabase(), tableName));
     }
 
     @Test

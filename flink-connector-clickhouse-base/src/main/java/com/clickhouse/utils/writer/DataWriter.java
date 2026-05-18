@@ -6,6 +6,7 @@ import com.clickhouse.data.ClickHouseDataType;
 import com.clickhouse.data.format.BinaryStreamUtils;
 import com.clickhouse.utils.Serialize;
 
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.math.BigDecimal;
