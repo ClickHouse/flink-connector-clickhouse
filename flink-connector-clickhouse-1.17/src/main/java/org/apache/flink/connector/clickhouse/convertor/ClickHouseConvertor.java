@@ -79,7 +79,7 @@ public class ClickHouseConvertor<InputT>
         }
 
         try {
-            ClickHousePayload payload = new ClickHousePayload();
+            ClickHousePayload payload = ClickHousePayload.ofEmpty();
             mapper.toMap(o, payload.getData());
             buffer.reset();
             for (ColumnBinding b : cachedBindings) {

@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ClickHousePayloadTest {
 
     @Test void freshPayloadHasEmptyMap() {
-        ClickHousePayload p = new ClickHousePayload();
+        ClickHousePayload p = ClickHousePayload.ofEmpty();
         assertNotNull(p.getData());
         assertTrue(p.getData().isEmpty());
         assertNull(p.getCachedBytes());
@@ -24,7 +24,7 @@ class ClickHousePayloadTest {
     }
 
     @Test void mapIsMutableAfterConstruction() {
-        ClickHousePayload p = new ClickHousePayload();
+        ClickHousePayload p = ClickHousePayload.ofEmpty();
         p.getData().put("k", 42);
         assertEquals(42, p.getData().get("k"));
     }
@@ -41,20 +41,20 @@ class ClickHousePayloadTest {
     @Test void restoreConstructorTakesMapBytesNullUntilRehydrated() {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("k", "v");
-        ClickHousePayload p = new ClickHousePayload(data);
+        ClickHousePayload p = ClickHousePayload.ofData(data);
         assertEquals(data, p.getData());
         assertNull(p.getCachedBytes());
         assertTrue(p.needsRehydration());
     }
 
     @Test void setCachedBytesClearsRehydrationFlag() {
-        ClickHousePayload p = new ClickHousePayload(new LinkedHashMap<>());
+        ClickHousePayload p = ClickHousePayload.ofEmpty();
         p.setCachedBytes(new byte[]{7});
         assertFalse(p.needsRehydration());
     }
 
     @Test void attemptCountIncrement() {
-        ClickHousePayload p = new ClickHousePayload();
+        ClickHousePayload p = ClickHousePayload.ofEmpty();
         assertEquals(1, p.getAttemptCount());
         p.incrementAttempts();
         p.incrementAttempts();

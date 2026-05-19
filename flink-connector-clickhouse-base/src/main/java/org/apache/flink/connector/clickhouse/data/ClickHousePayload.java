@@ -24,13 +24,15 @@ public class ClickHousePayload implements Serializable {
     private int attemptCount = 1;
 
     /** Fresh write: empty mutable map, bytes filled in by caller. */
-    public ClickHousePayload() {
+    private ClickHousePayload() {
         this.data = new LinkedHashMap<>();
     }
 
     /** V2 restore: deserialized map; bytes regenerated lazily on flush. */
-    public ClickHousePayload(Map<String, Object> data) {
-        this.data = data;
+    private ClickHousePayload(Map<String, Object> data) {
+        this.data = new LinkedHashMap<>();
+        if (data != null)
+            this.data.putAll(data);
     }
 
     /** STRING-mode constructor: wraps raw bytes under {@link #RAW_KEY}. */
@@ -39,6 +41,14 @@ public class ClickHousePayload implements Serializable {
         p.data.put(RAW_KEY, bytes);
         p.cachedBytes = bytes;
         return p;
+    }
+
+    public static ClickHousePayload ofData(Map<String, Object> data) {
+        return new ClickHousePayload(data);
+    }
+
+    public  static ClickHousePayload ofEmpty() {
+        return new ClickHousePayload(null);
     }
 
     public Map<String, Object> getData() { return data; }

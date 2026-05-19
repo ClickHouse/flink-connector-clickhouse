@@ -78,7 +78,7 @@ public class ClickHouseAsyncSinkSerializer
         if (stringMode) {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put(ClickHousePayload.RAW_KEY, bytes);
-            return new ClickHousePayload(data);
+            return ClickHousePayload.ofData(data);
         }
         throw new IOException(
             "Cannot restore legacy bytes-only checkpoint entry into a typed sink: "
@@ -98,6 +98,6 @@ public class ClickHouseAsyncSinkSerializer
             Object value = TypeTags.read(in);
             data.put(key, value);
         }
-        return new ClickHousePayload(data);
+        return ClickHousePayload.ofData(data);
     }
 }

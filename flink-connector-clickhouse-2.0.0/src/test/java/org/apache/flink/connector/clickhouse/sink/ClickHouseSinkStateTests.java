@@ -49,7 +49,7 @@ class ClickHouseSinkStateTests {
     }
 
     @Test void typeTagRoundTripEveryTypeOnce() throws IOException {
-        ClickHousePayload p = new ClickHousePayload();
+        ClickHousePayload p = ClickHousePayload.ofEmpty();
         p.getData().put("null_v", null);
         p.getData().put("bool_v", true);
         p.getData().put("byte_v", (byte) -42);
@@ -123,7 +123,7 @@ class ClickHouseSinkStateTests {
     }
 
     @Test void unsupportedValueTypeFailsAtSerialize() {
-        ClickHousePayload p = new ClickHousePayload();
+        ClickHousePayload p = ClickHousePayload.ofEmpty();
         p.getData().put("bad", new java.util.Date());
         p.setCachedBytes(new byte[]{1});
 
@@ -167,7 +167,7 @@ class ClickHouseSinkStateTests {
 
     @Test void schemaEvolutionMissingKeyDeserializesNull() throws IOException {
         // Serialize a Map without key "newKey"; deserialize; verify new bindings can read null safely.
-        ClickHousePayload p = new ClickHousePayload();
+        ClickHousePayload p = ClickHousePayload.ofEmpty();
         p.getData().put("oldKey", "value");
         p.setCachedBytes(new byte[]{1});
 
