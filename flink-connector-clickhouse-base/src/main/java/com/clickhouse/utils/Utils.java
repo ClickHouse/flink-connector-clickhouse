@@ -2,6 +2,8 @@ package com.clickhouse.utils;
 
 import com.clickhouse.client.api.ConnectionInitiationException;
 import com.clickhouse.client.api.ServerException;
+import org.apache.flink.connector.clickhouse.exception.DataCorruptionException;
+import org.apache.flink.connector.clickhouse.exception.FlinkWriteException;
 import org.apache.flink.connector.clickhouse.exception.RetriableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,6 +53,22 @@ public class Utils {
             if (serverException.isRetryable()) {
                 throw new RetriableException(e);
             }
+            // check if this is batch corruption
+            int dbErrorCode = serverException.getCode();
+            //Let's check if we have a ServerException to reference the error code
+            //https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/ErrorCodes.cpp
+            switch (dbErrorCode) {
+                // Data parsing failures
+                case 6:   // CANNOT_PARSE_TEXT
+                case 27:  // CANNOT_PARSE_INPUT_ASSERTION_FAILED
+                case 33:  // CANNOT_READ_ALL_DATA
+                case 38:  // CANNOT_PARSE_DATE
+                case 41:  // CANNOT_PARSE_DATETIME
+                case 72:  // CANNOT_PARSE_NUMBER
+                case 117: // INCORRECT_DATA
+                    throw new DataCorruptionException(e);
+            }
+
         } else if (rootCause instanceof ConnectionInitiationException) {
             LOG.warn("ClickHouse Connection Initiation Exception: {}", rootCause.getLocalizedMessage());
             throw new RetriableException(e);
@@ -64,5 +82,6 @@ public class Utils {
                 throw new RetriableException(e);
             }
         }
+        throw new FlinkWriteException(e.getMessage(), e);
     }
 }

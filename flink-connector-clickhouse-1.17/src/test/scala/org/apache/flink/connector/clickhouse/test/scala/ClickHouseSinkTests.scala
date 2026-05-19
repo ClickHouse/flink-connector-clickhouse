@@ -71,20 +71,19 @@ class ClickHouseSinkTests extends AnyFunSuite with BeforeAndAfterAll {
     env.setParallelism(1);
 
     val clickHouseClientConfig = new ClickHouseClientConfig(FlinkClusterTests.getServerURL, FlinkClusterTests.getUsername, FlinkClusterTests.getPassword, FlinkClusterTests.getDatabase, tableName);
-    val convertorString: ClickHouseConvertor[String] = new ClickHouseConvertor(classOf[String]);
+    val convertorString = new ClickHouseConvertor[String](classOf[String]);
     // create sink
-    val csvSink = new ClickHouseAsyncSink[String](
-      convertorString,
-      5000,
-      2,
-      20000,
-      1024 * 1024,
-      5 * 1000,
-      1000,
-      clickHouseClientConfig
-    );
-    // in case of just want to forward our data use the appropriate ClickHouse format
-    csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
+    val csvSink = ClickHouseAsyncSink.builder[String]()
+      .setElementConverter(convertorString)
+      .setMaxBatchSize(5000)
+      .setMaxInFlightRequests(2)
+      .setMaxBufferedRequests(20000)
+      .setMaxBatchSizeInBytes(1024 * 1024)
+      .setMaxTimeInBufferMS(5 * 1000)
+      .setMaxRecordSizeInBytes(1000)
+      .setClickHouseClientConfig(clickHouseClientConfig)
+      .setClickHouseFormat(ClickHouseFormat.CSV)
+      .build();
 
     val filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
 

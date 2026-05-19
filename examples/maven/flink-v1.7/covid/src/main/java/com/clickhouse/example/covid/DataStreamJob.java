@@ -21,9 +21,7 @@ package com.clickhouse.example.covid;
 import com.clickhouse.data.ClickHouseFormat;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.java.utils.ParameterTool;
-import org.apache.flink.connector.base.sink.writer.ElementConverter;
 import org.apache.flink.connector.clickhouse.convertor.ClickHouseConvertor;
-import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
 import org.apache.flink.connector.clickhouse.sink.ClickHouseAsyncSink;
 import org.apache.flink.connector.clickhouse.sink.ClickHouseClientConfig;
 import org.apache.flink.connector.file.src.FileSource;
@@ -84,19 +82,19 @@ public class DataStreamJob {
 		final String tableName = parameters.get("table");
 
 		ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
-		ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
+		ClickHouseConvertor<String> convertorString = new ClickHouseConvertor<>(String.class);
 
-		ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
-				convertorString,
-				MAX_BATCH_SIZE,
-				MAX_IN_FLIGHT_REQUESTS,
-				MAX_BUFFERED_REQUESTS,
-				MAX_BATCH_SIZE_IN_BYTES,
-				MAX_TIME_IN_BUFFER_MS,
-				MAX_RECORD_SIZE_IN_BYTES,
-				clickHouseClientConfig
-		);
-		csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
+		ClickHouseAsyncSink<String> csvSink = ClickHouseAsyncSink.<String>builder()
+				.setElementConverter(convertorString)
+				.setMaxBatchSize(MAX_BATCH_SIZE)
+				.setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+				.setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+				.setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+				.setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+				.setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+				.setClickHouseClientConfig(clickHouseClientConfig)
+				.setClickHouseFormat(ClickHouseFormat.CSV)
+				.build();
 
 
 		final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();

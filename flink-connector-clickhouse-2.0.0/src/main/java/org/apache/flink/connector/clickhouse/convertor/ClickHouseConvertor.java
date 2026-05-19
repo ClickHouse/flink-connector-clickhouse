@@ -4,77 +4,109 @@ import org.apache.flink.api.connector.sink2.SinkWriter;
 import org.apache.flink.api.connector.sink2.WriterInitContext;
 import org.apache.flink.connector.base.sink.writer.ElementConverter;
 import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
+
+import com.clickhouse.utils.writer.DataWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Objects;
 
-
-public class ClickHouseConvertor<InputT> implements ElementConverter<InputT, ClickHousePayload> {
+public class ClickHouseConvertor<InputT>
+        implements ElementConverter<InputT, ClickHousePayload> {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseConvertor.class);
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 3L;
 
-    POJOConvertor<InputT> pojoConvertor = null;
-    enum Types {
-        STRING,
-        POJO,
-    }
+    enum Types { STRING, POJO }
     private final Types type;
+    private final DataMapper<InputT> mapper;
 
-    public ClickHouseConvertor(Class<?> clazz) {
-        if (clazz == null) {
-            throw new IllegalArgumentException("clazz must not be not null");
+    /** Reused across apply() calls — safe because Flink calls apply() single-threaded
+     *  per writer and toByteArray() returns a defensive copy. */
+    private transient ByteArrayOutputStream buffer;
+    private transient DataWriter dataWriter;
+    private transient List<ColumnBinding> cachedBindings;
+
+    public ClickHouseConvertor(Class<InputT> clazz) {
+        Objects.requireNonNull(clazz, "clazz must not be null");
+        if (clazz != String.class) {
+            throw new IllegalArgumentException(
+                "POJO input requires a DataMapper; use the (Class, DataMapper) constructor");
         }
-        if (clazz == String.class) {
-            type = Types.STRING;
-
-        } else {
-            type = Types.POJO;
-            // lets register it
-
-        }
+        this.type = Types.STRING;
+        this.mapper = null;
     }
 
-    public ClickHouseConvertor(Class<?> clazz, POJOConvertor<InputT> pojoConvertor) {
-        if (clazz == null) {
-            throw new IllegalArgumentException("clazz must not be not null");
-        } else {
-            type = Types.POJO;
-            this.pojoConvertor = pojoConvertor;
-        }
+    public ClickHouseConvertor(Class<InputT> clazz, DataMapper<InputT> mapper) {
+        Objects.requireNonNull(clazz, "clazz must not be null");
+        Objects.requireNonNull(mapper, "mapper must not be null");
+        this.type = Types.POJO;
+        this.mapper = mapper;
     }
 
-    @Override
-    public ClickHousePayload apply( InputT o, SinkWriter.Context context) {
-        if (o == null) {
-            // we need to skip it
-            return null;
+    private ClickHousePayload applyStringImpl(InputT o) {
+        String s = (String) o;
+        if (s.isEmpty()) return ClickHousePayload.ofRaw(new byte[0]);
+        byte[] bytes = s.endsWith("\n")
+                ? s.getBytes(StandardCharsets.UTF_8)
+                : (s + "\n").getBytes(StandardCharsets.UTF_8);
+        return ClickHousePayload.ofRaw(bytes);
+    }
+
+    private  ClickHousePayload applyPOJOImpl(InputT o) throws IOException {
+        ClickHousePayload payload = ClickHousePayload.ofEmpty();
+        mapper.toMap(o, payload.getData());
+        buffer.reset();
+        for (ColumnBinding b : cachedBindings) {
+            dataWriter.writeValue(payload.getData().get(b.mapKey), b.column);
         }
-        //
-        if (o instanceof String && type == Types.STRING) {
-            String payload = o.toString();
-            if (payload.isEmpty()) {
-                return new ClickHousePayload(null);
-            }
-            if (payload.endsWith("\n"))
-                return new ClickHousePayload(payload.getBytes(StandardCharsets.UTF_8));
-            return new ClickHousePayload((payload + "\n").getBytes());
-        }
-        if (type == Types.POJO) {
-            // TODO Convert POJO to bytes
-            try {
-                byte[] payload = this.pojoConvertor.convert(o);
-                return new ClickHousePayload(payload);
-            } catch (Exception e) {
-                LOG.error("Failed to convert ClickHouse payload", e);
-                return new ClickHousePayload(null);
-            }
-        }
-        throw new IllegalArgumentException("unable to convert " + o + " to " + type);
+        payload.setCachedBytes(buffer.toByteArray());
+        return payload;
     }
 
     @Override
     public void open(WriterInitContext context) {
+        if (mapper != null) {
+            this.cachedBindings = List.copyOf(mapper.bindings());
+            // Reserved-key collision check runs BEFORE super.open so a unit test can
+            // pass a null context and still validate the error path.
+            for (ColumnBinding b : cachedBindings) {
+                if (ClickHousePayload.RAW_KEY.equals(b.mapKey)) {
+                    throw new IllegalStateException(
+                        "DataMapper.bindings() uses reserved Map key: " + ClickHousePayload.RAW_KEY
+                        + " (binding for column '" + b.columnName + "')");
+                }
+            }
+        }
         ElementConverter.super.open(context);
+        this.buffer = new ByteArrayOutputStream();
+        this.dataWriter = DataWriter.of(buffer);
     }
+
+    @Override
+    public ClickHousePayload apply(InputT o, SinkWriter.Context context) {
+        if (o == null) return null;
+        try {
+            switch (type) {
+                case STRING:
+                    return applyStringImpl(o);
+                case POJO:
+                    return applyPOJOImpl(o);
+                default:
+                    throw new IllegalArgumentException("Unsupported type: " + type);
+            }
+        } catch (NullPointerException e) {
+            throw new RuntimeException("POJO field is null — check required fields on input: " + o, e);
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to convert input to ClickHouse payload", e);
+        }
+    }
+
+    public boolean isStringMode() { return type == Types.STRING; }
+    public List<ColumnBinding> getBindings() { return cachedBindings; }
 }

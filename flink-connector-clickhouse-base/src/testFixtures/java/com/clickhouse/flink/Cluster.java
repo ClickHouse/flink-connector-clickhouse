@@ -27,6 +27,11 @@ public class Cluster {
     private GenericContainer<?> containerJobManager;
     private List<GenericContainer<?>> containerTaskManagerList = new ArrayList<>();
 
+    /** Path inside Flink containers where shared state (checkpoints/savepoints) lives. */
+    public static final String CONTAINER_STATE_DIR = "/tmp/flink-state";
+    /** Subdirectory of {@link #CONTAINER_STATE_DIR} used for savepoints. */
+    public static final String CONTAINER_SAVEPOINT_DIR = CONTAINER_STATE_DIR + "/savepoints";
+
     public static class Builder {
         private String flinkVersion;
         private int taskManagers;
@@ -34,6 +39,7 @@ public class Cluster {
         private String dataFilename;
         private String targetPath;
         private Network network;
+        private String sharedStateHostPath;
 
         public Builder() {
             taskManagers = 1;
@@ -42,6 +48,7 @@ public class Cluster {
             dataFilename = null;
             targetPath = null;
             network = null;
+            sharedStateHostPath = null;
         }
         public Builder withTaskManagers(int taskManagers) {
             this.taskManagers = taskManagers;
@@ -65,42 +72,75 @@ public class Cluster {
             return this;
         }
 
+        /**
+         * Mounts a host directory into every Flink container at
+         * {@link #CONTAINER_STATE_DIR}, and configures the cluster with
+         * {@code state.checkpoints.dir} / {@code state.savepoints.dir} so that
+         * savepoints written by the JobManager are visible to the TaskManagers
+         * (and survive a job restart from a different JAR).
+         */
+        public Builder withSharedStateVolume(String hostPath) {
+            this.sharedStateHostPath = hostPath;
+            return this;
+        }
+
         public Cluster build() {
             // when we are not specifying a network we should create one
             if (network == null) {
                 network = Network.newNetwork();
             }
-            Cluster cluster = new Cluster(flinkVersion, taskManagers, sourcePath, dataFilename, targetPath, network);
+            Cluster cluster = new Cluster(flinkVersion, taskManagers, sourcePath, dataFilename, targetPath, network, sharedStateHostPath);
             return cluster;
         }
 
     }
 
     public Cluster(String flinkVersion, int taskManagers, String sourcePath, String dataFilename, String targetPath, Network network) {
-        MountableFile mountableFile = MountableFile.forHostPath(sourcePath + dataFilename);
-        String dataFileInContainer = String.format("%s/%s", targetPath, dataFilename);
+        this(flinkVersion, taskManagers, sourcePath, dataFilename, targetPath, network, null);
+    }
+
+    public Cluster(String flinkVersion, int taskManagers, String sourcePath, String dataFilename, String targetPath, Network network, String sharedStateHostPath) {
+        boolean hasDataFile = sourcePath != null;
+        MountableFile mountableFile = hasDataFile ? MountableFile.forHostPath(sourcePath + dataFilename) : null;
+        String dataFileInContainer = hasDataFile ? String.format("%s/%s", targetPath, dataFilename) : null;
         String flinkImageTag = String.format("flink:%s", flinkVersion);
         LOG.info("Using flink image tag: {}", flinkImageTag);
-        LOG.info("Data file location in container: {}", dataFileInContainer);
+        if (hasDataFile) {
+            LOG.info("Data file location in container: {}", dataFileInContainer);
+        }
         DockerImageName FLINK_IMAGE = DockerImageName.parse(flinkImageTag);
+
+        StringBuilder flinkProps = new StringBuilder("jobmanager.rpc.address: jobmanager");
+        if (sharedStateHostPath != null) {
+            flinkProps.append("\nstate.checkpoints.dir: file://").append(CONTAINER_STATE_DIR).append("/checkpoints");
+            flinkProps.append("\nstate.savepoints.dir: file://").append(CONTAINER_SAVEPOINT_DIR);
+        }
+        String flinkPropsValue = flinkProps.toString();
+
         containerJobManager = new GenericContainer<>(FLINK_IMAGE)
                 .withCommand("jobmanager")
                 .withNetwork(network)
                 .withExposedPorts(INTERNAL_REST_PORT, INTERNAL_JOB_MANAGER_RCP_PORT)
                 .withNetworkAliases("jobmanager")
-                .withEnv("FLINK_PROPERTIES","jobmanager.rpc.address: jobmanager");
+                .withEnv("FLINK_PROPERTIES", flinkPropsValue);
 
-        if (sourcePath != null) {
+        if (hasDataFile) {
             containerJobManager.withCopyFileToContainer(mountableFile, dataFileInContainer);
+        }
+        if (sharedStateHostPath != null) {
+            containerJobManager.withFileSystemBind(sharedStateHostPath, CONTAINER_STATE_DIR);
         }
         for (int i = 0; i < taskManagers; i++) {
             GenericContainer<?> containerTaskManager = new GenericContainer<>(FLINK_IMAGE)
                     .withCommand("taskmanager")
                     .withNetwork(network)
                     .dependsOn(containerJobManager)
-                    .withEnv("FLINK_PROPERTIES","jobmanager.rpc.address: jobmanager");
-            if (sourcePath != null) {
+                    .withEnv("FLINK_PROPERTIES", flinkPropsValue);
+            if (hasDataFile) {
                 containerTaskManager.withCopyFileToContainer(mountableFile, dataFileInContainer);
+            }
+            if (sharedStateHostPath != null) {
+                containerTaskManager.withFileSystemBind(sharedStateHostPath, CONTAINER_STATE_DIR);
             }
             containerTaskManagerList.add(containerTaskManager);
         }
@@ -154,8 +194,12 @@ public class Cluster {
                 jsonObject.get("status").getAsString().equalsIgnoreCase("success") &&
                 jsonObject.has("filename") ) {
                 String filename = jsonObject.get("filename").getAsString();
-                LOG.info("Uploading jar file: {}", filename);
-                return filename;
+                // Flink returns an absolute path under its upload dir; the jar id
+                // used by /jars/{id}/run is just the basename (uuid_<originalname>.jar).
+                int slash = filename.lastIndexOf('/');
+                String jarId = (slash >= 0) ? filename.substring(slash + 1) : filename;
+                LOG.info("Uploaded jar id: {}", jarId);
+                return jarId;
             }
             return null;
         }
@@ -246,6 +290,136 @@ public class Cluster {
             }
             return null;
         }
+    }
+
+    /**
+     * Triggers a savepoint, polls until completion, returns the savepoint
+     * location reported by the JobManager. The location is a path inside the
+     * Flink containers (under {@link #CONTAINER_SAVEPOINT_DIR} when the cluster
+     * was built with a shared state volume).
+     *
+     * @param jobId           the running job's id
+     * @param targetDirectory in-container path where the savepoint should be written
+     * @return the savepoint location reported by Flink (suitable for {@link #runJobFromSavepoint})
+     */
+    public String triggerSavepoint(String jobId, String targetDirectory) throws IOException, InterruptedException {
+        String url = String.format("http://%s/jobs/%s/savepoints", getDashboardUrl(), jobId);
+        JsonObject body = new JsonObject();
+        body.addProperty("target-directory", targetDirectory);
+        body.addProperty("cancel-job", false);
+
+        OkHttpClient client = new OkHttpClient();
+        Request request = new Request.Builder()
+                .url(url)
+                .post(RequestBody.create(body.toString(), MediaType.get("application/json; charset=utf-8")))
+                .build();
+        Response response = client.newCall(request).execute();
+        String responseBody = response.body() != null ? response.body().string() : "";
+        if (!response.isSuccessful()) {
+            throw new IOException("triggerSavepoint failed: HTTP " + response.code() + " body=" + responseBody);
+        }
+        Gson gson = new Gson();
+        JsonObject json = gson.fromJson(responseBody, JsonObject.class);
+        if (!json.has("request-id")) {
+            throw new IOException("triggerSavepoint response missing request-id: " + responseBody);
+        }
+        String triggerId = json.get("request-id").getAsString();
+        System.out.println("Savepoint triggered, request-id: " + triggerId);
+        return waitForSavepointCompletion(jobId, triggerId);
+    }
+
+    private String waitForSavepointCompletion(String jobId, String triggerId) throws IOException, InterruptedException {
+        String url = String.format("http://%s/jobs/%s/savepoints/%s", getDashboardUrl(), jobId, triggerId);
+        OkHttpClient client = new OkHttpClient();
+        String lastBody = "";
+        for (int i = 0; i < 120; i++) {
+            Request request = new Request.Builder().url(url).build();
+            Response response = client.newCall(request).execute();
+            if (response.isSuccessful()) {
+                lastBody = response.body() != null ? response.body().string() : "";
+                Gson gson = new Gson();
+                JsonObject json = gson.fromJson(lastBody, JsonObject.class);
+                if (json.has("status")) {
+                    String statusId = json.getAsJsonObject("status").get("id").getAsString();
+                    if ("COMPLETED".equalsIgnoreCase(statusId)) {
+                        if (json.has("operation")) {
+                            JsonObject op = json.getAsJsonObject("operation");
+                            if (op.has("location") && !op.get("location").isJsonNull()) {
+                                String location = op.get("location").getAsString();
+                                System.out.println("Savepoint completed at: " + location);
+                                return location;
+                            }
+                            if (op.has("failure-cause")) {
+                                throw new IOException("Savepoint failed: " + op.get("failure-cause"));
+                            }
+                            throw new IOException("Savepoint COMPLETED but operation has no location and no failure-cause: " + lastBody);
+                        }
+                    }
+                }
+            }
+            Thread.sleep(500);
+        }
+        throw new IOException("Savepoint did not complete within timeout. Last body: " + lastBody);
+    }
+
+    /**
+     * Cancels a running job. Returns true on a 2xx response from the REST API.
+     */
+    public boolean cancelJob(String jobId) throws IOException {
+        String url = String.format("http://%s/jobs/%s?mode=cancel", getDashboardUrl(), jobId);
+        OkHttpClient client = new OkHttpClient();
+        Request request = new Request.Builder()
+                .url(url)
+                .patch(RequestBody.create("", MediaType.get("application/json; charset=utf-8")))
+                .build();
+        Response response = client.newCall(request).execute();
+        if (!response.isSuccessful()) {
+            LOG.error("cancelJob failed code: {}", response.code());
+            return false;
+        }
+        LOG.info("cancelJob successful for jobId: {}", jobId);
+        return true;
+    }
+
+    /**
+     * Submits a job from a previously-uploaded JAR, restoring writer state from
+     * the given savepoint path (in-container). Mirrors {@link #runJob} but POSTs
+     * a JSON body so the {@code savepointPath} can be set.
+     */
+    public String runJobFromSavepoint(String jarId, String entryClass, int parallelism, String savepointPath, String... args) throws IOException {
+        String url = String.format("http://%s/jars/%s/run", getDashboardUrl(), jarId);
+        JsonObject body = new JsonObject();
+        body.addProperty("entryClass", entryClass);
+        body.addProperty("parallelism", parallelism);
+        body.addProperty("savepointPath", savepointPath);
+        body.addProperty("allowNonRestoredState", false);
+        if (args != null && args.length > 0) {
+            JsonArray arr = new JsonArray();
+            for (String a : args) {
+                arr.add(a);
+            }
+            body.add("programArgsList", arr);
+        }
+
+        OkHttpClient client = new OkHttpClient();
+        Request request = new Request.Builder()
+                .url(url)
+                .post(RequestBody.create(body.toString(), MediaType.get("application/json; charset=utf-8")))
+                .build();
+        Response response = client.newCall(request).execute();
+        if (!response.isSuccessful()) {
+            LOG.error("runJobFromSavepoint failed code: {} body: {}", response.code(),
+                    response.body() != null ? response.body().string() : "");
+            return null;
+        }
+        Gson gson = new Gson();
+        JsonObject json = gson.fromJson(response.body().string(), JsonObject.class);
+        if (json.has("jobid")) {
+            String jobid = json.get("jobid").getAsString();
+            LOG.info("runJobFromSavepoint successful jobid: {}", jobid);
+            return jobid;
+        }
+        return null;
     }
 
     public void tearDown() {

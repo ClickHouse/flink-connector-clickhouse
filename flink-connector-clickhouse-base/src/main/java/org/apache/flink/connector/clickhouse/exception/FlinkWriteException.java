@@ -4,7 +4,7 @@ public class FlinkWriteException extends RuntimeException {
     private static final long serialVersionUID = 1L;
 
     public FlinkWriteException(Throwable cause) {
-
+        super(cause);
     }
     public FlinkWriteException(String message, Throwable cause) {
         super(message, cause);

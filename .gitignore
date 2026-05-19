@@ -80,3 +80,8 @@ nb-configuration.xml
 ## Miscellaneous
 ##############################
 *.log
+
+##############################
+## Example data (downloaded by the user per examples/README.md, ~500 MB)
+##############################
+examples/data/

@@ -12,7 +12,7 @@ import java.util.*;
  * For testing most data types.
  * Follows the rules specified in DefaultColumnToMethodMatchingStrategy.java to allow for the java client to deserialize it.
  */
-public class SimplePOJO {
+public class SimplePOJO implements java.io.Serializable {
     private byte bytePrimitive; // Int8
     private Byte byteObject; // Int8
 

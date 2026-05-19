@@ -3,7 +3,7 @@ package org.apache.flink.connector.clickhouse.sink.pojo;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 
-public class CovidPOJO {
+public class CovidPOJO implements java.io.Serializable {
     private LocalDate date;
     private String location_key;
     private Integer new_confirmed;

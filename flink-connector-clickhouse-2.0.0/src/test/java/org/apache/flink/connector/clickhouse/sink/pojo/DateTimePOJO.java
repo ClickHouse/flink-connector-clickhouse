@@ -8,7 +8,7 @@ import java.time.Instant;
  * <p>
  * This class conforms to Flink's POJO definition - see: <a href="https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/dev/datastream/fault-tolerance/serialization/types_serialization/#pojos">...</a>. This ensures that Flink does not use kryo to serialize this class, which can lead to unexpected runtime exceptions in certain setups.
  */
-public class DateTimePOJO {
+public class DateTimePOJO implements java.io.Serializable {
     public String id;
     public Instant createdAt;
     public DataType dataType;

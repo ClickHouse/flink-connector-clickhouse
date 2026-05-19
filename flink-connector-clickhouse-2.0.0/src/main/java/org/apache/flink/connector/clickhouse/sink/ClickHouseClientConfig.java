@@ -2,6 +2,7 @@ package org.apache.flink.connector.clickhouse.sink;
 
 import com.clickhouse.client.api.Client;
 import com.clickhouse.client.api.ClientConfigProperties;
+import com.clickhouse.config.RetryPolicy;
 import org.apache.flink.runtime.util.EnvironmentInformation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 public class ClickHouseClientConfig implements Serializable {
@@ -29,6 +31,7 @@ public class ClickHouseClientConfig implements Serializable {
     private boolean enableJsonSupportAsString = true;
     private transient Client client = null;
     private int numberOfRetries = DEFAULT_MAX_RETRIES;
+    private RetryPolicy retryPolicy = RetryPolicy.forever();
 
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, boolean enableJsonSupportAsString) {
         this.url = url;
@@ -119,17 +122,16 @@ public class ClickHouseClientConfig implements Serializable {
         }
     }
 
-    public void setNumberOfRetries(int numberOfRetries) {
-        this.numberOfRetries = numberOfRetries;
+    public void setRetryPolicy(RetryPolicy retryPolicy) {
+        this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy must not be null");
     }
 
-    public int getNumberOfRetries() {
-        return numberOfRetries;
-    }
 
     public void setEnableJsonSupportAsString(boolean enableJsonSupportAsString) {
         this.enableJsonSupportAsString = enableJsonSupportAsString;
     }
 
     public Boolean getEnableJsonSupportAsString() { return  enableJsonSupportAsString; }
+
+    public RetryPolicy getRetryPolicy() { return retryPolicy; }
 }
