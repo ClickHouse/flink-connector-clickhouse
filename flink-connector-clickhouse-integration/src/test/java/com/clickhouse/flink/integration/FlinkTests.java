@@ -255,6 +255,8 @@ public class FlinkTests {
             String savepointPath = cluster.triggerSavepoint(buildAJobId, Cluster.CONTAINER_SAVEPOINT_DIR);
             Assertions.assertNotNull(savepointPath, "Savepoint trigger should return a location");
             cluster.cancelJob(buildAJobId);
+            Assertions.assertEquals(0, ClickHouseServerForTests.countRows(tableName),
+                    "Build-A records should still be in writer buffer at savepoint time, not in ClickHouse");
 
             // 6. Schema migration on the table.
             ClickHouseServerForTests.executeSql(String.format(

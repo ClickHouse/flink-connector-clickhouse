@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
@@ -46,6 +47,26 @@ public class ClickHouseConvertor<InputT>
         this.mapper = mapper;
     }
 
+    private ClickHousePayload applyStringImpl(InputT o) {
+        String s = (String) o;
+        if (s.isEmpty()) return ClickHousePayload.ofRaw(new byte[0]);
+        byte[] bytes = s.endsWith("\n")
+                ? s.getBytes(StandardCharsets.UTF_8)
+                : (s + "\n").getBytes(StandardCharsets.UTF_8);
+        return ClickHousePayload.ofRaw(bytes);
+    }
+
+    private  ClickHousePayload applyPOJOImpl(InputT o) throws IOException {
+        ClickHousePayload payload = ClickHousePayload.ofEmpty();
+        mapper.toMap(o, payload.getData());
+        buffer.reset();
+        for (ColumnBinding b : cachedBindings) {
+            dataWriter.writeValue(payload.getData().get(b.mapKey), b.column);
+        }
+        payload.setCachedBytes(buffer.toByteArray());
+        return payload;
+    }
+
     @Override
     public void open(WriterInitContext context) {
         if (mapper != null) {
@@ -68,25 +89,19 @@ public class ClickHouseConvertor<InputT>
     @Override
     public ClickHousePayload apply(InputT o, SinkWriter.Context context) {
         if (o == null) return null;
-
-        if (type == Types.STRING) {
-            String s = (String) o;
-            if (s.isEmpty()) return ClickHousePayload.ofRaw(new byte[0]);
-            byte[] bytes = s.endsWith("\n")
-                    ? s.getBytes(StandardCharsets.UTF_8)
-                    : (s + "\n").getBytes(StandardCharsets.UTF_8);
-            return ClickHousePayload.ofRaw(bytes);
-        }
-
         try {
-            ClickHousePayload payload = ClickHousePayload.ofEmpty();
-            mapper.toMap(o, payload.getData());
-            buffer.reset();
-            for (ColumnBinding b : cachedBindings) {
-                dataWriter.writeValue(payload.getData().get(b.mapKey), b.column);
+            switch (type) {
+                case STRING:
+                    return applyStringImpl(o);
+                case POJO:
+                    return applyPOJOImpl(o);
+                default:
+                    throw new IllegalArgumentException("Unsupported type: " + type);
             }
-            payload.setCachedBytes(buffer.toByteArray());
-            return payload;
+        } catch (NullPointerException e) {
+            throw new RuntimeException("POJO field is null — check required fields on input: " + o, e);
+        } catch (IllegalArgumentException e) {
+            throw e;
         } catch (Exception e) {
             throw new RuntimeException("Failed to convert input to ClickHouse payload", e);
         }
