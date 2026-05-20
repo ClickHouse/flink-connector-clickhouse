@@ -2,6 +2,7 @@ package org.apache.flink.connector.clickhouse.sink;
 
 import com.clickhouse.client.api.Client;
 import com.clickhouse.client.api.ClientConfigProperties;
+import com.clickhouse.config.BatchFailureStrategy;
 import com.clickhouse.config.RetryPolicy;
 import org.apache.flink.runtime.util.EnvironmentInformation;
 import org.slf4j.Logger;
@@ -30,8 +31,8 @@ public class ClickHouseClientConfig implements Serializable {
     private final Map<String, String> serverSettings;
     private boolean enableJsonSupportAsString = true;
     private transient Client client = null;
-    private int numberOfRetries = DEFAULT_MAX_RETRIES;
     private RetryPolicy retryPolicy = RetryPolicy.forever();
+    private BatchFailureStrategy batchFailureStrategy = BatchFailureStrategy.STOP_FLINK;
 
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, boolean enableJsonSupportAsString) {
         this.url = url;
@@ -47,10 +48,12 @@ public class ClickHouseClientConfig implements Serializable {
         Client clientTmp = initClient(database);
 
         boolean isServerAlive = false;
-        for (int i = 0; i < numberOfRetries && !isServerAlive; i++) {
+        for (int i = 0; i < retryPolicy.getValueOrDefault(DEFAULT_MAX_RETRIES) && !isServerAlive; i++) {
             isServerAlive = clientTmp.ping();
             if (!isServerAlive) {
-                LOG.warn("Ping failed, number of will {} retry in {} seconds.", numberOfRetries, 1);
+                LOG.warn(
+                    "Ping failed, number of will {} retry in {} seconds.",
+                    retryPolicy.getValueOrDefault(DEFAULT_MAX_RETRIES), 1);
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException ignored) {
@@ -122,8 +125,17 @@ public class ClickHouseClientConfig implements Serializable {
         }
     }
 
+    public RetryPolicy getRetryPolicy() { return retryPolicy; }
+
     public void setRetryPolicy(RetryPolicy retryPolicy) {
         this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy must not be null");
+    }
+
+    public BatchFailureStrategy getBatchFailureStrategy() { return batchFailureStrategy; }
+
+    public void setBatchFailureStrategy(BatchFailureStrategy batchFailureStrategy) {
+        this.batchFailureStrategy = Objects.requireNonNull(
+            batchFailureStrategy,"batchFailureStrategy must not be null");
     }
 
     public void setEnableJsonSupportAsString(boolean enableJsonSupportAsString) {
@@ -132,5 +144,4 @@ public class ClickHouseClientConfig implements Serializable {
 
     public Boolean getEnableJsonSupportAsString() { return  enableJsonSupportAsString; }
 
-    public RetryPolicy getRetryPolicy() { return retryPolicy; }
 }
