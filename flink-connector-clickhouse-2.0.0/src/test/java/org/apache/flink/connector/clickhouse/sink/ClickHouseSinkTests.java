@@ -9,6 +9,9 @@ import org.apache.flink.connector.base.sink.writer.ElementConverter;
 import org.apache.flink.connector.clickhouse.convertor.ClickHouseConvertor;
 import org.apache.flink.connector.clickhouse.convertor.DataMapper;
 import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
+import org.apache.flink.connector.clickhouse.exception.DataCorruptionException;
+import org.apache.flink.connector.clickhouse.exception.FlinkWriteException;
+import org.apache.flink.connector.clickhouse.exception.RetriableException;
 import org.apache.flink.connector.clickhouse.sink.convertor.CovidPOJODataMapper;
 import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJODataMapper;
 import org.apache.flink.connector.clickhouse.sink.pojo.CovidPOJO;
@@ -775,5 +778,195 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         int rows = executeAsyncJob(env, tableName, 60, expectedRows);
         Assertions.assertEquals(expectedRows, rows,
                 "All records should arrive: some flushed before checkpoint + rest from rehydration");
+    }
+
+    /*
+        Companion to SimplePOJODataTooManyPartsTest: same "Too Many Parts" trigger,
+        but RetryPolicy.limited(2) so retries exhaust before background merges clear
+        the condition. Covers the bounded-retry branch in
+        ClickHouseAsyncWriter.handleFailedRequest — once attemptCount exceeds the
+        budget, the original RetriableException propagates and fails the job.
+    */
+    @Test
+    void SimplePOJODataLimitedRetryExhaustionTest() throws Exception {
+        if (isCloud())
+            return;
+        String tableName = "simple_limited_retry_pojo";
+
+        String tableSql = SimplePOJO.createTableSQL(getDatabase(), tableName, 10);
+        ClickHouseServerForTests.executeSql(tableSql);
+
+        TableSchema simpleTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
+        DataMapper<SimplePOJO> simplePOJOMapper = new SimplePOJODataMapper();
+
+        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        env.setParallelism(STREAM_PARALLELISM);
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        // Bounded budget: the writer's retry path has no backoff, so a small budget
+        // exhausts within milliseconds — long before background merges clear the
+        // "Too Many Parts" condition. The job must fail with the original
+        // RetriableException after attemptCount > 2.
+        clickHouseClientConfig.setRetryPolicy(RetryPolicy.limited(2));
+        clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
+        clickHouseClientConfig.setServerSettings(Collections.singletonMap("async_insert", "0"));
+
+        ClickHouseConvertor<SimplePOJO> convertor =
+                new ClickHouseConvertor<>(SimplePOJO.class, simplePOJOMapper);
+
+        ClickHouseAsyncSink<SimplePOJO> simplePOJOSink = ClickHouseAsyncSink.<SimplePOJO>builder()
+                .setElementConverter(convertor)
+                .setMaxBatchSize(MIN_BATCH_SIZE * 2)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(10)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .build();
+
+        List<SimplePOJO> simplePOJOList = new ArrayList<>();
+        for (int i = 0; i < EXPECTED_ROWS; i++) {
+            simplePOJOList.add(new SimplePOJO(i));
+        }
+        DataStream<SimplePOJO> simplePOJOs = env.fromData(simplePOJOList.toArray(new SimplePOJO[0]));
+        simplePOJOs.sinkTo(simplePOJOSink);
+
+        Exception thrown = Assertions.assertThrows(Exception.class,
+                () -> env.execute("limited-retry-exhaustion"));
+        Assertions.assertTrue(
+                chainContainsExact(thrown, RetriableException.class),
+                "Expected RetriableException in cause chain, got: " + thrown);
+
+        ClickHouseServerForTests.executeSql("SYSTEM FLUSH LOGS");
+        int tooManyPartsErrors = ClickHouseServerForTests.countQueryLogErrors(
+                getDatabase(), tableName, 252);
+        Assertions.assertTrue(tooManyPartsErrors > 0,
+                "Expected at least one 'Too Many Parts' error proving retries were attempted");
+    }
+
+    /*
+        Mid-stream DROP TABLE: UNKNOWN_TABLE (server error code 60) is not in
+        Utils.handleException's corruption-code set, so it falls through to
+        FlinkWriteException — exercising the third terminal branch in
+        ClickHouseAsyncWriter.handleFailedRequest. This path is independent of
+        both RetryPolicy and BatchFailureStrategy and always fails the job.
+    */
+    @Test
+    void FlinkWriteExceptionOnTableDroppedTest() throws Exception {
+        String tableName = "flink_write_exception_drop_table";
+        ClickHouseServerForTests.executeSql(CovidPOJO.createTableSql(getDatabase(), tableName));
+
+        TableSchema schema = ClickHouseServerForTests.getTableSchema(tableName);
+        DataMapper<CovidPOJO> mapper = new CovidPOJODataMapper();
+
+        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        env.setParallelism(STREAM_PARALLELISM);
+
+        ClickHouseClientConfig config = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        config.setSupportDefault(schema.hasDefaults());
+        ClickHouseConvertor<CovidPOJO> convertor = new ClickHouseConvertor<>(CovidPOJO.class, mapper);
+
+        ClickHouseAsyncSink<CovidPOJO> firstSink = ClickHouseAsyncSink.<CovidPOJO>builder()
+                .setElementConverter(convertor)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(config)
+                .build();
+
+        Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
+        FileSource<String> source1 = FileSource
+                .forRecordStreamFormat(new TextLineInputFormat(), filePath)
+                .build();
+        DataStreamSource<String> lines1 = env.fromSource(source1, WatermarkStrategy.noWatermarks(), "GzipCsvSource");
+
+        // Phase 1: load MAX_BATCH_SIZE rows successfully into the existing table.
+        DataStream<CovidPOJO> firstBatch = lines1.map(new MapFunction<String, CovidPOJO>() {
+            private int recordCount = 0;
+            @Override
+            public CovidPOJO map(String value) {
+                recordCount++;
+                return recordCount <= MAX_BATCH_SIZE ? new CovidPOJO(value) : null;
+            }
+        }).setParallelism(1).filter(record -> record != null);
+        firstBatch.sinkTo(firstSink);
+
+        int firstBatchRows = executeAsyncJob(env, tableName, 10, MAX_BATCH_SIZE);
+        Assertions.assertEquals(MAX_BATCH_SIZE, firstBatchRows,
+                "Expected " + MAX_BATCH_SIZE + " rows from first batch, got: " + firstBatchRows);
+
+        // Phase 2: drop the table out from under the sink.
+        ClickHouseServerForTests.executeSql(
+                "DROP TABLE `" + getDatabase() + "`.`" + tableName + "`");
+
+        // Phase 3: a fresh env tries to insert into the now-missing table.
+        // Server returns UNKNOWN_TABLE (60); Utils.handleException doesn't classify
+        // it as retriable or corruption → FlinkWriteException → job fails on the
+        // first failed batch (no retries — RetryPolicy doesn't gate this branch).
+        ClickHouseAsyncSink<CovidPOJO> secondSink = ClickHouseAsyncSink.<CovidPOJO>builder()
+                .setElementConverter(convertor)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(config)
+                .build();
+
+        final StreamExecutionEnvironment env2 = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        env2.setParallelism(STREAM_PARALLELISM);
+
+        FileSource<String> source2 = FileSource
+                .forRecordStreamFormat(new TextLineInputFormat(), filePath)
+                .build();
+        DataStreamSource<String> lines2 = env2.fromSource(source2, WatermarkStrategy.noWatermarks(), "GzipCsvSource");
+
+        DataStream<CovidPOJO> secondBatch = lines2.map(new MapFunction<String, CovidPOJO>() {
+            private int recordCount = 0;
+            @Override
+            public CovidPOJO map(String value) {
+                recordCount++;
+                return recordCount > MAX_BATCH_SIZE && recordCount <= EXPECTED_ROWS
+                        ? new CovidPOJO(value) : null;
+            }
+        }).setParallelism(1).filter(record -> record != null);
+        secondBatch.sinkTo(secondSink);
+
+        Exception thrown = Assertions.assertThrows(Exception.class,
+                () -> env2.execute("flink-write-exception-drop-table"));
+
+        // Must be exactly FlinkWriteException (not a subclass) — distinguishes
+        // this branch from the RetriableException and DataCorruptionException
+        // branches, which both extend FlinkWriteException.
+        Assertions.assertTrue(
+                chainContainsExact(thrown, FlinkWriteException.class),
+                "Expected FlinkWriteException (exact class) in cause chain, got: " + thrown);
+        Assertions.assertFalse(
+                chainContainsAny(thrown, RetriableException.class, DataCorruptionException.class),
+                "Cause chain should not contain RetriableException or DataCorruptionException");
+    }
+
+    private static boolean chainContainsExact(Throwable t, Class<? extends Throwable> exactClass) {
+        for (Throwable cur = t; cur != null; cur = cur.getCause()) {
+            if (cur.getClass() == exactClass) return true;
+        }
+        return false;
+    }
+
+    @SafeVarargs
+    private static boolean chainContainsAny(Throwable t, Class<? extends Throwable>... classes) {
+        for (Throwable cur = t; cur != null; cur = cur.getCause()) {
+            for (Class<? extends Throwable> c : classes) {
+                if (c.isInstance(cur)) return true;
+            }
+        }
+        return false;
     }
 }
