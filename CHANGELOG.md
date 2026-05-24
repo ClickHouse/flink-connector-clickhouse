@@ -1,4 +1,4 @@
-## v0.2.0 — Map-based payload, RowBinaryWithNamesAndTypes
+## 0.2.0 — Map-based payload, RowBinaryWithNamesAndTypes
 
 ### Breaking changes
 
