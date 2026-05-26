@@ -10,13 +10,17 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.SocketTimeoutException;
-import java.net.UnknownHostException;
 
 public class Utils {
 
     private static final Logger LOG = LoggerFactory.getLogger(Utils.class);
     private static final String CLICKHOUSE_CLIENT_ERROR_READ_TIMEOUT_MSG = "Read timed out after";
     private static final String CLICKHOUSE_CLIENT_ERROR_WRITE_TIMEOUT_MSG = "Write timed out after";
+    // occasional IO failures should be retried
+    private static final String CLICKHOUSE_CLIENT_ERROR_INSERT_MSG = "Insert failed";
+    private static final String CLICKHOUSE_CLIENT_ERROR_RESET_CONNECTION_MSG = "Connection reset by peer";
+    private static final String CLICKHOUSE_CLIENT_ERROR_BROKEN_PIPE_MSG = "Broken pipe";
+    private static final String CLICKHOUSE_CLIENT_ERROR_CONNECTION_TIMEOUT_MSG = "Connection timed out";
 
     /**
      * This will drill down to the first ServerException in the exception chain
@@ -77,7 +81,13 @@ public class Utils {
             throw new RetriableException(e);
         } else if (rootCause instanceof IOException) {
             final String msg = rootCause.getMessage();
-            if (msg.indexOf(CLICKHOUSE_CLIENT_ERROR_READ_TIMEOUT_MSG) == 0 || msg.indexOf(CLICKHOUSE_CLIENT_ERROR_WRITE_TIMEOUT_MSG) == 0) {
+            LOG.warn("Deciding how to handle IOException thrown with message: {}", msg);
+            if (msg.indexOf(CLICKHOUSE_CLIENT_ERROR_READ_TIMEOUT_MSG) == 0 ||
+                msg.indexOf(CLICKHOUSE_CLIENT_ERROR_WRITE_TIMEOUT_MSG) == 0 ||
+                msg.indexOf(CLICKHOUSE_CLIENT_ERROR_INSERT_MSG) > -1 ||
+                msg.indexOf(CLICKHOUSE_CLIENT_ERROR_RESET_CONNECTION_MSG) > -1 ||
+                msg.indexOf(CLICKHOUSE_CLIENT_ERROR_BROKEN_PIPE_MSG) > -1 ||
+                msg.indexOf(CLICKHOUSE_CLIENT_ERROR_CONNECTION_TIMEOUT_MSG) > -1) {
                 LOG.warn("IOException thrown, wrapping exception: {}", e.getLocalizedMessage());
                 throw new RetriableException(e);
             }
