@@ -82,7 +82,9 @@ public class Utils {
         } else if (rootCause instanceof IOException) {
             final String msg = rootCause.getMessage();
             LOG.warn("Deciding how to handle IOException thrown with message: {}", msg);
-            if (msg.indexOf(CLICKHOUSE_CLIENT_ERROR_READ_TIMEOUT_MSG) == 0 ||
+            if (msg == null) { 
+                // Do nothing. neccessary check to prevent null pointer exceptions
+            } else if (msg.indexOf(CLICKHOUSE_CLIENT_ERROR_READ_TIMEOUT_MSG) == 0 ||
                 msg.indexOf(CLICKHOUSE_CLIENT_ERROR_WRITE_TIMEOUT_MSG) == 0 ||
                 msg.indexOf(CLICKHOUSE_CLIENT_ERROR_INSERT_MSG) > -1 ||
                 msg.indexOf(CLICKHOUSE_CLIENT_ERROR_RESET_CONNECTION_MSG) > -1 ||
