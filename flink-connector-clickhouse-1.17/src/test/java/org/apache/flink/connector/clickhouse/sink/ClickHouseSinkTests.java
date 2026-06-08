@@ -1,6 +1,7 @@
 package org.apache.flink.connector.clickhouse.sink;
 
 import com.clickhouse.client.api.metadata.TableSchema;
+import com.clickhouse.config.BatchFailureStrategy;
 import com.clickhouse.config.RetryPolicy;
 import com.clickhouse.data.ClickHouseFormat;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
@@ -418,6 +419,29 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         Assertions.assertThrows(RuntimeException.class, () -> {
             new ClickHouseClientConfig(getServerURL(), getUsername() + "wrong_username", getPassword(), getDatabase(), "dummy");
         });
+    }
+
+    @Test
+    void BatchFailureStrategyDefaultIsStopFlink() {
+        ClickHouseClientConfig config = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), "dummy");
+        Assertions.assertEquals(BatchFailureStrategy.STOP_FLINK, config.getBatchFailureStrategy());
+    }
+
+    @Test
+    void BatchFailureStrategyCanBeOverridden() {
+        ClickHouseClientConfig config = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), "dummy");
+        config.setBatchFailureStrategy(BatchFailureStrategy.DROP_BATCH);
+        Assertions.assertEquals(BatchFailureStrategy.DROP_BATCH, config.getBatchFailureStrategy());
+    }
+
+    @Test
+    void BatchFailureStrategyNullThrowsNpe() {
+        ClickHouseClientConfig config = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), "dummy");
+        Assertions.assertThrows(NullPointerException.class,
+                () -> config.setBatchFailureStrategy(null));
     }
 
     @Test
@@ -933,6 +957,127 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         Assertions.assertFalse(
                 chainContainsAny(thrown, RetriableException.class, DataCorruptionException.class),
                 "Cause chain should not contain RetriableException or DataCorruptionException");
+    }
+
+    @Test
+    void DropBatchStrategyJobSucceedsOnAllCorruptBatches() throws Exception {
+        String tableName = "drop_batch_all_corrupt";
+        ClickHouseServerForTests.executeSql(
+                "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` " +
+                "(date Date, location_key String, value Int32) " +
+                "ENGINE = MergeTree ORDER BY (location_key, date)");
+
+        ClickHouseClientConfig config = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        config.setBatchFailureStrategy(BatchFailureStrategy.DROP_BATCH);
+
+        ClickHouseAsyncSink<String> sink = ClickHouseAsyncSink.<String>builder()
+                .setElementConverter(new ClickHouseConvertor<>(String.class))
+                .setMaxBatchSize(10)
+                .setMaxInFlightRequests(1)
+                .setMaxBufferedRequests(200)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(1000)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(config)
+                .setClickHouseFormat(ClickHouseFormat.CSV)
+                .build();
+
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+
+        List<String> records = new ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            records.add(String.format("2020-01-01,loc_%02d,100", i));
+        }
+        env.fromElements(records.toArray(new String[0])).sinkTo(sink);
+
+        Assertions.assertDoesNotThrow(() -> env.execute("drop-batch-all-corrupt"));
+        Assertions.assertEquals(0, ClickHouseServerForTests.countRows(tableName),
+                "All batches should have been dropped — 0 rows expected");
+    }
+
+    @Test
+    void StopFlinkStrategyFailsJobOnCorruptBatches() throws Exception {
+        String tableName = "stop_flink_all_corrupt";
+        ClickHouseServerForTests.executeSql(
+                "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` " +
+                "(date Date, location_key String, value Int32) " +
+                "ENGINE = MergeTree ORDER BY (location_key, date)");
+
+        ClickHouseClientConfig config = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        // default: batchFailureStrategy = STOP_FLINK
+
+        ClickHouseAsyncSink<String> sink = ClickHouseAsyncSink.<String>builder()
+                .setElementConverter(new ClickHouseConvertor<>(String.class))
+                .setMaxBatchSize(10)
+                .setMaxInFlightRequests(1)
+                .setMaxBufferedRequests(200)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(1000)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(config)
+                .setClickHouseFormat(ClickHouseFormat.CSV)
+                .build();
+
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+
+        List<String> records = new ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            records.add(String.format("2020-01-01,loc_%02d,100", i));
+        }
+        env.fromElements(records.toArray(new String[0])).sinkTo(sink);
+
+        Exception thrown = Assertions.assertThrows(Exception.class,
+                () -> env.execute("stop-flink-all-corrupt"));
+        Assertions.assertTrue(
+                chainContainsExact(thrown, DataCorruptionException.class),
+                "Expected DataCorruptionException in cause chain, got: " + thrown);
+    }
+
+    @Test
+    void DropBatchPreservesGoodBatchesAndDropsCorruptBatch() throws Exception {
+        String tableName = "drop_batch_mixed";
+        ClickHouseServerForTests.executeSql(
+                "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` " +
+                "(date Date, location_key String, value Int32) " +
+                "ENGINE = MergeTree ORDER BY (location_key, date)");
+
+        int batchSize = 25;
+
+        ClickHouseClientConfig config = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        config.setBatchFailureStrategy(BatchFailureStrategy.DROP_BATCH);
+
+        ClickHouseAsyncSink<String> sink = ClickHouseAsyncSink.<String>builder()
+                .setElementConverter(new ClickHouseConvertor<>(String.class))
+                .setMaxBatchSize(batchSize)
+                .setMaxInFlightRequests(1)
+                .setMaxBufferedRequests(200)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(1000)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(config)
+                .setClickHouseFormat(ClickHouseFormat.CSV)
+                .build();
+
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+
+        List<String> records = new ArrayList<>();
+        for (int i = 0; i < batchSize; i++) {
+            records.add(String.format("2020-01-01,loc_%02d,100", i));
+        }
+        for (int i = 0; i < batchSize; i++) {
+            records.add(String.format("2020-01-01,loc_%02d,not_a_number", i));
+        }
+        env.fromElements(records.toArray(new String[0])).sinkTo(sink);
+
+        Assertions.assertDoesNotThrow(() -> env.execute("drop-batch-mixed"));
+        Assertions.assertEquals(batchSize, ClickHouseServerForTests.countRows(tableName),
+                "Good batch should be preserved; corrupt batch should be dropped");
     }
 
     private static boolean chainContainsExact(Throwable t, Class<? extends Throwable> exactClass) {
