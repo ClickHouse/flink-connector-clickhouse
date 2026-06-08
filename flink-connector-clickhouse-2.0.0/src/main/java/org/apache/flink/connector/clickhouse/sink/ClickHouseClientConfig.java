@@ -52,7 +52,7 @@ public class ClickHouseClientConfig implements Serializable {
             isServerAlive = clientTmp.ping();
             if (!isServerAlive) {
                 LOG.warn(
-                        "Ping failed, number of will {} retry in {} seconds.",
+                        "Ping failed; will retry up to {} times in {} seconds.",
                         retryPolicy.getValueOrDefault(DEFAULT_MAX_RETRIES), 1);
                 try {
                     Thread.sleep(1000);
