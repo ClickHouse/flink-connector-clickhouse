@@ -274,7 +274,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
                 .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
                 .setClickHouseClientConfig(clickHouseClientConfig)
-                .setClickHouseFormat(ClickHouseFormat.CSV)
+                .setClickHouseFormat(ClickHouseFormat.JSONEachRow)
                 .build();
 
         Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
@@ -994,7 +994,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         config.setBatchFailureStrategy(BatchFailureStrategy.DROP_BATCH);
 
-        // TSV format for CSV-formatted data → every INSERT fails with DataCorruptionException
+        // JSONEachRow format for CSV-formatted data → every INSERT fails with DataCorruptionException
         ClickHouseAsyncSink<String> sink = ClickHouseAsyncSink.<String>builder()
                 .setElementConverter(new ClickHouseConvertor<>(String.class))
                 .setMaxBatchSize(10)
@@ -1004,7 +1004,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 .setMaxTimeInBufferMS(1000)
                 .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
                 .setClickHouseClientConfig(config)
-                .setClickHouseFormat(ClickHouseFormat.CSV)
+                .setClickHouseFormat(ClickHouseFormat.JSONEachRow)
                 .build();
 
         final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
@@ -1047,7 +1047,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 .setMaxTimeInBufferMS(1000)
                 .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
                 .setClickHouseClientConfig(config)
-                .setClickHouseFormat(ClickHouseFormat.CSV)
+                .setClickHouseFormat(ClickHouseFormat.JSONEachRow)
                 .build();
 
         final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();

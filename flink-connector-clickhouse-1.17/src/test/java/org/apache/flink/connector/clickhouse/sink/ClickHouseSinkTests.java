@@ -980,7 +980,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 .setMaxTimeInBufferMS(1000)
                 .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
                 .setClickHouseClientConfig(config)
-                .setClickHouseFormat(ClickHouseFormat.CSV)
+                .setClickHouseFormat(ClickHouseFormat.JSONEachRow)
                 .build();
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -1018,7 +1018,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 .setMaxTimeInBufferMS(1000)
                 .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
                 .setClickHouseClientConfig(config)
-                .setClickHouseFormat(ClickHouseFormat.CSV)
+                .setClickHouseFormat(ClickHouseFormat.JSONEachRow)
                 .build();
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
