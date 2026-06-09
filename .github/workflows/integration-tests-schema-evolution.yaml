@@ -2,6 +2,17 @@ name: Integration Tests CI (Schema Evolution)
 
 on:
   push:
+    branches:
+      - main
+    paths:
+      - 'flink-connector-clickhouse-base/**'
+      - 'flink-connector-clickhouse-1.17/**'
+      - 'flink-connector-clickhouse-2.0.0/**'
+      - 'flink-connector-clickhouse-integration/**'
+      - 'examples/maven/flink-v1.7/map-evolution/**'
+      - 'examples/maven/flink-v2/map-evolution/**'
+      - '.github/workflows/integration-tests-schema-evolution.yaml'
+  pull_request:
     paths:
       - 'flink-connector-clickhouse-base/**'
       - 'flink-connector-clickhouse-1.17/**'

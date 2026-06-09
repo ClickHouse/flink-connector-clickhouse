@@ -1,6 +1,18 @@
 name: Apache Flink ClickHouse Connector Tests CI (Scala)
 
-on: [push]
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - 'examples'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - 'examples'
 
 jobs:
   test-flink-17:

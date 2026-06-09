@@ -2,6 +2,13 @@ name: Integration Tests CI (Java)
 
 on:
   push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - 'examples'
+  pull_request:
     paths-ignore:
       - '**.md'
       - 'LICENSE'
