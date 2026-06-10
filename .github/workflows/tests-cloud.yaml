@@ -1,0 +1,123 @@
+name: Apache Flink ClickHouse Connector Tests CI (Java, Cloud)
+
+# Cloud counterpart of tests.yaml. It needs the ClickHouse Cloud secrets, so it
+# runs on pull_request_target (which exposes secrets) instead of pull_request.
+# To stop untrusted fork code from reaching those secrets automatically, fork
+# PRs only run once a maintainer adds the `run-cloud-tests` label (see the
+# `gate` job). Same-repo PRs and pushes to main run without a label.
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - 'examples'
+  pull_request_target:
+    types: [opened, reopened, synchronize, labeled]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - 'examples'
+  workflow_dispatch:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    # Allow when: not a PR (push / manual), OR a same-repo PR that is not a bare
+    # label event, OR a `run-cloud-tests` label was just added (the only path for
+    # fork PRs). Fork PRs without the label fall through and the job is skipped,
+    # which skips every job that `needs: gate`.
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request_target' && (
+        (github.event.pull_request.head.repo.full_name == github.repository && github.event.action != 'labeled') ||
+        (github.event.action == 'labeled' && github.event.label.name == 'run-cloud-tests')
+      ))
+    steps:
+      - run: echo "Cloud tests approved for ${{ github.event_name }}"
+
+  test-flink-17:
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        clickhouse: [ "cloud" ]
+        flink: [ "1.17.2", "1.18.1", "1.19.3", "1.20.2"]
+    name: Apache Flink ${{ matrix.flink }} ClickHouse Connector tests with ClickHouse ${{ matrix.clickhouse }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.ref }}
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'adopt'
+          architecture: x64
+      - name: Setup and execute Gradle 'test' task
+        uses: gradle/gradle-build-action@v2
+        env:
+          CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
+          CLICKHOUSE_CLOUD_HOST: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}
+          CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}
+          FLINK_VERSION: ${{ matrix.flink }}
+        with:
+          arguments: :flink-connector-clickhouse-1.17:test
+  test-flink-2:
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        clickhouse: [ "cloud" ]
+    name: Apache Flink 2.0.0 ClickHouse Connector tests with ClickHouse ${{ matrix.clickhouse }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.ref }}
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'adopt'
+          architecture: x64
+      - name: Setup and execute Gradle 'test' task
+        uses: gradle/gradle-build-action@v2
+        env:
+          CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
+          CLICKHOUSE_CLOUD_HOST: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}
+          CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}
+        with:
+          arguments: :flink-connector-clickhouse-2.0.0:test
+
+  remove-label:
+    needs: [ test-flink-17, test-flink-2 ]
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    # Strip the label after each fork-PR run so new commits need re-labeling
+    # (and thus re-review) before they can touch the cloud secrets again.
+    if: >-
+      always() &&
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'run-cloud-tests')
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                name: 'run-cloud-tests'
+              });
+            } catch (e) {
+              core.info(`Label removal skipped: ${e.message}`);
+            }

@@ -1,5 +1,8 @@
-name: Integration Tests CI (Schema Evolution)
+name: Integration Tests CI (Schema Evolution, Cloud)
 
+# Cloud counterpart of integration-tests-schema-evolution.yaml. Runs on
+# pull_request_target so the ClickHouse Cloud secrets are available; fork PRs are
+# gated behind the `run-cloud-tests` label (see the `gate` job).
 on:
   push:
     branches:
@@ -11,8 +14,9 @@ on:
       - 'flink-connector-clickhouse-integration/**'
       - 'examples/maven/flink-v1.7/map-evolution/**'
       - 'examples/maven/flink-v2/map-evolution/**'
-      - '.github/workflows/integration-tests-schema-evolution.yaml'
-  pull_request:
+      - '.github/workflows/integration-tests-schema-evolution-cloud.yaml'
+  pull_request_target:
+    types: [opened, reopened, synchronize, labeled]
     paths:
       - 'flink-connector-clickhouse-base/**'
       - 'flink-connector-clickhouse-1.17/**'
@@ -20,24 +24,38 @@ on:
       - 'flink-connector-clickhouse-integration/**'
       - 'examples/maven/flink-v1.7/map-evolution/**'
       - 'examples/maven/flink-v2/map-evolution/**'
-      - '.github/workflows/integration-tests-schema-evolution.yaml'
+      - '.github/workflows/integration-tests-schema-evolution-cloud.yaml'
+  workflow_dispatch:
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request_target' && (
+        (github.event.pull_request.head.repo.full_name == github.repository && github.event.action != 'labeled') ||
+        (github.event.action == 'labeled' && github.event.label.name == 'run-cloud-tests')
+      ))
+    steps:
+      - run: echo "Cloud tests approved for ${{ github.event_name }}"
+
   test-schema-evolution:
+    needs: gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        # Schema-evolution test exercises connector writer-state migration, not
-        # ClickHouse-version compatibility — a single CH is enough.
-        clickhouse: [ "25.3", "25.8", "25.10", "25.11", "25.12", "latest" ]
+        clickhouse: [ "cloud" ]
         # The flink-v1.7 example POM pins Flink 1.17.2 and the flink-v2 example
         # pins 2.0.0. Running them against newer 1.x / 2.x runtimes verifies the
         # same JARs remain forward-compatible on the runtime side.
         flink: [ "1.17.2", "1.18.1", "1.19.3", "1.20.2", "2.0.0", "2.1.0", "latest" ]
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.ref }}
       - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
@@ -62,6 +80,33 @@ jobs:
         uses: gradle/gradle-build-action@v2
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
+          CLICKHOUSE_CLOUD_HOST: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}
+          CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}
           FLINK_VERSION: ${{ matrix.flink }}
         with:
           arguments: ":flink-connector-clickhouse-integration:test --tests com.clickhouse.flink.integration.FlinkTests.testSchemaEvolution"
+
+  remove-label:
+    needs: [ test-schema-evolution ]
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    if: >-
+      always() &&
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'run-cloud-tests')
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                name: 'run-cloud-tests'
+              });
+            } catch (e) {
+              core.info(`Label removal skipped: ${e.message}`);
+            }
