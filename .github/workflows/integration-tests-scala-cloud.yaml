@@ -12,11 +12,6 @@ on:
       - '**.md'
       - 'LICENSE'
       - 'examples/**'
-  pull_request:
-    paths-ignore:
-      - '**.md'
-      - 'LICENSE'
-      - 'examples/**'
   pull_request_target:
     types: [opened, reopened, synchronize, labeled]
     paths-ignore:
@@ -28,14 +23,16 @@ on:
 jobs:
   gate:
     runs-on: ubuntu-latest
+    # Run for
+    # - Internal PRs (from repo collaborators): auto-run on open/reopen/sync (NOT on random label additions)
+    # - External PRs (from forks): only when 'run-cloud-tests' label is added (secure, no auto-run on new commits)
     if: >-
       github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'pull_request_target' &&
-        github.event.pull_request.head.repo.full_name != github.repository &&
-        github.event.action == 'labeled' &&
-        github.event.label.name == 'run-cloud-tests')
+      (github.event_name == 'pull_request_target' && (
+                   (github.event.pull_request.head.repo.full_name == github.repository && github.event.action != 'labeled') ||
+                   (github.event.action == 'labeled' && github.event.label.name == 'run-cloud-tests')
+                 ))
     steps:
       - run: echo "Cloud tests approved for ${{ github.event_name }}"
 
