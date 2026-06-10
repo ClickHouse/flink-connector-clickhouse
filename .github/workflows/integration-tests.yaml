@@ -21,56 +21,34 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        clickhouse: [ "25.3", "25.8", "25.10", "25.11", "25.12", "latest", "cloud" ]
+        clickhouse: [ "25.3", "25.8", "25.10", "25.11", "25.12", "latest" ]
         flink: [ "1.17.2", "1.18.1", "1.19.3", "1.20.2", "2.0.0", "2.1.0" , "latest"]
     steps:
-      - name: Check for Cloud Credentials
-        id: check-cloud-credentials
-        run: |
-          if [[ "${{ matrix.clickhouse }}" == "cloud" && (-z "${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}" || -z "${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}") ]]; then
-            echo "SKIP_STEP=true" >> $GITHUB_ENV
-          else
-            echo "SKIP_STEP=false" >> $GITHUB_ENV
-          fi
-        shell: bash
       - uses: actions/checkout@v3
-        if: env.SKIP_STEP != 'true'
       - name: Set up JDK 17
-        if: env.SKIP_STEP != 'true'
         uses: actions/setup-java@v3
         with:
           java-version: '17'
           distribution: 'adopt'
           architecture: x64
       - name: Publish locally flink-connector-clickhouse-1.17
-        if: env.SKIP_STEP != 'true'
         uses: gradle/gradle-build-action@v2
         with:
           arguments: :flink-connector-clickhouse-1.17:publishToMavenLocal
       - name: Publish locally flink-connector-clickhouse-2.0.0
-        if: env.SKIP_STEP != 'true'
         uses: gradle/gradle-build-action@v2
         with:
           arguments: :flink-connector-clickhouse-2.0.0:publishToMavenLocal
       - name: Generate Flink Covid App example 2.X
-        if: env.SKIP_STEP != 'true'
         working-directory: ./examples/maven/flink-v2/covid
         run: mvn clean install
       - name: Generate Flink Covid App example 1.17+
-        if: env.SKIP_STEP != 'true'
         working-directory: ./examples/maven/flink-v1.7/covid
         run: mvn clean install
       - name: Setup and execute Gradle 'integration-test' task
-        if: env.SKIP_STEP != 'true'
         uses: gradle/gradle-build-action@v2
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
-          CLICKHOUSE_CLOUD_HOST: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}
-          CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}
           FLINK_VERSION: ${{ matrix.flink }}
         with:
           arguments: :flink-connector-clickhouse-integration:test
-
-
-
-

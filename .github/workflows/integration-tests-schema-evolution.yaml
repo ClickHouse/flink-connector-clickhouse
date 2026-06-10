@@ -31,21 +31,12 @@ jobs:
       matrix:
         # Schema-evolution test exercises connector writer-state migration, not
         # ClickHouse-version compatibility — a single CH is enough.
-        clickhouse: [ "25.3", "25.8", "25.10", "25.11", "25.12", "latest", "cloud" ]
+        clickhouse: [ "25.3", "25.8", "25.10", "25.11", "25.12", "latest" ]
         # The flink-v1.7 example POM pins Flink 1.17.2 and the flink-v2 example
         # pins 2.0.0. Running them against newer 1.x / 2.x runtimes verifies the
         # same JARs remain forward-compatible on the runtime side.
         flink: [ "1.17.2", "1.18.1", "1.19.3", "1.20.2", "2.0.0", "2.1.0", "latest" ]
     steps:
-      - name: Check for Cloud Credentials
-        id: check-cloud-credentials
-        run: |
-          if [[ "${{ matrix.clickhouse }}" == "cloud" && (-z "${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}" || -z "${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}") ]]; then
-            echo "SKIP_STEP=true" >> $GITHUB_ENV
-          else
-            echo "SKIP_STEP=false" >> $GITHUB_ENV
-          fi
-        shell: bash
       - uses: actions/checkout@v3
       - name: Set up JDK 17
         uses: actions/setup-java@v3
@@ -71,8 +62,6 @@ jobs:
         uses: gradle/gradle-build-action@v2
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
-          CLICKHOUSE_CLOUD_HOST: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}
-          CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}
           FLINK_VERSION: ${{ matrix.flink }}
         with:
           arguments: ":flink-connector-clickhouse-integration:test --tests com.clickhouse.flink.integration.FlinkTests.testSchemaEvolution"
