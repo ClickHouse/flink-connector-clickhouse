@@ -1,12 +1,18 @@
 name: Integration Tests CI (Java, Cloud)
 
-# Cloud counterpart of integration-tests.yaml. Runs on pull_request_target so the
-# ClickHouse Cloud secrets are available; fork PRs are gated behind the
-# `run-cloud-tests` label (see the `gate` job).
+# Cloud counterpart of integration-tests.yaml. Same-repo branch PRs run
+# automatically via `pull_request`; fork PRs run via `pull_request_target` only
+# after the `run-cloud-tests` label is added (see the `gate` job, which keeps
+# the two paths from double-running).
 on:
   push:
     branches:
       - main
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - 'examples'
+  pull_request:
     paths-ignore:
       - '**.md'
       - 'LICENSE'
@@ -25,10 +31,11 @@ jobs:
     if: >-
       github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request_target' && (
-        (github.event.pull_request.head.repo.full_name == github.repository && github.event.action != 'labeled') ||
-        (github.event.action == 'labeled' && github.event.label.name == 'run-cloud-tests')
-      ))
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' &&
+        github.event.pull_request.head.repo.full_name != github.repository &&
+        github.event.action == 'labeled' &&
+        github.event.label.name == 'run-cloud-tests')
     steps:
       - run: echo "Cloud tests approved for ${{ github.event_name }}"
 

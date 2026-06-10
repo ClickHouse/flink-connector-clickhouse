@@ -1,12 +1,22 @@
 name: Integration Tests CI (Schema Evolution, Cloud)
 
-# Cloud counterpart of integration-tests-schema-evolution.yaml. Runs on
-# pull_request_target so the ClickHouse Cloud secrets are available; fork PRs are
-# gated behind the `run-cloud-tests` label (see the `gate` job).
+# Cloud counterpart of integration-tests-schema-evolution.yaml. Same-repo branch
+# PRs run automatically via `pull_request`; fork PRs run via
+# `pull_request_target` only after the `run-cloud-tests` label is added (see the
+# `gate` job, which keeps the two paths from double-running).
 on:
   push:
     branches:
       - main
+    paths:
+      - 'flink-connector-clickhouse-base/**'
+      - 'flink-connector-clickhouse-1.17/**'
+      - 'flink-connector-clickhouse-2.0.0/**'
+      - 'flink-connector-clickhouse-integration/**'
+      - 'examples/maven/flink-v1.7/map-evolution/**'
+      - 'examples/maven/flink-v2/map-evolution/**'
+      - '.github/workflows/integration-tests-schema-evolution-cloud.yaml'
+  pull_request:
     paths:
       - 'flink-connector-clickhouse-base/**'
       - 'flink-connector-clickhouse-1.17/**'
@@ -33,10 +43,11 @@ jobs:
     if: >-
       github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request_target' && (
-        (github.event.pull_request.head.repo.full_name == github.repository && github.event.action != 'labeled') ||
-        (github.event.action == 'labeled' && github.event.label.name == 'run-cloud-tests')
-      ))
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' &&
+        github.event.pull_request.head.repo.full_name != github.repository &&
+        github.event.action == 'labeled' &&
+        github.event.label.name == 'run-cloud-tests')
     steps:
       - run: echo "Cloud tests approved for ${{ github.event_name }}"
 
