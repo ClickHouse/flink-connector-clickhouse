@@ -45,8 +45,8 @@ public class ClickHouseAsyncWriter<InputT>
     private final ClickHouseClientConfig clickHouseClientConfig;
     private final ClickHouseConvertor<InputT> convertor;
     private final ClickHouseFormat clickHouseFormat;          // for STRING mode only
-    private RetryPolicy retryPolicy = RetryPolicy.forever();
-    private final BatchFailureStrategy batchFailureStrategy = BatchFailureStrategy.STOP_FLINK;
+    private final RetryPolicy retryPolicy;
+    private final BatchFailureStrategy batchFailureStrategy;
 
     private final boolean typedMode;
     private final byte[] namesAndTypesHeader;                 // null in STRING mode
@@ -68,7 +68,6 @@ public class ClickHouseAsyncWriter<InputT>
                                  long maxBatchSizeInBytes,
                                  long maxTimeInBufferMS,
                                  long maxRecordSizeInBytes,
-                                 RetryPolicy retryPolicy,
                                  ClickHouseClientConfig clickHouseClientConfig,
                                  ClickHouseFormat clickHouseFormat,
                                  Collection<BufferedRequestState<ClickHousePayload>> state) {
@@ -92,7 +91,8 @@ public class ClickHouseAsyncWriter<InputT>
         this.convertor = (ClickHouseConvertor<InputT>) elementConverter;
         this.clickHouseClientConfig = clickHouseClientConfig;
         this.clickHouseFormat = clickHouseFormat;
-        this.retryPolicy = retryPolicy;
+        this.retryPolicy = clickHouseClientConfig.getRetryPolicy();
+        this.batchFailureStrategy = clickHouseClientConfig.getBatchFailureStrategy();
         this.typedMode = !this.convertor.isStringMode();
 
         if (typedMode) {
@@ -116,23 +116,6 @@ public class ClickHouseAsyncWriter<InputT>
                 new DescriptiveStatisticsHistogram(1000));
         this.writeFailureLatencyHistogram = metricGroup.histogram("writeFailureLatencyHistogram",
                 new DescriptiveStatisticsHistogram(1000));
-    }
-
-    public ClickHouseAsyncWriter(ElementConverter<InputT, ClickHousePayload> elementConverter,
-                                 Sink.InitContext context,
-                                 int maxBatchSize,
-                                 int maxInFlightRequests,
-                                 int maxBufferedRequests,
-                                 long maxBatchSizeInBytes,
-                                 long maxTimeInBufferMS,
-                                 long maxRecordSizeInBytes,
-                                 ClickHouseClientConfig clickHouseClientConfig,
-                                 ClickHouseFormat clickHouseFormat,
-                                 Collection<BufferedRequestState<ClickHousePayload>> state) {
-        this(elementConverter, context, maxBatchSize, maxInFlightRequests, maxBufferedRequests,
-             maxBatchSizeInBytes, maxTimeInBufferMS, maxRecordSizeInBytes,
-             clickHouseClientConfig.getRetryPolicy(),
-             clickHouseClientConfig, clickHouseFormat, state);
     }
 
     private static byte[] buildHeader(List<ColumnBinding> bindings) {

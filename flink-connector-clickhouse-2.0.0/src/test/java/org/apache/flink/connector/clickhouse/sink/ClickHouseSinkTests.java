@@ -1,6 +1,7 @@
 package org.apache.flink.connector.clickhouse.sink;
 
 import com.clickhouse.client.api.metadata.TableSchema;
+import com.clickhouse.config.BatchFailureStrategy;
 import com.clickhouse.config.RetryPolicy;
 import com.clickhouse.data.ClickHouseFormat;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
@@ -273,7 +274,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
                 .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
                 .setClickHouseClientConfig(clickHouseClientConfig)
-                .setClickHouseFormat(ClickHouseFormat.TSV)
+                .setClickHouseFormat(ClickHouseFormat.JSONEachRow)
                 .build();
 
         Path filePath = new Path("./src/test/resources/epidemiology_top_10000.csv.gz");
@@ -430,6 +431,29 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         Assertions.assertThrows(RuntimeException.class, () -> {
             new ClickHouseClientConfig(getServerURL(), getUsername() + "wrong_username", getPassword(), getDatabase(), "dummy");
         });
+    }
+
+    @Test
+    void BatchFailureStrategyDefaultIsStopFlink() {
+        ClickHouseClientConfig config = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), "dummy");
+        Assertions.assertEquals(BatchFailureStrategy.STOP_FLINK, config.getBatchFailureStrategy());
+    }
+
+    @Test
+    void BatchFailureStrategyCanBeOverridden() {
+        ClickHouseClientConfig config = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), "dummy");
+        config.setBatchFailureStrategy(BatchFailureStrategy.DROP_BATCH);
+        Assertions.assertEquals(BatchFailureStrategy.DROP_BATCH, config.getBatchFailureStrategy());
+    }
+
+    @Test
+    void BatchFailureStrategyNullThrowsNpe() {
+        ClickHouseClientConfig config = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), "dummy");
+        Assertions.assertThrows(NullPointerException.class,
+                () -> config.setBatchFailureStrategy(null));
     }
 
     @Test
@@ -951,6 +975,149 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         Assertions.assertFalse(
                 chainContainsAny(thrown, RetriableException.class, DataCorruptionException.class),
                 "Cause chain should not contain RetriableException or DataCorruptionException");
+    }
+
+    /*
+        DROP_BATCH: when a batch fails with DataCorruptionException and the strategy
+        is DROP_BATCH, the connector calls resultHandler.complete() (not completeExceptionally),
+        so the Flink job continues and finishes normally. The batch is silently discarded.
+    */
+    @Test
+    void DropBatchStrategyJobSucceedsOnAllCorruptBatches() throws Exception {
+        String tableName = "drop_batch_all_corrupt";
+        ClickHouseServerForTests.executeSql(
+                "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` " +
+                "(date Date, location_key String, value Int32) " +
+                "ENGINE = MergeTree ORDER BY (location_key, date)");
+
+        ClickHouseClientConfig config = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        config.setBatchFailureStrategy(BatchFailureStrategy.DROP_BATCH);
+
+        // JSONEachRow format for CSV-formatted data → every INSERT fails with DataCorruptionException
+        ClickHouseAsyncSink<String> sink = ClickHouseAsyncSink.<String>builder()
+                .setElementConverter(new ClickHouseConvertor<>(String.class))
+                .setMaxBatchSize(10)
+                .setMaxInFlightRequests(1)
+                .setMaxBufferedRequests(200)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(1000)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(config)
+                .setClickHouseFormat(ClickHouseFormat.JSONEachRow)
+                .build();
+
+        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        env.setParallelism(1);
+
+        List<String> records = new ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            records.add(String.format("2020-01-01,loc_%02d,100", i));
+        }
+        env.fromData(records.toArray(new String[0])).sinkTo(sink);
+
+        // DROP_BATCH lets the job finish — no exception even though all batches were corrupt
+        Assertions.assertDoesNotThrow(() -> env.execute("drop-batch-all-corrupt"));
+        Assertions.assertEquals(0, ClickHouseServerForTests.countRows(tableName),
+                "All batches should have been dropped — 0 rows expected");
+    }
+
+    /*
+        Contrast to DropBatchStrategyJobSucceedsOnAllCorruptBatches: STOP_FLINK (the
+        default) propagates the DataCorruptionException and fails the job.
+    */
+    @Test
+    void StopFlinkStrategyFailsJobOnCorruptBatches() throws Exception {
+        String tableName = "stop_flink_all_corrupt";
+        ClickHouseServerForTests.executeSql(
+                "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` " +
+                "(date Date, location_key String, value Int32) " +
+                "ENGINE = MergeTree ORDER BY (location_key, date)");
+
+        ClickHouseClientConfig config = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        // default: batchFailureStrategy = STOP_FLINK
+
+        ClickHouseAsyncSink<String> sink = ClickHouseAsyncSink.<String>builder()
+                .setElementConverter(new ClickHouseConvertor<>(String.class))
+                .setMaxBatchSize(10)
+                .setMaxInFlightRequests(1)
+                .setMaxBufferedRequests(200)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(1000)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(config)
+                .setClickHouseFormat(ClickHouseFormat.JSONEachRow)
+                .build();
+
+        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        env.setParallelism(1);
+
+        List<String> records = new ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            records.add(String.format("2020-01-01,loc_%02d,100", i));
+        }
+        env.fromData(records.toArray(new String[0])).sinkTo(sink);
+
+        Exception thrown = Assertions.assertThrows(Exception.class,
+                () -> env.execute("stop-flink-all-corrupt"));
+        Assertions.assertTrue(
+                chainContainsExact(thrown, DataCorruptionException.class),
+                "Expected DataCorruptionException in cause chain, got: " + thrown);
+    }
+
+    /*
+        DROP_BATCH with mixed good and corrupt batches: good batches land in ClickHouse
+        while corrupt batches are silently discarded.  The first batchSize records are
+        valid CSV; the next batchSize have an invalid Int32 field (CANNOT_PARSE_NUMBER,
+        error code 72 → DataCorruptionException).  With maxInFlightRequests=1 and
+        parallelism=1, the good batch is submitted and confirmed before the corrupt one.
+    */
+    @Test
+    void DropBatchPreservesGoodBatchesAndDropsCorruptBatch() throws Exception {
+        String tableName = "drop_batch_mixed";
+        ClickHouseServerForTests.executeSql(
+                "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` " +
+                "(date Date, location_key String, value Int32) " +
+                "ENGINE = MergeTree ORDER BY (location_key, date)");
+
+        int batchSize = 25;
+
+        ClickHouseClientConfig config = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        config.setBatchFailureStrategy(BatchFailureStrategy.DROP_BATCH);
+
+        ClickHouseAsyncSink<String> sink = ClickHouseAsyncSink.<String>builder()
+                .setElementConverter(new ClickHouseConvertor<>(String.class))
+                .setMaxBatchSize(batchSize)
+                .setMaxInFlightRequests(1)
+                .setMaxBufferedRequests(200)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(1000)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(config)
+                .setClickHouseFormat(ClickHouseFormat.CSV)
+                .build();
+
+        final StreamExecutionEnvironment env = EmbeddedFlinkClusterForTests.getMiniCluster().getTestStreamEnvironment();
+        env.setParallelism(1);
+
+        // First batchSize records: valid CSV  → INSERT succeeds
+        // Next  batchSize records: invalid Int32 field → DataCorruptionException → DROP_BATCH
+        List<String> records = new ArrayList<>();
+        for (int i = 0; i < batchSize; i++) {
+            records.add(String.format("2020-01-01,loc_%02d,100", i));
+        }
+        for (int i = 0; i < batchSize; i++) {
+            records.add(String.format("2020-01-01,loc_%02d,not_a_number", i));
+        }
+        env.fromData(records.toArray(new String[0])).sinkTo(sink);
+
+        // Job completes — DROP_BATCH absorbed the corrupt batch
+        Assertions.assertDoesNotThrow(() -> env.execute("drop-batch-mixed"));
+        // Only the good batch was written
+        Assertions.assertEquals(batchSize, ClickHouseServerForTests.countRows(tableName),
+                "Good batch should be preserved; corrupt batch should be dropped");
     }
 
     private static boolean chainContainsExact(Throwable t, Class<? extends Throwable> exactClass) {
