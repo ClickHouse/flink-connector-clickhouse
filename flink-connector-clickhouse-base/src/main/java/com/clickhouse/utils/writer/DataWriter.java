@@ -237,6 +237,12 @@ public class DataWriter {
      * {@code column.getDataType()}. Per design spec §8a.
      */
     public void writeValue(Object value, ClickHouseColumn column) throws IOException {
+        // SimpleAggregateFunction(f, T) is wire-encoded identically to its inner type T; recurse on the nested column. See issue #143.
+        if (column.getDataType() == ClickHouseDataType.SimpleAggregateFunction) {
+            writeValue(value, column.getNestedColumns().get(0));
+            return;
+        }
+
         ClickHouseDataType type = column.getDataType();
         boolean nullable = column.isNullable();
         boolean lowCard  = column.isLowCardinality();

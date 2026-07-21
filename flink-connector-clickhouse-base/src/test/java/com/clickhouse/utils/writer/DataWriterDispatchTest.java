@@ -15,6 +15,7 @@ import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DataWriterDispatchTest {
@@ -96,5 +97,27 @@ class DataWriterDispatchTest {
     @Test void dispatchBoolean() throws IOException {
         byte[] r = serialize(true, ClickHouseColumn.of("c", "Bool"));
         assertTrue(r.length >= 1);
+    }
+
+    // Regression: SimpleAggregateFunction should serialize as its inner type — the
+    // aggregate wrapper only affects the header declaration, not the wire encoding.
+    // See https://github.com/ClickHouse/flink-connector-clickhouse/issues/143
+    @Test void dispatchSimpleAggregateFunctionString() throws IOException {
+        byte[] r = serialize("abc",
+                ClickHouseColumn.of("c", "SimpleAggregateFunction(max, String)"));
+        assertTrue(r.length > 0);
+    }
+
+    @Test void dispatchSimpleAggregateFunctionInt64() throws IOException {
+        byte[] r = serialize(1234567890123L,
+                ClickHouseColumn.of("c", "SimpleAggregateFunction(sum, Int64)"));
+        assertTrue(r.length >= 8);
+    }
+
+    @Test void simpleAggregateFunctionMatchesInnerTypeEncoding() throws IOException {
+        byte[] agg = serialize("abc",
+                ClickHouseColumn.of("c", "SimpleAggregateFunction(max, String)"));
+        byte[] plain = serialize("abc", ClickHouseColumn.of("c", "String"));
+        assertArrayEquals(plain, agg);
     }
 }
