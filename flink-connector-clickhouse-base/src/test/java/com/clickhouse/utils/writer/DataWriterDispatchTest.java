@@ -99,9 +99,7 @@ class DataWriterDispatchTest {
         assertTrue(r.length >= 1);
     }
 
-    // Regression: SimpleAggregateFunction should serialize as its inner type — the
-    // aggregate wrapper only affects the header declaration, not the wire encoding.
-    // See https://github.com/ClickHouse/flink-connector-clickhouse/issues/143
+    // Regression: SimpleAggregateFunction serializes as its inner type (wire encoding == inner type; only the header differs). See issue #143.
     @Test void dispatchSimpleAggregateFunctionString() throws IOException {
         byte[] r = serialize("abc",
                 ClickHouseColumn.of("c", "SimpleAggregateFunction(max, String)"));
@@ -119,5 +117,38 @@ class DataWriterDispatchTest {
                 ClickHouseColumn.of("c", "SimpleAggregateFunction(max, String)"));
         byte[] plain = serialize("abc", ClickHouseColumn.of("c", "String"));
         assertArrayEquals(plain, agg);
+    }
+
+    // LowCardinality inner: getDataType() collapses to String; the SAF wrapper must too.
+    @Test void simpleAggregateFunctionLowCardinalityMatchesInner() throws IOException {
+        byte[] agg = serialize("abc",
+                ClickHouseColumn.of("c", "SimpleAggregateFunction(max, LowCardinality(String))"));
+        byte[] inner = serialize("abc", ClickHouseColumn.of("c", "LowCardinality(String)"));
+        assertArrayEquals(inner, agg);
+    }
+
+    // Nullable inner, non-null value: nullability must come from the nested column.
+    @Test void simpleAggregateFunctionNullableNonNullMatchesInner() throws IOException {
+        byte[] agg = serialize("abc",
+                ClickHouseColumn.of("c", "SimpleAggregateFunction(anyLast, Nullable(String))"));
+        byte[] inner = serialize("abc", ClickHouseColumn.of("c", "Nullable(String)"));
+        assertArrayEquals(inner, agg);
+    }
+
+    // Nullable inner, null value: must write the null marker (nullability from the nested column), not throw.
+    @Test void simpleAggregateFunctionNullableNullMatchesInner() throws IOException {
+        byte[] agg = serialize(null,
+                ClickHouseColumn.of("c", "SimpleAggregateFunction(anyLast, Nullable(String))"));
+        byte[] inner = serialize(null, ClickHouseColumn.of("c", "Nullable(String)"));
+        assertArrayEquals(inner, agg);
+        assertTrue(agg.length >= 1);
+    }
+
+    // Decimal inner: precision/scale must be read from the nested column, not the outer one.
+    @Test void simpleAggregateFunctionDecimalMatchesInner() throws IOException {
+        byte[] agg = serialize(new BigDecimal("123.4567"),
+                ClickHouseColumn.of("c", "SimpleAggregateFunction(sum, Decimal(18, 4))"));
+        byte[] inner = serialize(new BigDecimal("123.4567"), ClickHouseColumn.of("c", "Decimal(18, 4)"));
+        assertArrayEquals(inner, agg);
     }
 }
