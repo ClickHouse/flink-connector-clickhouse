@@ -99,7 +99,7 @@ class DataWriterDispatchTest {
         assertTrue(r.length >= 1);
     }
 
-    // Regression: SimpleAggregateFunction serializes as its inner type (wire encoding == inner type; only the header differs). See issue #143.
+    // SimpleAggregateFunction serializes as its inner type (wire encoding == inner type; only the header differs). See issue #143.
     @Test void dispatchSimpleAggregateFunctionString() throws IOException {
         byte[] r = serialize("abc",
                 ClickHouseColumn.of("c", "SimpleAggregateFunction(max, String)"));
