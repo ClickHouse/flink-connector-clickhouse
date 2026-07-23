@@ -10,16 +10,17 @@ import java.time.ZonedDateTime;
  * {@link SimplePOJO} with every type set to its supported MINIMUM (issue #114).
  * longPrimitive = Long.MIN_VALUE (also the ORDER BY key), so it sorts before {@link MaxSimplePOJO}.
  *
- * <p>Signed 8/16/32-bit minima are inherited from the {@link SimplePOJO} constructor.
- * Note {@code Float/Double.MIN_VALUE} are the smallest POSITIVE values (Java has no
- * most-negative float constant).
+ * <p>Every numeric and boolean field is set explicitly below; only the non-numeric fields
+ * (string, uuid, collections) are inherited from the {@link SimplePOJO} constructor.
+ * Float/Double minima use {@code -MAX_VALUE} (the most-negative value); {@code MIN_VALUE}
+ * would be the smallest POSITIVE value, not a lower bound.
  *
  * <pre>
  * | ClickHouse type | Min                   | How derived                     |
  * |-----------------|-----------------------|---------------------------------|
- * | Int8            | Byte.MIN_VALUE (-128) | JDK constant (ctor)             |
- * | Int16           | Short.MIN_VALUE       | JDK constant (ctor)             |
- * | Int32           | Integer.MIN_VALUE     | JDK constant (ctor)             |
+ * | Int8            | Byte.MIN_VALUE (-128) | JDK constant                    |
+ * | Int16           | Short.MIN_VALUE       | JDK constant                    |
+ * | Int32           | Integer.MIN_VALUE     | JDK constant                    |
  * | Int64           | Long.MIN_VALUE        | JDK constant; also ORDER BY key |
  * | Int128          | -2^127                | min signed 16-byte int          |
  * | Int256          | -2^255                | min signed 32-byte int          |
@@ -29,8 +30,8 @@ import java.time.ZonedDateTime;
  * | UInt64          | 0                     | unsigned min                    |
  * | UInt128         | 0                     | unsigned min                    |
  * | UInt256         | 0                     | unsigned min                    |
- * | Float32         | Float.MIN_VALUE       | smallest POSITIVE float (ctor)  |
- * | Float64         | Double.MIN_VALUE      | smallest POSITIVE double (ctor) |
+ * | Float32         | -Float.MAX_VALUE      | most negative float             |
+ * | Float64         | -Double.MAX_VALUE     | most negative double            |
  * | Bool            | false                 | the smaller of the two values   |
  * | Decimal(10,5)   | -99999.99999          | -(10^P - 1) / 10^S, P=10 S=5    |
  * | Decimal32(9)    | -0.999999999          | -(10^P - 1) / 10^S, P=9  S=9    |
@@ -51,18 +52,40 @@ public class MinSimplePOJO extends SimplePOJO {
 
     public MinSimplePOJO() {
         super(0);
+        setBytePrimitive(Byte.MIN_VALUE);
+        setByteObject(Byte.MIN_VALUE);
+        setShortPrimitive(Short.MIN_VALUE);
+        setShortObject(Short.MIN_VALUE);
+        setIntPrimitive(Integer.MIN_VALUE);
+        setIntegerObject(Integer.MIN_VALUE);
         setLongPrimitive(Long.MIN_VALUE); // Int64 min; also the ORDER BY key (sorts before MaxSimplePOJO)
-        setLongObject(Long.MIN_VALUE);    // Int64 min (ctor seeds this to Long.MAX_VALUE)
+        setLongObject(Long.MIN_VALUE);
+        setUint8PrimitiveInt(0);
+        setUint8ObjectInt(0);
+        setUint8PrimitiveShort((short) 0);
+        setUint8ObjectShort((short) 0);
+        setUint16Primitive(0);
+        setUint16Object(0);
+        setUint32Primitive(0L);
+        setUint32Object(0L);
+        setUint64PrimitiveLong(0L);
+        setUint64ObjectLong(0L);
         setUint64ObjectBigInt(BigInteger.ZERO);
-        setUint128Object(BigInteger.ZERO);
-        setUint256Object(BigInteger.ZERO);
         setBigInteger128(BigInteger.ONE.shiftLeft(127).negate());   // Int128 min = -2^127
         setBigInteger256(BigInteger.ONE.shiftLeft(255).negate());   // Int256 min = -2^255
+        setUint128Object(BigInteger.ZERO);
+        setUint256Object(BigInteger.ZERO);
         setBigDecimal(MaxSimplePOJO.maxDecimal(10, 5).negate());
         setBigDecimal32(MaxSimplePOJO.maxDecimal(9, 9).negate());
         setBigDecimal64(MaxSimplePOJO.maxDecimal(18, 18).negate());
         setBigDecimal128(MaxSimplePOJO.maxDecimal(38, 38).negate());
         setBigDecimal256(MaxSimplePOJO.maxDecimal(76, 76).negate());
+        setFloatPrimitive(-Float.MAX_VALUE);
+        setFloatObject(-Float.MAX_VALUE);
+        setDoublePrimitive(-Double.MAX_VALUE);
+        setDoubleObject(-Double.MAX_VALUE);
+        setBooleanPrimitive(false);
+        setBooleanObject(false);
         setDateObject(LocalDate.of(1970, 1, 1));
         setDate32Object(LocalDate.of(1900, 1, 1));
         setDateTimeObjectLocal(LocalDateTime.of(1970, 1, 1, 0, 0, 0));

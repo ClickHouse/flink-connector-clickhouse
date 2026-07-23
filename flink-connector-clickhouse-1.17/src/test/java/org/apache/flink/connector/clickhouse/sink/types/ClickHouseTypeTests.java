@@ -126,7 +126,8 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
 
         ClickHouseServerForTests.executeSql(SimplePOJO.createTableSQL(getDatabase(), tableName));
 
-        // read back is ordered by longPrimitive, so keep the expected list in that order (0, 1).
+        // read back is ordered by longPrimitive (Long.MIN_VALUE < Long.MAX_VALUE),
+        // so keep the expected list min-then-max to match.
         List<SimplePOJO> expected = List.of(new MinSimplePOJO(), new MaxSimplePOJO());
 
         List<SimplePOJO> actual = runSimplePOJORoundTrip(tableName, expected);

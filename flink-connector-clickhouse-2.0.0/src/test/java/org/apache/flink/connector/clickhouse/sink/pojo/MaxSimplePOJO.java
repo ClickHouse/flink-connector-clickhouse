@@ -11,15 +11,15 @@ import java.time.ZonedDateTime;
  * {@link SimplePOJO} with every type set to its supported MAXIMUM (issue #114).
  * longPrimitive = Long.MAX_VALUE (also the ORDER BY key), so it sorts after {@link MinSimplePOJO}.
  *
- * <p>Signed 8/16/32-bit and float/double maxima are inherited from the {@link SimplePOJO}
- * constructor; the fields below are the ones that needed true extremes.
+ * <p>Every numeric and boolean field is set explicitly below; only the non-numeric fields
+ * (string, uuid, collections) are inherited from the {@link SimplePOJO} constructor.
  *
  * <pre>
  * | ClickHouse type | Max                        | How derived                          |
  * |-----------------|----------------------------|--------------------------------------|
- * | Int8            | Byte.MAX_VALUE (127)       | JDK constant (ctor)                  |
- * | Int16           | Short.MAX_VALUE            | JDK constant (ctor)                  |
- * | Int32           | Integer.MAX_VALUE          | JDK constant (ctor)                  |
+ * | Int8            | Byte.MAX_VALUE (127)       | JDK constant                         |
+ * | Int16           | Short.MAX_VALUE            | JDK constant                         |
+ * | Int32           | Integer.MAX_VALUE          | JDK constant                         |
  * | Int64           | Long.MAX_VALUE             | JDK constant; also ORDER BY key      |
  * | Int128          | 2^127 - 1                  | max signed 16-byte int               |
  * | Int256          | 2^255 - 1                  | max signed 32-byte int               |
@@ -29,8 +29,8 @@ import java.time.ZonedDateTime;
  * | UInt64          | 2^64 - 1                   | max unsigned 8-byte int              |
  * | UInt128         | 2^128 - 1                  | max unsigned 16-byte int             |
  * | UInt256         | 2^256 - 1                  | max unsigned 32-byte int             |
- * | Float32         | Float.MAX_VALUE            | JDK constant (ctor)                  |
- * | Float64         | Double.MAX_VALUE           | JDK constant (ctor)                  |
+ * | Float32         | Float.MAX_VALUE            | JDK constant                         |
+ * | Float64         | Double.MAX_VALUE           | JDK constant                         |
  * | Bool            | true                       | the larger of the two values         |
  * | Decimal(10,5)   | 99999.99999                | (10^P - 1) / 10^S, P=10 S=5          |
  * | Decimal32(9)    | 0.999999999                | (10^P - 1) / 10^S, P=9  S=9          |
@@ -43,16 +43,24 @@ import java.time.ZonedDateTime;
  * | DateTime64(6)   | 2299-12-31 23:59:59.999999 | CH DateTime64 max on 24.3            |
  * </pre>
  *
- * <p>Note: Date32 and DateTime64 ranges are ClickHouse-version-dependent. The values above
- * match the 24.3 image the tests run against (DateTime64 clamps to [1900-01-01, 2299-12-31]);
- * newer ClickHouse widens DateTime64 to [0000-01-01, 9999-12-31] for precision &lt;= 7.
+ * <p>Note: the two long-typed UInt64 fields hold Long.MAX_VALUE (a Java long cannot hold
+ * 2^64-1); the true UInt64 max lives on the BigInteger field. Date32 and DateTime64 ranges
+ * are ClickHouse-version-dependent: the values above match the 24.3 image the tests run
+ * against (DateTime64 clamps to [1900-01-01, 2299-12-31]); newer ClickHouse widens
+ * DateTime64 to [0000-01-01, 9999-12-31] for precision &lt;= 7.
  */
 public class MaxSimplePOJO extends SimplePOJO {
 
     public MaxSimplePOJO() {
         super(1);
+        setBytePrimitive(Byte.MAX_VALUE);
+        setByteObject(Byte.MAX_VALUE);
+        setShortPrimitive(Short.MAX_VALUE);
+        setShortObject(Short.MAX_VALUE);
+        setIntPrimitive(Integer.MAX_VALUE);
+        setIntegerObject(Integer.MAX_VALUE);
         setLongPrimitive(Long.MAX_VALUE); // Int64 max; also the ORDER BY key (sorts after MinSimplePOJO)
-        // ctor seeds these at signed maxima; override with the true unsigned maxima
+        setLongObject(Long.MAX_VALUE);
         setUint8PrimitiveInt(255);
         setUint8ObjectInt(255);
         setUint8PrimitiveShort((short) 255);
@@ -61,16 +69,24 @@ public class MaxSimplePOJO extends SimplePOJO {
         setUint16Object(65535);
         setUint32Primitive(4294967295L);
         setUint32Object(4294967295L);
-        setUint64ObjectBigInt(BigInteger.ONE.shiftLeft(64).subtract(BigInteger.ONE));   // 2^64 - 1
-        setUint128Object(BigInteger.ONE.shiftLeft(128).subtract(BigInteger.ONE));       // 2^128 - 1
-        setUint256Object(BigInteger.ONE.shiftLeft(256).subtract(BigInteger.ONE));       // 2^256 - 1
-        setBigInteger128(BigInteger.ONE.shiftLeft(127).subtract(BigInteger.ONE));       // Int128 max
-        setBigInteger256(BigInteger.ONE.shiftLeft(255).subtract(BigInteger.ONE));       // Int256 max
+        setUint64PrimitiveLong(Long.MAX_VALUE);                                        // long can't hold 2^64-1
+        setUint64ObjectLong(Long.MAX_VALUE);                                           // long can't hold 2^64-1
+        setUint64ObjectBigInt(BigInteger.ONE.shiftLeft(64).subtract(BigInteger.ONE));  // 2^64 - 1
+        setBigInteger128(BigInteger.ONE.shiftLeft(127).subtract(BigInteger.ONE));      // Int128 max
+        setBigInteger256(BigInteger.ONE.shiftLeft(255).subtract(BigInteger.ONE));      // Int256 max
+        setUint128Object(BigInteger.ONE.shiftLeft(128).subtract(BigInteger.ONE));      // 2^128 - 1
+        setUint256Object(BigInteger.ONE.shiftLeft(256).subtract(BigInteger.ONE));      // 2^256 - 1
         setBigDecimal(maxDecimal(10, 5));
         setBigDecimal32(maxDecimal(9, 9));
         setBigDecimal64(maxDecimal(18, 18));
         setBigDecimal128(maxDecimal(38, 38));
         setBigDecimal256(maxDecimal(76, 76));
+        setFloatPrimitive(Float.MAX_VALUE);
+        setFloatObject(Float.MAX_VALUE);
+        setDoublePrimitive(Double.MAX_VALUE);
+        setDoubleObject(Double.MAX_VALUE);
+        setBooleanPrimitive(true);
+        setBooleanObject(true);
         setDateObject(LocalDate.of(2149, 6, 6));
         setDate32Object(LocalDate.of(2299, 12, 31));
         setDateTimeObjectLocal(LocalDateTime.of(2106, 2, 7, 6, 28, 15));
