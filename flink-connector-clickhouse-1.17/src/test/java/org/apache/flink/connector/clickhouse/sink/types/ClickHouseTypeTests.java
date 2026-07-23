@@ -15,6 +15,8 @@ import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOWithDefaul
 import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOWithJSONDataMapper;
 import org.apache.flink.connector.clickhouse.sink.pojo.DateTimePOJO;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJO;
+import org.apache.flink.connector.clickhouse.sink.pojo.MaxSimplePOJO;
+import org.apache.flink.connector.clickhouse.sink.pojo.MinSimplePOJO;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJOWithDefaults;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJOWithJSON;
 import org.apache.flink.connector.test.FlinkClusterTests;
@@ -115,6 +117,52 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
         // read back the table and validate the rows
         List<SimplePOJO> actualPOJOs = ClickHouseServerForTests.extractAllDataToPOJO(getDatabase(), tableName, "longPrimitive", SimplePOJO.class);
         Assertions.assertEquals(simplePOJOList, actualPOJOs);
+    }
+
+    /** Round-trips the true min/max of every supported type through a real ClickHouse (issue #114). */
+    @Test
+    void testSimplePOJOBoundaryValues() throws Exception {
+        String tableName = "simple_pojo_boundary";
+
+        ClickHouseServerForTests.executeSql(SimplePOJO.createTableSQL(getDatabase(), tableName));
+
+        // read back is ordered by longPrimitive, so keep the expected list in that order (0, 1).
+        List<SimplePOJO> expected = List.of(new MinSimplePOJO(), new MaxSimplePOJO());
+
+        List<SimplePOJO> actual = runSimplePOJORoundTrip(tableName, expected);
+        Assertions.assertEquals(expected, actual);
+    }
+
+    /** Sends {@code pojos} through the async sink and reads them back ordered by longPrimitive. */
+    private List<SimplePOJO> runSimplePOJORoundTrip(String tableName, List<SimplePOJO> pojos) throws Exception {
+        TableSchema tableSchema = ClickHouseServerForTests.getTableSchema(tableName);
+
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(STREAM_PARALLELISM);
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        clickHouseClientConfig.setSupportDefault(tableSchema.hasDefaults());
+
+        ClickHouseConvertor<SimplePOJO> convertor = new ClickHouseConvertor<>(SimplePOJO.class, new SimplePOJODataMapper());
+
+        ClickHouseAsyncSink<SimplePOJO> sink = ClickHouseAsyncSink.<SimplePOJO>builder()
+                .setElementConverter(convertor)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .build();
+
+        // pojos may be a mix of SimplePOJO subclasses (Min/Max), so pin the element type explicitly.
+        DataStream<SimplePOJO> stream = env.fromCollection(pojos, TypeInformation.of(SimplePOJO.class));
+        stream.sinkTo(sink);
+        int rows = executeAsyncJob(env, tableName, 10, pojos.size());
+        Assertions.assertEquals(pojos.size(), rows);
+
+        return ClickHouseServerForTests.extractAllDataToPOJO(getDatabase(), tableName, "longPrimitive", SimplePOJO.class);
     }
 
     @ParameterizedTest
