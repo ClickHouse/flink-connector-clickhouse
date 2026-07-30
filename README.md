@@ -180,10 +180,12 @@ Planned for a future release — a complete end-to-end example will be added onc
 | Map<K,V>        | Map<K,V>        | ✅         | DataWriter.writeMap         |
 | Tuple<Type,..>  | Tuple<T1,T2,..> | ✅         | DataWriter.writeTuple       |
 | Object          | Variant         | ❌         | N/A                         |
+| (inner type T)  | SimpleAggregateFunction(f, T) | ✅ | writer for inner type T |
 
 * A ZoneId must also be provided when performing date operations. 
 * Precision and scale must also be provided when performing decimal operations. 
 * To use JSON type as a string, you need to enable `enableJsonSupportAsString` in `ClickHouseClientConfig` . 
+* `SimpleAggregateFunction(f, T)` is wire-encoded exactly as its inner type `T`, so bind the Java value for `T` and ignore the aggregate function `f`. Any `T` supported above works, including `Nullable`, `LowCardinality`, `Decimal`, `Array`, `Map` and `Tuple`. 
 
 ## Configuration Options
 

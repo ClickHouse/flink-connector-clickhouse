@@ -3,6 +3,9 @@ package com.clickhouse.utils.writer;
 import com.clickhouse.data.ClickHouseColumn;
 import com.clickhouse.data.ClickHouseDataType;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -13,7 +16,10 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -150,5 +156,28 @@ class DataWriterDispatchTest {
                 ClickHouseColumn.of("c", "SimpleAggregateFunction(sum, Decimal(18, 4))"));
         byte[] inner = serialize(new BigDecimal("123.4567"), ClickHouseColumn.of("c", "Decimal(18, 4)"));
         assertArrayEquals(inner, agg);
+    }
+
+    /** Inner types carrying detail (length, scale, element types) the outer column does not report. */
+    private static Stream<Arguments> wrappedInnerTypes() {
+        return Stream.of(
+            Arguments.of("FixedString(4)", "anyLast", "abcd"),
+            Arguments.of("DateTime64(3)", "anyLast", LocalDateTime.of(2024, 3, 10, 8, 45, 12, 123_000_000)),
+            Arguments.of("LowCardinality(Nullable(String))", "anyLast", "lc"),
+            Arguments.of("Array(String)", "groupArrayArray", List.of("a", "b")),
+            Arguments.of("Map(String, UInt64)", "sumMap", Map.of("k", 7L)),
+            Arguments.of("Tuple(Int32, String)", "anyLast", List.of(1, "t"))
+        );
+    }
+
+    @ParameterizedTest(name = "SimpleAggregateFunction({1}, {0})")
+    @MethodSource("wrappedInnerTypes")
+    void wrappedInnerTypeMatchesPlainInnerType(String innerType, String function, Object value)
+            throws IOException {
+        byte[] agg = serialize(value,
+                ClickHouseColumn.of("c", "SimpleAggregateFunction(" + function + ", " + innerType + ")"));
+        byte[] inner = serialize(value, ClickHouseColumn.of("c", innerType));
+        assertArrayEquals(inner, agg);
+        assertTrue(agg.length > 0);
     }
 }

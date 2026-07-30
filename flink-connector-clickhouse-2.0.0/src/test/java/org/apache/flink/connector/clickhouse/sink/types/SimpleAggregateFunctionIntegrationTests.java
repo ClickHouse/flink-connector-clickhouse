@@ -14,7 +14,9 @@ import org.junit.jupiter.api.Test;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -127,6 +129,102 @@ public class SimpleAggregateFunctionIntegrationTests extends FlinkClusterTests {
             "Null on SimpleAggregateFunction(anyLast, Nullable(String)) should be stored as NULL");
         Assertions.assertEquals(0, new BigDecimal("2.2500").compareTo(second.getBigDecimal("total")));
         Assertions.assertEquals("y", second.getString("tag"));
+    }
+
+    // Inner types whose encoding is multi-part or length/scale-dependent, so only a
+    // server can confirm the body still matches the wrapper named in the header.
+
+    /** Flink-POJO conformant, so the composite fields avoid Kryo. */
+    public static class CompositeRow implements Serializable {
+        public int id;
+        public ArrayList<String> arr;
+        public HashMap<String, Long> kv;
+        public ArrayList<Object> tup;
+        public String code;
+        public LocalDateTime ts;
+
+        public CompositeRow() {}
+
+        CompositeRow(int id) {
+            this.id = id;
+            this.arr = new ArrayList<>(List.of("a" + id, "b" + id));
+            this.kv = new HashMap<>(Map.of("k" + id, (long) id));
+            this.tup = new ArrayList<>(List.of(id, "t" + id));
+            this.code = "cd0" + id;
+            this.ts = LocalDateTime.of(2024, 3, 10, 8, 45, id, 123_000_000);
+        }
+    }
+
+    public static final class CompositeRowMapper extends DataMapper<CompositeRow> {
+        @Override
+        public void toMap(CompositeRow r, Map<String, Object> map) {
+            map.put("id", r.id);
+            map.put("arr", r.arr);
+            map.put("kv", r.kv);
+            map.put("tup", r.tup);
+            map.put("code", r.code);
+            map.put("ts", r.ts);
+        }
+
+        @Override
+        public List<ColumnBinding> bindings() {
+            return List.of(
+                ColumnBinding.scalar("id", "id", ClickHouseDataType.Int32),
+                saf("arr", "groupArrayArray", "Array(String)"),
+                saf("kv", "sumMap", "Map(String, UInt64)"),
+                saf("tup", "anyLast", "Tuple(Int32, String)"),
+                saf("code", "anyLast", "FixedString(4)"),
+                saf("ts", "anyLast", "DateTime64(3, 'UTC')")
+            );
+        }
+
+        private static ColumnBinding saf(String column, String function, String innerType) {
+            return ColumnBinding.of(column, column, ClickHouseColumn.of(
+                column, "SimpleAggregateFunction(" + function + ", " + innerType + ")"));
+        }
+    }
+
+    @Test
+    void compositeInnerTypesRoundTrip() throws Exception {
+        String tableName = "simple_aggregate_function_composite_test";
+
+        ClickHouseServerForTests.executeSql(
+            "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` ("
+                + "  id Int32, "
+                + "  arr SimpleAggregateFunction(groupArrayArray, Array(String)), "
+                + "  kv SimpleAggregateFunction(sumMap, Map(String, UInt64)), "
+                + "  tup SimpleAggregateFunction(anyLast, Tuple(Int32, String)), "
+                + "  code SimpleAggregateFunction(anyLast, FixedString(4)), "
+                + "  ts SimpleAggregateFunction(anyLast, DateTime64(3, 'UTC'))"
+                + ") ENGINE=AggregatingMergeTree ORDER BY id");
+
+        ClickHouseAsyncSink<CompositeRow> sink = buildSink(
+            new ClickHouseConvertor<>(CompositeRow.class, new CompositeRowMapper()),
+            tableName);
+
+        List<CompositeRow> rows = new ArrayList<>();
+        rows.add(new CompositeRow(1));
+        rows.add(new CompositeRow(2));
+
+        runJob(sink, rows, tableName, 2);
+
+        // toString pins the rendered value, incl. the forwarded DateTime64 scale.
+        List<GenericRecord> records = ClickHouseServerForTests.extractData(
+            "id, code, toString(arr) AS arr_s, toString(kv) AS kv_s, "
+                + "toString(tup) AS tup_s, toString(ts) AS ts_s",
+            getDatabase(), tableName, "id");
+        Assertions.assertEquals(2, records.size());
+
+        for (int i = 0; i < 2; i++) {
+            int id = i + 1;
+            GenericRecord rec = records.get(i);
+            Assertions.assertEquals(id, rec.getInteger("id"));
+            Assertions.assertEquals("['a" + id + "','b" + id + "']", rec.getString("arr_s"));
+            Assertions.assertEquals("{'k" + id + "':" + id + "}", rec.getString("kv_s"));
+            Assertions.assertEquals("(" + id + ",'t" + id + "')", rec.getString("tup_s"));
+            Assertions.assertEquals("cd0" + id, rec.getString("code"));
+            Assertions.assertEquals("2024-03-10 08:45:0" + id + ".123", rec.getString("ts_s"));
+        }
     }
 
 }
