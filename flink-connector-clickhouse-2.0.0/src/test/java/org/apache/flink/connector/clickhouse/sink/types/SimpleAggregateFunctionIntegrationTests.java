@@ -208,10 +208,7 @@ public class SimpleAggregateFunctionIntegrationTests extends FlinkClusterTests {
 
         runJob(sink, rows, tableName, 2);
 
-        // toString pins the rendered value, incl. the forwarded DateTime64 scale.
-        List<GenericRecord> records = ClickHouseServerForTests.extractData(
-            "id, code, toString(arr) AS arr_s, toString(kv) AS kv_s, "
-                + "toString(tup) AS tup_s, toString(ts) AS ts_s",
+        List<GenericRecord> records = ClickHouseServerForTests.extractAllData(
             getDatabase(), tableName, "id");
         Assertions.assertEquals(2, records.size());
 
@@ -219,11 +216,16 @@ public class SimpleAggregateFunctionIntegrationTests extends FlinkClusterTests {
             int id = i + 1;
             GenericRecord rec = records.get(i);
             Assertions.assertEquals(id, rec.getInteger("id"));
-            Assertions.assertEquals("['a" + id + "','b" + id + "']", rec.getString("arr_s"));
-            Assertions.assertEquals("{'k" + id + "':" + id + "}", rec.getString("kv_s"));
-            Assertions.assertEquals("(" + id + ",'t" + id + "')", rec.getString("tup_s"));
+            Assertions.assertEquals(List.of("a" + id, "b" + id), rec.getList("arr"));
+            Assertions.assertArrayEquals(new Object[]{id, "t" + id}, rec.getTuple("tup"));
             Assertions.assertEquals("cd0" + id, rec.getString("code"));
-            Assertions.assertEquals("2024-03-10 08:45:0" + id + ".123", rec.getString("ts_s"));
+            // Milliseconds prove the DateTime64 scale reached the writer.
+            Assertions.assertEquals(LocalDateTime.of(2024, 3, 10, 8, 45, id, 123_000_000),
+                rec.getLocalDateTime("ts"));
+            // Map has no typed accessor on GenericRecord.
+            Map<?, ?> kv = (Map<?, ?>) rec.getObject("kv");
+            Assertions.assertEquals(1, kv.size());
+            Assertions.assertEquals(id, ((Number) kv.get("k" + id)).intValue());
         }
     }
 
