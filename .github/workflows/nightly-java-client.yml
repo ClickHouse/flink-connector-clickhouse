@@ -17,6 +17,10 @@
 #     client_payload.
 name: "Nightly Java Client SNAPSHOT"
 on:
+  # [temp] validation-only trigger, removed before merge
+  push:
+    branches:
+      - ci/issue-140-nightly-java-client
   schedule:
     # Nightly at 04:00 UTC, offset from the stable ClickHouse-version matrix run at 15:55 UTC.
     - cron: '0 4 * * *'
@@ -36,10 +40,16 @@ jobs:
   test-java-snapshot:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # [temp] validation-only matrix covering all ref modes, removed before merge
+    strategy:
+      fail-fast: false
+      matrix:
+        java_ref: [ "main", "v0.9.5", "3db04e093a00d9e00b90fbd922c29b9d65d26340", "3db04e0" ]
+    name: Test against clickhouse-java '${{ matrix.java_ref }}'
     env:
       # Client compatibility is the axis under test; pin ClickHouse itself to latest.
       CLICKHOUSE_VERSION: latest
-      CH_JAVA_REF: ${{ github.event.client_payload.clickhouse_java_ref || github.event.inputs.clickhouse_java_ref || 'main' }}
+      CH_JAVA_REF: ${{ matrix.java_ref }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -128,7 +138,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-java-client-logs
+          name: nightly-java-client-logs-${{ matrix.java_ref }}
           path: |
             **/build/reports/tests/**
             **/build/test-results/**
