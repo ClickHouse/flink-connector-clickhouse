@@ -55,8 +55,32 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          # 8 + 17 mirrors clickhouse-java's own publishing workflows; JAVA_HOME ends up on 17,
+          # which both Maven (client build) and Gradle 9 (connector build) need.
+          java-version: |
+            8
+            17
           cache: gradle
+
+      - name: Set up Maven toolchain for the clickhouse-java build
+        # Same toolchains.xml the clickhouse-java nightly/release workflows write. Registering
+        # only the JDK 17 entry satisfies the client's maven-toolchains-plugin requirements.
+        run: |
+          mkdir -p "$HOME/.m2"
+          cat > "$HOME/.m2/toolchains.xml" <<EOF
+          <?xml version="1.0" encoding="UTF8"?>
+          <toolchains>
+            <toolchain>
+              <type>jdk</type>
+              <provides>
+                <version>17</version>
+              </provides>
+              <configuration>
+                <jdkHome>$JAVA_HOME</jdkHome>
+              </configuration>
+            </toolchain>
+          </toolchains>
+          EOF
 
       - name: Build clickhouse-java from '${{ env.CH_JAVA_REF }}'
         id: build-java
@@ -88,7 +112,11 @@ jobs:
           echo "Building clickhouse-java at commit $(git rev-parse HEAD)"
           # Installs into the local Maven repository, including the shaded ':all' artifacts the
           # connector depends on (the shade executions are bound to the default package phase).
-          mvn -B -q -DskipTests -Dmaven.javadoc.skip=true -Dgpg.skip=true clean install
+          # The 'release' profile is what clickhouse-java's own nightly/release publishing uses;
+          # crucially it compiles for Java 8, matching the bytecode level of the artifacts on
+          # Maven Central. Without it the jars carry the building JDK's bytecode (17 => class
+          # file 61) and the connector's Java 11 toolchain cannot compile against them.
+          mvn -B -q -P release -DskipTests -Dmaven.javadoc.skip=true -Dgpg.skip=true clean install
           VERSION="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)"
           if [[ "$VERSION" == *'${'* || -z "$VERSION" ]]; then
             VERSION="$(mvn -q -DforceStdout help:evaluate -Dexpression=revision)"
@@ -98,6 +126,18 @@ jobs:
             exit 1
           fi
           echo "Built clickhouse-java version: $VERSION"
+          # Guard: the connector compiles with a Java 11 toolchain, so the client jars must not
+          # carry newer bytecode (the release profile targets Java 8 / class file major 52).
+          # Catches a profile/JDK mixup here with a clear message instead of opaque javac
+          # "class file has wrong version" errors in the test step.
+          ALL_JAR="$HOME/.m2/repository/com/clickhouse/client-v2/$VERSION/client-v2-$VERSION-all.jar"
+          MAJOR="$(unzip -p "$ALL_JAR" com/clickhouse/data/ClickHouseColumn.class | od -An -j6 -N2 -tu1 | awk '{print $1*256+$2}')"
+          echo "client-v2 all-jar class file major version: $MAJOR"
+          if [[ "$MAJOR" -gt 55 ]]; then
+            echo "Built client bytecode (major $MAJOR) is newer than the connector's Java 11 toolchain (55)." >&2
+            echo "The clickhouse-java build likely ran without the 'release' profile." >&2
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Add mavenLocal repository via init script
