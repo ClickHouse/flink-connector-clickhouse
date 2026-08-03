@@ -13,7 +13,7 @@
 #   - From the clickhouse-java repo (future integration point) via a repository_dispatch event of
 #     type 'clickhouse-java-nightly', optionally passing {"clickhouse_java_ref": "<ref>"} in the
 #     client_payload.
-name: "Nightly Java Client SNAPSHOT"
+name: "Nightly Java Client (source build)"
 on:
   schedule:
     # Nightly at 04:00 UTC, offset from the stable ClickHouse-version matrix run at 15:55 UTC.
@@ -29,6 +29,12 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  # One run at a time; an overlapping manual dispatch queues behind (rather than races) the
+  # nightly. Never cancel an in-flight run — its result is the signal this workflow exists for.
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 jobs:
   test-java-snapshot:
@@ -109,7 +115,10 @@ jobs:
           if [[ "$VERSION" == *'${'* || -z "$VERSION" ]]; then
             VERSION="$(mvn -q -DforceStdout help:evaluate -Dexpression=revision)"
           fi
-          if [[ -z "$VERSION" || "$VERSION" == *'${'* ]]; then
+          # Shape check: subsumes the empty/unresolved-'${revision}' cases and rejects any stray
+          # warning/progress text 'mvn -q' could leak onto stdout, since this value feeds the
+          # -Pclickhouse_client_v2_version flag of later gradlew steps.
+          if [[ ! "$VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]]; then
             echo "Could not resolve a usable clickhouse-java version (got: '$VERSION')." >&2
             exit 1
           fi
@@ -119,6 +128,11 @@ jobs:
           # Catches a profile/JDK mixup here with a clear message instead of opaque javac
           # "class file has wrong version" errors in the test step.
           ALL_JAR="$HOME/.m2/repository/com/clickhouse/client-v2/$VERSION/client-v2-$VERSION-all.jar"
+          if [[ ! -f "$ALL_JAR" ]]; then
+            echo "Expected shaded client jar not found: $ALL_JAR" >&2
+            echo "Did the clickhouse-java module/install layout change?" >&2
+            exit 1
+          fi
           MAJOR="$(unzip -p "$ALL_JAR" com/clickhouse/data/ClickHouseColumn.class | od -An -j6 -N2 -tu1 | awk '{print $1*256+$2}')"
           echo "client-v2 all-jar class file major version: $MAJOR"
           if [[ "$MAJOR" -gt 55 ]]; then
@@ -144,15 +158,25 @@ jobs:
       - name: Verify the locally built client resolves
         # Fail fast if the version override is mis-wired and the tests would silently run
         # against the pinned release instead of the freshly built client.
+        env:
+          CLIENT_VERSION: ${{ steps.build-java.outputs.version }}
         run: |
           set -euo pipefail
           ./gradlew -q :flink-connector-clickhouse-base:dependencyInsight \
             --dependency com.clickhouse:client-v2 --configuration testRuntimeClasspath \
             --init-script "$RUNNER_TEMP/mavenLocal.init.gradle" \
-            -Pclickhouse_client_v2_version=${{ steps.build-java.outputs.version }} | tee insight.txt
-          grep -q "com.clickhouse:client-v2:${{ steps.build-java.outputs.version }}" insight.txt
+            -Pclickhouse_client_v2_version="$CLIENT_VERSION" | tee insight.txt
+          # Anchored to the selected-component header line ('coordinate' alone or with a
+          # '(selection reason)' suffix). A requested-but-downgraded edge such as
+          # 'com.clickhouse:client-v2:X-SNAPSHOT -> 0.9.5' must NOT count as success.
+          if ! grep -Eq "^com\.clickhouse:client-v2:$CLIENT_VERSION( \(.*\))?$" insight.txt; then
+            echo "client-v2 $CLIENT_VERSION was not the SELECTED version on testRuntimeClasspath." >&2
+            exit 1
+          fi
 
       - name: Run tests against the built Java client
+        env:
+          CLIENT_VERSION: ${{ steps.build-java.outputs.version }}
         run: >-
           ./gradlew clean
           :flink-connector-clickhouse-base:test
@@ -160,7 +184,7 @@ jobs:
           :flink-connector-clickhouse-2.0.0:test
           --refresh-dependencies
           --init-script "$RUNNER_TEMP/mavenLocal.init.gradle"
-          -Pclickhouse_client_v2_version=${{ steps.build-java.outputs.version }}
+          -Pclickhouse_client_v2_version="$CLIENT_VERSION"
 
       - name: Upload logs
         if: failure()
