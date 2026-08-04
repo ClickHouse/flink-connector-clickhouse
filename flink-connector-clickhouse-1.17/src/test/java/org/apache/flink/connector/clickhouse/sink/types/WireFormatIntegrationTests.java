@@ -17,8 +17,6 @@ import org.apache.flink.connector.clickhouse.sink.ClickHouseAsyncSinkSerializer;
 import org.apache.flink.connector.clickhouse.sink.ClickHouseClientConfig;
 import org.apache.flink.connector.test.FlinkClusterTests;
 import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests;
-import org.apache.flink.streaming.api.datastream.DataStream;
-import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -32,7 +30,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.apache.flink.connector.clickhouse.sink.ClickHouseSinkTestUtils.*;
-import static org.apache.flink.connector.test.embedded.flink.EmbeddedFlinkClusterForTests.executeAsyncJob;
 
 /**
  * Wire-format integration tests for the v0.2.0 Map-based payload design.
@@ -57,7 +54,6 @@ import static org.apache.flink.connector.test.embedded.flink.EmbeddedFlinkCluste
  */
 public class WireFormatIntegrationTests extends FlinkClusterTests {
 
-    static final int STREAM_PARALLELISM = 1;
 
     // ====================================================================
     // Test 1: reordered bindings → columns match by name
@@ -354,36 +350,6 @@ public class WireFormatIntegrationTests extends FlinkClusterTests {
             "Expected drain-first message; got: " + ex.getMessage());
     }
 
-    // ====================================================================
-    // Helpers
-    // ====================================================================
-
-    /** Construct a sink with the standard test-batch tuning + a typed converter. */
-    private <T> ClickHouseAsyncSink<T> buildSink(ClickHouseConvertor<T> convertor, String tableName) {
-        ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(
-            getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
-        return ClickHouseAsyncSink.<T>builder()
-            .setElementConverter(convertor)
-            .setMaxBatchSize(MAX_BATCH_SIZE)
-            .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
-            .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
-            .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
-            .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
-            .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
-            .setClickHouseClientConfig(clientConfig)
-            .build();
-    }
-
-    /** Run a small Flink mini-cluster job that ships a list through the sink. */
-    private <T> void runJob(ClickHouseAsyncSink<T> sink, List<T> rows,
-                            String tableName, int expectedRows) throws Exception {
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(STREAM_PARALLELISM);
-        DataStream<T> stream = env.fromCollection(rows);
-        stream.sinkTo(sink);
-        int inserted = executeAsyncJob(env, tableName, 10, expectedRows);
-        Assertions.assertEquals(expectedRows, inserted);
-    }
 
     /** V1 framing identical to parent {@code AsyncSinkWriterStateSerializer}. */
     private static byte[] synthesizeV1Blob(byte[]... entryPayloads) throws IOException {
