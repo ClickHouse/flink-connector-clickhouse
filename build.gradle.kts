@@ -9,7 +9,9 @@ plugins {
 val versionFile by extra("version.txt")
 val sinkVersion by extra(getProjectVersion())
 val flinkVersion by extra("1.18.0")
-val clickhouseVersion by extra("0.9.5")
+// Overridable so CI (nightly-java-client.yml) can swap in a locally built client:
+//   ./gradlew test -Pclickhouse_client_v2_version=X.Y.Z-SNAPSHOT
+val clickhouseVersion by extra(providers.gradleProperty("clickhouse_client_v2_version").getOrElse("0.9.5"))
 val junitVersion by extra("5.8.2")
 
 fun isVersionFileExists(): Boolean = file(versionFile).exists()
