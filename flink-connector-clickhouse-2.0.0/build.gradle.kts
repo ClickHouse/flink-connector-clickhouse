@@ -24,8 +24,12 @@ repositories {
     mavenCentral()
 }
 
+// Lets CI compile this module against any 2.x. Separate from -1.17's FLINK_VERSION on
+// purpose: a shared var would let a 1.x value break this build.
+val flinkVersion = System.getenv("FLINK_2_VERSION") ?: "2.0.0"
+
 extra.apply {
-    set("flinkVersion", "2.0.0") // the default still will be 2.0.0 since it is more popular currently
+    set("flinkVersion", flinkVersion) // the default still will be 2.0.0 since it is more popular currently
     set("log4jVersion","2.17.2")
     set("testContainersVersion", "2.0.2")
     set("testContainersClickHouseVersion", "1.21.3")
@@ -56,7 +60,6 @@ dependencies {
     implementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     implementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
     implementation(project(":flink-connector-clickhouse-base"))
-    implementation(project(":flink-connector-clickhouse-table"))
     // Table API glue (factory + sink) — provided by the Flink dist, never bundled.
     compileOnly("org.apache.flink:flink-table-common:${project.extra["flinkVersion"]}")
 
@@ -92,6 +95,8 @@ sourceSets {
         }
         java {
             srcDirs("src/main/java")
+            // Table API / SQL core, compiled here against this module's Flink rather than consumed as a jar
+            srcDir(project(":flink-connector-clickhouse-table").file("src/main/java"))
             srcDir(project(":flink-connector-clickhouse-base").layout.buildDirectory.file("generated/sources/version/java").get().asFile) // to include ClickHouseSinkVersion in the classpath
         }
     }
@@ -110,7 +115,8 @@ tasks.named<ShadowJar>("shadowJar") {
     dependencies {
         include(dependency("org.apache.flink.connector.clickhouse:.*"))
         include(project(":flink-connector-clickhouse-base"))
-        include(project(":flink-connector-clickhouse-table"))
+        // :flink-connector-clickhouse-table is absent by design — this filters the runtimeClasspath,
+        // and its classes are in this module's own output (see sourceSets).
         include(dependency("com.clickhouse:client-v2:${clickhouseVersion}:all"))
     }
     mergeServiceFiles()

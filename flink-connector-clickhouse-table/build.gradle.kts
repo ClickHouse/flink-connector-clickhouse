@@ -3,9 +3,11 @@
  *
  * Version-independent Table API / SQL support: connector options, the
  * (Flink LogicalType, ClickHouseColumn) type matrix, schema resolution and the
- * RowData -> Map DataMapper. Compiled once against flink-table-common 1.17
- * (compileOnly — provided by the Flink distribution) and used unchanged on 2.x;
- * only @PublicEvolving API that is stable in practice is referenced.
+ * RowData -> Map DataMapper.
+ *
+ * Owns the source but does not ship it: each version module adds src/main/java to its
+ * own sourceSet and compiles it against its own Flink. The compile here is the floor
+ * check against the oldest supported flink-table-common.
  * See docs/table-api/dld-build-packaging.md.
  */
 
@@ -27,8 +29,8 @@ extra.apply {
     set("log4jVersion", "2.17.2")
 }
 
-// Pinned on purpose: the module is compiled once against the oldest supported
-// flink-table-common and reused on every Flink generation (hld.md §3).
+// Pinned on purpose: this is the floor of the supported range. The version modules
+// cross-compile the same source against their own Flink (hld.md §3).
 val flinkTableCommonVersion = "1.17.2"
 
 dependencies {

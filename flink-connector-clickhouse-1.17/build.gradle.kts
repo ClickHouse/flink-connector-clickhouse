@@ -54,7 +54,6 @@ dependencies {
     implementation("org.apache.logging.log4j:log4j-core:${project.extra["log4jVersion"]}")
 
     implementation(project(":flink-connector-clickhouse-base"))
-    implementation(project(":flink-connector-clickhouse-table"))
     // ClickHouse Client Libraries
     implementation("com.clickhouse:client-v2:${clickhouseVersion}:all")
     // Apache Flink Libraries
@@ -95,6 +94,8 @@ sourceSets {
         }
         java {
             srcDirs("src/main/java")
+            // Table API / SQL core, compiled here against this module's Flink rather than consumed as a jar
+            srcDir(project(":flink-connector-clickhouse-table").file("src/main/java"))
             srcDir(project(":flink-connector-clickhouse-base").layout.buildDirectory.file("generated/sources/version/java").get().asFile) // to include ClickHouseSinkVersion in the classpath
         }
     }
@@ -113,7 +114,8 @@ tasks.named<ShadowJar>("shadowJar") {
     dependencies {
         include(dependency("org.apache.flink.connector.clickhouse:.*"))
         include(project(":flink-connector-clickhouse-base"))
-        include(project(":flink-connector-clickhouse-table"))
+        // :flink-connector-clickhouse-table is absent by design — this filters the runtimeClasspath,
+        // and its classes are in this module's own output (see sourceSets).
         include(dependency("com.clickhouse:client-v2:${clickhouseVersion}:all"))
     }
     mergeServiceFiles()
