@@ -49,7 +49,7 @@ class SchemaResolverTest {
         return new TableSchema(ClickHouseColumn.parse(columnList));
     }
 
-    /** The HLD-style schema exercising scalars, UUID pairing, composites and reordering. */
+    /** Schema exercising scalars, UUID pairing, composites and reordering. */
     private static ResolvedSchema flinkSchema() {
         return ResolvedSchema.of(
                 Column.physical("id", DataTypes.BIGINT().notNull()),
@@ -62,7 +62,7 @@ class SchemaResolverTest {
                         DataTypes.MAP(DataTypes.STRING(), DataTypes.STRING().notNull()).notNull()));
     }
 
-    /** Deliberately not in Flink order — order must come from the Flink schema (rule 5). */
+    /** Deliberately not in Flink order — the mapping order must come from the Flink schema. */
     private static final String CH_COLUMNS =
             "uid UUID, id Int64, name String, amount Decimal(18, 4), "
             + "created_at DateTime64(3), tags Array(String), props Map(String, String)";
@@ -119,7 +119,7 @@ class SchemaResolverTest {
     }
 
     @Test
-    void unknownFlinkColumnFailsWithTheCommittedMessage() {
+    void unknownFlinkColumnFailsWithPreciseMessage() {
         ResolvedSchema schema = ResolvedSchema.of(
                 Column.physical("id", DataTypes.BIGINT().notNull()),
                 Column.physical("nickname", DataTypes.STRING().notNull()));

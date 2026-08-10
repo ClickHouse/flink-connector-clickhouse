@@ -2,8 +2,8 @@ package org.apache.flink.connector.clickhouse.table.schema;
 
 /**
  * A single (Flink {@code LogicalType}, {@code ClickHouseColumn}) pair failed to map.
- * Carries only the reason; {@link SchemaResolver} wraps it into the committed,
- * column-naming {@code ValidationException} messages.
+ * Carries only the reason; {@link SchemaResolver} wraps it into a
+ * {@code ValidationException} naming the column and both types.
  */
 public class TypeMappingException extends RuntimeException {
     private static final long serialVersionUID = 1L;

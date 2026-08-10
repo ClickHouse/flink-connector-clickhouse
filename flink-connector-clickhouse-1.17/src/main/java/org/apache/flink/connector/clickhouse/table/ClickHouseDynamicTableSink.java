@@ -14,11 +14,9 @@ import org.apache.flink.table.data.RowData;
 import java.util.Objects;
 
 /**
- * The SQL/Table API sink: wraps the existing {@link ClickHouseAsyncSink} behind Flink's
- * {@code DynamicTableSink} contract with an insert-only changelog
- * (docs/table-api/dld-ClickHouseDynamicTableSink.md). Update-producing queries are
- * rejected by the planner; the documented workaround is ReplacingMergeTree/
- * AggregatingMergeTree + FINAL/argMax, or issue #148 (upsert) once it lands.
+ * Wraps the existing {@link ClickHouseAsyncSink} behind Flink's {@code DynamicTableSink}
+ * contract with an insert-only changelog; the planner rejects update-producing queries.
+ * Upsert is issue #148.
  */
 public class ClickHouseDynamicTableSink implements DynamicTableSink {
 
@@ -58,8 +56,7 @@ public class ClickHouseDynamicTableSink implements DynamicTableSink {
 
     @Override
     public ChangelogMode getChangelogMode(ChangelogMode requestedMode) {
-        // Appending retractions would corrupt the table — #148's upsert lands here
-        // as sign/version columns injected as extra ColumnBindings, no rewrite.
+        // Appending retractions would corrupt the table — #148's upsert lands here.
         return ChangelogMode.insertOnly();
     }
 

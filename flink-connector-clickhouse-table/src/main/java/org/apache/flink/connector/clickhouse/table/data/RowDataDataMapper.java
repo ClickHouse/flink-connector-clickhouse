@@ -13,14 +13,12 @@ import java.util.Map;
 
 /**
  * The SQL path's {@link DataMapper}: puts one TypeTags-legal Java value per resolved column
- * into the payload map (keyed by the ClickHouse column name), feeding the existing typed
- * sink unchanged — checkpointing, restore-rehydration, retries and metrics all reuse
- * today's code and state version.
+ * into the payload map, keyed by ClickHouse column name — the existing typed sink and its
+ * state format stay unchanged.
  *
- * <p>Serialization constraint (docs/table-api/dld-RowDataDataMapper.md):
- * {@code ClickHouseColumn} has no cross-version stability contract, so the mapper ships
- * {@code (columnName, typeExpression)} string pairs — the canonical expressions the header
- * writer emits — and {@link #bindings()} re-parses them on the TaskManager.
+ * <p>{@code ClickHouseColumn} has no serialization contract, so the mapper ships
+ * {@code (columnName, typeExpression)} string pairs and {@link #bindings()} re-parses them
+ * on the TaskManager.
  */
 public class RowDataDataMapper extends DataMapper<RowData> {
     private static final long serialVersionUID = 1L;

@@ -6,13 +6,11 @@ import java.io.Serializable;
 import java.util.Objects;
 
 /**
- * Reads one field of a {@link RowData} and unwraps it to the plain Java value its
- * ClickHouse column expects: a serializable pair of Flink's positional
- * {@link RowData.FieldGetter} and the pair-chosen {@link ValueConverter}.
- *
- * <p>Values are copied out of the (possibly buffer-reusing) {@code RowData} immediately;
- * a {@code null} field stays {@code null} — schema resolution guarantees nulls only reach
- * ClickHouse {@code Nullable} columns.
+ * Serializable pair of a positional {@link RowData.FieldGetter} and a {@link ValueConverter}:
+ * reads one field of a {@link RowData} and unwraps it to the plain Java value its ClickHouse
+ * column expects. Values are copied out of the (possibly buffer-reusing) row immediately;
+ * a {@code null} field stays {@code null} — schema resolution guarantees the target column
+ * is {@code Nullable}.
  */
 public final class FieldAccessor implements Serializable {
     private static final long serialVersionUID = 1L;

@@ -47,9 +47,7 @@ import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOpt
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.USERNAME;
 
 /**
- * Flink SQL factory for {@code 'connector' = 'clickhouse'}
- * (docs/table-api/dld-ClickHouseDynamicTableSinkFactory.md):
- * validate options → build {@link ClickHouseClientConfig} → {@code pingWithRetry()} →
+ * Flink SQL factory for {@code 'connector' = 'clickhouse'}: validate options → ping →
  * introspect the target table → resolve the schema → build the sink. All option, schema
  * and connectivity errors surface here, at planning time.
  *
@@ -144,16 +142,15 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
                 options.get(TABLE),
                 prefixedOptions(tableOptions, CLIENT_OPTIONS_PREFIX),
                 prefixedOptions(tableOptions, SERVER_SETTINGS_PREFIX),
-                retryPolicy(options.get(SINK_MAX_RETRIES)));
+                toRetryPolicy(options.get(SINK_MAX_RETRIES)));
         clientConfig.setBatchFailureStrategy(
                 parseBatchFailureStrategy(options.get(SINK_BATCH_FAILURE_STRATEGY)));
         return clientConfig;
     }
 
     /**
-     * Reads the target table's real column types. The supplier — ping first, then
-     * introspect — runs only on a memoization miss, so {@code EXPLAIN}/statement-set
-     * re-invocations stay offline.
+     * Reads the target table's real column types. The supplier — ping, then introspect —
+     * runs only on a memoization miss, so re-invocations stay offline.
      */
     private static TableSchema introspect(ReadableConfig options, ClickHouseClientConfig clientConfig) {
         String url = options.get(URL);
@@ -191,7 +188,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         }
     }
 
-    private static RetryPolicy retryPolicy(int maxRetries) {
+    private static RetryPolicy toRetryPolicy(int maxRetries) {
         return maxRetries < 0 ? RetryPolicy.forever() : RetryPolicy.limited(maxRetries);
     }
 

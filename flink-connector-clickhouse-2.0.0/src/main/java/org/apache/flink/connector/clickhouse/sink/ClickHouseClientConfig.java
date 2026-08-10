@@ -41,10 +41,9 @@ public class ClickHouseClientConfig implements Serializable {
     }
 
     /**
-     * Planning-time constructor used by the Table API factory: does NOT ping.
-     * Connectivity is checked explicitly via {@link #pingWithRetry()} once the factory
-     * has finished validating, so the configured retry policy (sink.max-retries)
-     * governs the ping instead of the hard-coded default.
+     * No-ping constructor for the Table API factory: connectivity is checked separately via
+     * {@link #pingWithRetry()}, so the configured retry policy (sink.max-retries) governs
+     * the ping instead of the hard-coded default.
      */
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, RetryPolicy retryPolicy) {
         this.url = url;
@@ -58,6 +57,14 @@ public class ClickHouseClientConfig implements Serializable {
         this.enableJsonSupportAsString = false;
         this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy must not be null");
         LOG.info("ClickHouseClientConfig: url={}, user={}, password={}, database={}", url, username, "x".repeat(password.length()), database);
+    }
+
+    public ClickHouseClientConfig(String url, String username, String password, String database, String tableName) {
+        this(url, username, password, database, tableName, new HashMap<>(), new HashMap<>(), false);
+    }
+
+    public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, boolean enableJsonSupport) {
+        this(url, username, password, database, tableName, new HashMap<>(), new HashMap<>(), enableJsonSupport);
     }
 
     /** Pings the server, honouring the configured retry policy; throws if it stays unreachable. */
@@ -84,14 +91,6 @@ public class ClickHouseClientConfig implements Serializable {
         if (!isServerAlive) {
             throw new RuntimeException("ClickHouse server is not accessible. Please check your configuration or ClickHouse server.");
         }
-    }
-
-    public ClickHouseClientConfig(String url, String username, String password, String database, String tableName) {
-        this(url, username, password, database, tableName, new HashMap<>(), new HashMap<>(), false);
-    }
-
-    public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, boolean enableJsonSupport) {
-        this(url, username, password, database, tableName, new HashMap<>(), new HashMap<>(), enableJsonSupport);
     }
 
     private Client initClient(String database) {

@@ -7,8 +7,7 @@ import org.apache.flink.configuration.MemorySize;
 import java.time.Duration;
 
 /**
- * The {@code WITH (...)} options of the {@code 'connector' = 'clickhouse'} SQL sink
- * (docs/table-api/dld-ClickHouseDynamicTableSinkFactory.md).
+ * The {@code WITH (...)} options of the {@code 'connector' = 'clickhouse'} SQL sink.
  *
  * <p>Keys follow the ecosystem convention ({@code sink.buffer-flush.*}, {@code sink.max-retries});
  * defaults are identical to {@code ClickHouseAsyncSinkBuilder}/{@code ClickHouseClientConfig},

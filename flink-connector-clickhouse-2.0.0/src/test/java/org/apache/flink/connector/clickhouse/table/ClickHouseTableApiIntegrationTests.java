@@ -13,12 +13,7 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.util.List;
 
-/**
- * Bare-minimum end-to-end confirmation of the Table API sink: Flink SQL DDL +
- * {@code INSERT INTO} against a real ClickHouse, then read back and compare — plus one
- * planning-time schema rejection. The full matrix lives in the dedicated test suites
- * (docs/table-api/dld-testing.md).
- */
+/** End-to-end Flink SQL round trips against a real ClickHouse, plus a planning-time rejection. */
 public class ClickHouseTableApiIntegrationTests {
 
     @BeforeAll

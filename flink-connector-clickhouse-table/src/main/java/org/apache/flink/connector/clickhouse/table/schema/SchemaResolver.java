@@ -21,14 +21,12 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * The heart of the Table API sink design: a pure function from
- * {@code (ResolvedSchema, ClickHouse TableSchema, options)} to the ordered
- * {@code List<ResolvedColumnMapping>} driving the typed sink. All planning-time
- * schema errors are raised here as {@link ValidationException}s with the messages
- * committed in docs/table-api/dld-SchemaResolver.md.
+ * Pure function from {@code (ResolvedSchema, ClickHouse TableSchema, options)} to the
+ * ordered {@code List<ResolvedColumnMapping>} driving the typed sink. All planning-time
+ * schema errors are raised here as {@link ValidationException}s.
  *
- * <p>Matching rules: by column name, case-sensitively; only physical columns
- * participate; column order is the Flink schema's order.
+ * <p>Columns match by name, case-sensitively; only physical columns participate; column
+ * order is the Flink schema's order.
  */
 public final class SchemaResolver {
 
@@ -53,7 +51,7 @@ public final class SchemaResolver {
                 }
                 throw unknownFlinkColumn(field.getName(), clickHouseColumns, options);
             }
-            mappings.add(mapColumn(i, field, column, options));
+            mappings.add(resolveColumn(i, field, column, options));
             mappedNames.add(field.getName());
         }
 
@@ -71,38 +69,44 @@ public final class SchemaResolver {
     // Per-column resolution
     // ------------------------------------------------------------------------------------
 
-    private static ResolvedColumnMapping mapColumn(int fieldIndex, RowType.RowField field,
-                                                   ClickHouseColumn column,
-                                                   SchemaResolverOptions options) {
+    private static ResolvedColumnMapping resolveColumn(int fieldIndex, RowType.RowField field,
+                                                       ClickHouseColumn column,
+                                                       SchemaResolverOptions options) {
         checkInsertable(field.getName(), column);
         ClickHouseColumn effective = ClickHouseTypeMapper.unwrapTransparentWrappers(column);
         checkNullability(field, column, effective);
-        ValueConverter converter = pairConverter(field, column, options);
+        ValueConverter converter = converterFor(field, column, options);
         FieldAccessor accessor = FieldAccessor.of(
                 RowData.createFieldGetter(field.getType(), fieldIndex), converter);
         return new ResolvedColumnMapping(fieldIndex, field.getType(), column, accessor);
     }
 
-    private static ValueConverter pairConverter(RowType.RowField field, ClickHouseColumn column,
-                                                SchemaResolverOptions options) {
+    private static ValueConverter converterFor(RowType.RowField field, ClickHouseColumn column,
+                                               SchemaResolverOptions options) {
         try {
             return ClickHouseTypeMapper.converter(
                     field.getType(), column, options.sinkTimezone, field.getName());
         } catch (TypeMappingException e) {
-            if (e.getKind() == TypeMappingException.Kind.TARGET_UNSUPPORTED) {
-                throw new ValidationException(String.format(
-                        "ClickHouse column '%s %s' is not yet supported by the sink (%s). "
-                        + "Exclude the column from the Flink schema to let the server default apply.",
-                        column.getColumnName(), column.getOriginalTypeName(), e.getMessage()));
-            }
-            throw new ValidationException(String.format(
-                    "Column '%s': Flink type %s cannot be written to ClickHouse column '%s %s' — %s.",
-                    field.getName(), field.getType().asSummaryString(),
-                    column.getColumnName(), column.getOriginalTypeName(), e.getMessage()));
+            throw asValidationException(e, field, column);
         }
     }
 
-    /** Rule 7: MATERIALIZED/ALIAS/EPHEMERAL columns are not insertable. */
+    private static ValidationException asValidationException(TypeMappingException e,
+                                                             RowType.RowField field,
+                                                             ClickHouseColumn column) {
+        if (e.getKind() == TypeMappingException.Kind.TARGET_UNSUPPORTED) {
+            return new ValidationException(String.format(
+                    "ClickHouse column '%s %s' is not yet supported by the sink (%s). "
+                    + "Exclude the column from the Flink schema to let the server default apply.",
+                    column.getColumnName(), column.getOriginalTypeName(), e.getMessage()));
+        }
+        return new ValidationException(String.format(
+                "Column '%s': Flink type %s cannot be written to ClickHouse column '%s %s' — %s.",
+                field.getName(), field.getType().asSummaryString(),
+                column.getColumnName(), column.getOriginalTypeName(), e.getMessage()));
+    }
+
+    /** MATERIALIZED/ALIAS/EPHEMERAL columns are not insertable. */
     private static void checkInsertable(String name, ClickHouseColumn column) {
         if (column.hasDefault() && column.getDefaultValue() != null
                 && column.getDefaultValue() != ClickHouseColumn.DefaultValue.DEFAULT) {
@@ -115,8 +119,8 @@ public final class SchemaResolver {
     }
 
     /**
-     * Rule 6: a byte-exact header cannot carry a null, so a nullable Flink column may only
-     * target a Nullable ClickHouse column. Nullable(UInt8/16/32/64) targets are additionally
+     * A byte-exact header cannot carry a null, so a nullable Flink column may only target
+     * a Nullable ClickHouse column. Nullable(UInt8/16/32/64) targets are additionally
      * rejected while DataWriter's null handling for them is broken (issue #144).
      */
     private static void checkNullability(RowType.RowField field, ClickHouseColumn column,
@@ -161,10 +165,9 @@ public final class SchemaResolver {
     // ------------------------------------------------------------------------------------
 
     /**
-     * Rule 4: ClickHouse columns missing from the Flink schema are omitted from the header and
-     * the server applies their DEFAULT — but a non-Nullable column without a default has
-     * nothing to fall back on and is rejected. MATERIALIZED/ALIAS/EPHEMERAL columns are
-     * excluded from this check (rule 7).
+     * An omitted ClickHouse column gets its server-side DEFAULT — a non-Nullable column
+     * without one has nothing to fall back on and is rejected.
+     * MATERIALIZED/ALIAS/EPHEMERAL columns are exempt.
      */
     private static void checkOmittedColumnsHaveDefaults(TableSchema clickHouseSchema,
                                                         Set<String> mappedNames,

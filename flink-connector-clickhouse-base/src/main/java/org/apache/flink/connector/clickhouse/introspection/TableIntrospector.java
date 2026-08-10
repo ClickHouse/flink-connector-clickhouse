@@ -11,16 +11,11 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.function.Supplier;
 
 /**
- * Planning-time lookup of a ClickHouse table's real column types, wrapping
- * client-v2's {@link Client#getTableSchema(String, String)}. The returned
- * {@link TableSchema#getColumns()} is exactly the {@code List<ClickHouseColumn>}
- * that {@code ColumnBinding} needs, with exact default kinds
- * ({@code DEFAULT}/{@code MATERIALIZED}/{@code EPHEMERAL}/{@code ALIAS}).
- *
- * <p>Results are memoized per {@code (url, database, table)} within the planning
- * process: the table factory is re-invoked by {@code EXPLAIN}, statement sets and
- * {@code EXECUTE PLAN}, and must not ping/introspect anew each time. The client
- * supplier therefore runs only on a cache miss — connectivity checks belong inside it.
+ * Planning-time lookup of a ClickHouse table's real column types via client-v2's
+ * {@link Client#getTableSchema(String, String)}, memoized per {@code (url, database, table)}:
+ * {@code EXPLAIN}, statement sets and {@code EXECUTE PLAN} re-invoke the table factory and
+ * must not ping/introspect anew. The client supplier runs only on a cache miss —
+ * connectivity checks belong inside it.
  *
  * <p>Lives in {@code -base}, which stays Flink-free (documented invariant).
  */
@@ -32,9 +27,8 @@ public final class TableIntrospector {
     private TableIntrospector() {}
 
     /**
-     * Returns the schema of {@code database.table}, fetching it through the supplied
-     * client on first use and from the memo on every re-invocation with the same
-     * {@code (url, database, table)}.
+     * Returns the schema of {@code database.table} — through the supplied client on first
+     * use, from the memo on every re-invocation with the same {@code (url, database, table)}.
      */
     public static TableSchema introspect(String url, String database, String table,
                                          Supplier<Client> clientSupplier) {

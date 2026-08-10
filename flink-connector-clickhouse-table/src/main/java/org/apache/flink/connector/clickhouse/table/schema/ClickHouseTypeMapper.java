@@ -37,20 +37,18 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * The single (Flink {@code LogicalType}, {@code ClickHouseColumn}) compatibility matrix
- * of the Table API sink (docs/table-api/dld-SchemaResolver.md). Given a pair, it either
- * returns the {@link ValueConverter} that unwraps the Flink-internal value into the plain
- * Java value {@code DataWriter} expects for that ClickHouse type, or throws a
- * {@link TypeMappingException} explaining why the pair is rejected.
+ * The (Flink {@code LogicalType}, {@code ClickHouseColumn}) compatibility matrix of the
+ * Table API sink: returns the {@link ValueConverter} that unwraps a Flink-internal value
+ * into the plain Java value {@code DataWriter} expects, or throws a
+ * {@link TypeMappingException} saying why the pair is rejected.
  *
- * <p>Conversion rules: narrowing is rejected, lossless widening is implicit, and a signed
- * Flink integer never targets an unsigned ClickHouse integer (unsigned columns are reachable
- * through the canonical Flink representations: {@code SMALLINT}→{@code UInt8},
- * {@code INT}→{@code UInt16}, {@code BIGINT}→{@code UInt32}, {@code DECIMAL(20,0)}→{@code UInt64}).
+ * <p>Narrowing is rejected, lossless widening is implicit, and a signed Flink integer never
+ * targets an unsigned ClickHouse integer — unsigned columns are reached via the canonical
+ * pairs {@code SMALLINT}→{@code UInt8}, {@code INT}→{@code UInt16}, {@code BIGINT}→{@code UInt32},
+ * {@code DECIMAL(20,0)}→{@code UInt64}.
  *
- * <p>Every {@link LogicalTypeRoot} is registered here — mapped or explicitly rejected —
- * and a guard test asserts exhaustiveness so a new Flink type root can never fall
- * through silently.
+ * <p>Every {@link LogicalTypeRoot} is registered — mapped or explicitly rejected — and a
+ * guard test asserts exhaustiveness.
  */
 public final class ClickHouseTypeMapper {
 
@@ -77,10 +75,9 @@ public final class ClickHouseTypeMapper {
             ClickHouseDataType.Array, ClickHouseDataType.Map, ClickHouseDataType.Tuple);
 
     /**
-     * ClickHouse Map key types whose values survive the checkpointed string representation:
-     * map keys live in the payload {@code Map} as strings (the state format requires string
-     * keys) and the client's serializer parses these types back from a string. Date/DateTime,
-     * UUID and Bool keys do not round-trip through a string and are rejected at planning.
+     * Map key types the sink supports: keys are checkpointed as strings (the state format
+     * requires string map keys) and only these types parse back from a string in the
+     * client's serializer.
      */
     private static final Set<ClickHouseDataType> STRING_RESTORABLE_MAP_KEY_TARGETS = EnumSet.of(
             ClickHouseDataType.String, ClickHouseDataType.FixedString,
@@ -122,9 +119,8 @@ public final class ClickHouseTypeMapper {
     }
 
     /**
-     * {@code SimpleAggregateFunction(f, T)} is wire-encoded identically to its inner type
-     * {@code T} and matched as such ({@code DataWriter.writeValue} recurses the same way);
-     * {@code LowCardinality}/{@code Nullable} are modeled as flags on the column itself.
+     * {@code SimpleAggregateFunction(f, T)} is wire-encoded as its inner type {@code T} and
+     * matched as such; {@code LowCardinality}/{@code Nullable} are flags on the column itself.
      */
     public static ClickHouseColumn unwrapTransparentWrappers(ClickHouseColumn column) {
         ClickHouseColumn c = column;
@@ -412,23 +408,23 @@ public final class ClickHouseTypeMapper {
     private static ValueConverter mapTimestamp(LogicalType flinkType, ClickHouseColumn target,
                                                ZoneId zone, String path) {
         int precision = ((TimestampType) flinkType).getPrecision();
-        checkDateTimePrecision(flinkType, target, precision);
-        // Wall-clock value: interpret in sink.timezone. The resulting ZonedDateTime is
-        // written instant-exactly, which keeps non-UTC DateTime(tz) columns correct.
-        final ZoneId sinkZone = zone;
-        return value -> ZonedDateTime.of(((TimestampData) value).toLocalDateTime(), sinkZone);
+        checkDateTimeTargetFits(flinkType, target, precision);
+        // Wall-clock value: interpret in sink.timezone, write instant-exactly — this keeps
+        // non-UTC DateTime(tz) columns correct.
+        return value -> ZonedDateTime.of(((TimestampData) value).toLocalDateTime(), zone);
     }
 
     private static ValueConverter mapTimestampLtz(LogicalType flinkType, ClickHouseColumn target,
                                                   ZoneId zone, String path) {
         int precision = ((LocalZonedTimestampType) flinkType).getPrecision();
-        checkDateTimePrecision(flinkType, target, precision);
+        checkDateTimeTargetFits(flinkType, target, precision);
         // Instant value: zone choice is irrelevant for the wire bytes; UTC keeps state small.
         return value -> ZonedDateTime.ofInstant(((TimestampData) value).toInstant(), ZoneOffset.UTC);
     }
 
-    private static void checkDateTimePrecision(LogicalType flinkType, ClickHouseColumn target,
-                                               int precision) {
+    /** The target must be DateTime (scale 0) or DateTime64(s) with s >= the Flink precision. */
+    private static void checkDateTimeTargetFits(LogicalType flinkType, ClickHouseColumn target,
+                                                int precision) {
         switch (target.getDataType()) {
             case DateTime:
             case DateTime64:
@@ -483,17 +479,10 @@ public final class ClickHouseTypeMapper {
             throw noConversion(flinkType, "Map(K, V)");
         }
         MapType mapType = (MapType) flinkType;
-        return mapDataConverter(
-                mapType.getKeyType(), mapType.getValueType(),
-                ArrayData.createElementGetter(mapType.getKeyType()),
-                ArrayData.createElementGetter(mapType.getValueType()),
-                target, zone, path);
+        return buildMapConverter(mapType.getKeyType(), mapType.getValueType(), target, zone, path);
     }
 
-    /**
-     * MULTISET&lt;T&gt; is internally a map from T to a non-null int count, matched against
-     * {@code Map(T', UInt64)} exactly (dld-SchemaResolver.md type matrix).
-     */
+    /** MULTISET&lt;T&gt; is a map from T to a non-null int count, matched against {@code Map(T', UInt64)}. */
     private static ValueConverter mapMultiset(LogicalType flinkType, ClickHouseColumn target,
                                               ZoneId zone, String path) {
         if (target.getDataType() != ClickHouseDataType.Map) {
@@ -506,34 +495,27 @@ public final class ClickHouseTypeMapper {
                     target.getValueInfo().getOriginalTypeName()));
         }
         LogicalType elementType = ((MultisetType) flinkType).getElementType();
-        IntType countType = new IntType(false);
-        return mapDataConverter(
-                elementType, countType,
-                ArrayData.createElementGetter(elementType),
-                ArrayData.createElementGetter(countType),
-                target, zone, path);
+        return buildMapConverter(elementType, new IntType(false), target, zone, path);
     }
 
-    private static ValueConverter mapDataConverter(LogicalType keyType, LogicalType valueType,
-                                                   ArrayData.ElementGetter keyGetter,
-                                                   ArrayData.ElementGetter valueGetter,
-                                                   ClickHouseColumn target, ZoneId zone, String path) {
-        ValueConverter keyConverter = mapKeyConverter(keyType, target.getKeyInfo(), zone, path);
-        ValueConverter valueConverter = mapValueConverter(valueType, target.getValueInfo(), zone, path);
-        final String columnPath = path;
+    private static ValueConverter buildMapConverter(LogicalType keyType, LogicalType valueType,
+                                                    ClickHouseColumn target, ZoneId zone, String path) {
+        ValueConverter keyConverter = buildMapKeyConverter(keyType, target.getKeyInfo(), zone, path);
+        ValueConverter valueConverter = buildMapValueConverter(valueType, target.getValueInfo(), zone, path);
+        ArrayData.ElementGetter keyGetter = ArrayData.createElementGetter(keyType);
+        ArrayData.ElementGetter valueGetter = ArrayData.createElementGetter(valueType);
         return value -> convertMap((MapData) value, keyGetter, valueGetter,
-                keyConverter, valueConverter, columnPath);
+                keyConverter, valueConverter, path);
     }
 
     /**
-     * Map keys are checkpointed as the payload map's string keys, so the converter
-     * stringifies the plain Java key value; the serializer parses it back for the
-     * whitelisted key types. Flink key types are nullable by default in SQL, so key
-     * nullability is enforced on the data (a null key fails at runtime with a clear
-     * message) rather than on the type.
+     * Keys are checkpointed as the payload map's string keys, so the converter stringifies
+     * the key and the serializer parses it back (whitelisted types only). Flink SQL marks
+     * every MAP key type nullable, so key nullability is enforced on the data at runtime,
+     * not on the type.
      */
-    private static ValueConverter mapKeyConverter(LogicalType keyType, ClickHouseColumn keyColumn,
-                                                  ZoneId zone, String path) {
+    private static ValueConverter buildMapKeyConverter(LogicalType keyType, ClickHouseColumn keyColumn,
+                                                       ZoneId zone, String path) {
         ClickHouseColumn effectiveKey = unwrapTransparentWrappers(keyColumn);
         if (effectiveKey.isNullable()) {
             throw TypeMappingException.mismatch("ClickHouse Map keys cannot be Nullable");
@@ -550,12 +532,11 @@ public final class ClickHouseTypeMapper {
     }
 
     /**
-     * Nullable map values are rejected outright: the client-side serializer never writes
-     * the non-null marker for them, so a byte-exact stream cannot be produced (the same
-     * gap applies to Tuple elements — see {@link #mapRow}).
+     * Nullable Map values are rejected: the client-side serializer never writes their
+     * non-null marker, so a byte-exact stream is impossible (same gap for Tuple elements).
      */
-    private static ValueConverter mapValueConverter(LogicalType valueType, ClickHouseColumn valueColumn,
-                                                    ZoneId zone, String path) {
+    private static ValueConverter buildMapValueConverter(LogicalType valueType, ClickHouseColumn valueColumn,
+                                                         ZoneId zone, String path) {
         ClickHouseColumn effectiveValue = unwrapTransparentWrappers(valueColumn);
         if (effectiveValue.isNullable()) {
             throw TypeMappingException.mismatch(String.format(
@@ -599,8 +580,8 @@ public final class ClickHouseTypeMapper {
     }
 
     /**
-     * ROW fields are matched to Tuple elements positionally. Nullable Tuple elements are
-     * rejected for the same serializer gap as Nullable map values ({@link #mapValueConverter}).
+     * ROW fields match Tuple elements positionally. Nullable Tuple elements are rejected
+     * for the same serializer gap as Nullable Map values ({@link #buildMapValueConverter}).
      */
     private static ValueConverter mapRow(LogicalType flinkType, ClickHouseColumn target,
                                          ZoneId zone, String path) {
@@ -636,8 +617,7 @@ public final class ClickHouseTypeMapper {
                     field.getType(), element, zone,
                     path + "." + field.getName(), "ROW field '" + field.getName() + "'");
         }
-        final String columnPath = path;
-        return value -> convertRow((RowData) value, fieldGetters, fieldConverters, columnPath);
+        return value -> convertRow((RowData) value, fieldGetters, fieldConverters, path);
     }
 
     private static Object[] convertRow(RowData row, RowData.FieldGetter[] getters,

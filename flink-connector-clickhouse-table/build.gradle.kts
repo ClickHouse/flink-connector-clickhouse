@@ -8,7 +8,6 @@
  * Owns the source but does not ship it: each version module adds src/main/java to its
  * own sourceSet and compiles it against its own Flink. The compile here is the floor
  * check against the oldest supported flink-table-common.
- * See docs/table-api/dld-build-packaging.md.
  */
 
 plugins {
@@ -30,7 +29,7 @@ extra.apply {
 }
 
 // Pinned on purpose: this is the floor of the supported range. The version modules
-// cross-compile the same source against their own Flink (hld.md §3).
+// cross-compile the same source against their own Flink.
 val flinkTableCommonVersion = "1.17.2"
 
 dependencies {

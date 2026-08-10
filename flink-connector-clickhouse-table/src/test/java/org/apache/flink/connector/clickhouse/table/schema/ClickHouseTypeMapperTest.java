@@ -30,8 +30,8 @@ class ClickHouseTypeMapperTest {
     }
 
     /**
-     * The design's guard: every Flink type root is either mapped or explicitly rejected,
-     * so a new root can never fall through silently (dld-SchemaResolver.md).
+     * Guard: every Flink type root is either mapped or explicitly rejected, so a root
+     * added by a future Flink can never fall through silently.
      */
     @Test
     void everyLogicalTypeRootIsMappedOrExplicitlyRejected() {
