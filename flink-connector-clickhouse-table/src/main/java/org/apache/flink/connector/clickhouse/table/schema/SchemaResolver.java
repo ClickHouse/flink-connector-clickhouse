@@ -84,7 +84,7 @@ public final class SchemaResolver {
     private static ValueConverter converterFor(RowType.RowField field, ClickHouseColumn column,
                                                SchemaResolverOptions options) {
         try {
-            return ClickHouseTypeMapper.converter(
+            return ClickHouseTypeMapper.converterFor(
                     field.getType(), column, options.sinkTimezone, field.getName());
         } catch (TypeMappingException e) {
             throw asValidationException(e, field, column);

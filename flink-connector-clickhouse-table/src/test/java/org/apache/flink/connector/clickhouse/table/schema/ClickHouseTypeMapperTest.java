@@ -3,10 +3,12 @@ package org.apache.flink.connector.clickhouse.table.schema;
 import com.clickhouse.data.ClickHouseColumn;
 
 import org.apache.flink.connector.clickhouse.table.data.ValueConverter;
+import org.apache.flink.table.data.GenericMapData;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
+import org.apache.flink.table.types.logical.MultisetType;
 import org.apache.flink.table.types.logical.TimestampType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.junit.jupiter.api.Test;
@@ -15,6 +17,8 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -41,27 +45,27 @@ class ClickHouseTypeMapperTest {
 
     @Test
     void intWritesToInt32AndWidensToInt64() {
-        ValueConverter toInt32 = ClickHouseTypeMapper.converter(new IntType(false), col("Int32"), UTC, "c");
+        ValueConverter toInt32 = ClickHouseTypeMapper.converterFor(new IntType(false), col("Int32"), UTC, "c");
         assertEquals(7, toInt32.convert(7));
-        ValueConverter toInt64 = ClickHouseTypeMapper.converter(new IntType(false), col("Int64"), UTC, "c");
+        ValueConverter toInt64 = ClickHouseTypeMapper.converterFor(new IntType(false), col("Int64"), UTC, "c");
         assertEquals(7L, toInt64.convert(7));
     }
 
     @Test
     void narrowingIntToInt16IsRejected() {
         assertThrows(TypeMappingException.class,
-                () -> ClickHouseTypeMapper.converter(new IntType(false), col("Int16"), UTC, "c"));
+                () -> ClickHouseTypeMapper.converterFor(new IntType(false), col("Int16"), UTC, "c"));
     }
 
     @Test
     void signedIntNeverTargetsUnsignedOfSameWidth() {
         assertThrows(TypeMappingException.class,
-                () -> ClickHouseTypeMapper.converter(new IntType(false), col("UInt32"), UTC, "c"));
+                () -> ClickHouseTypeMapper.converterFor(new IntType(false), col("UInt32"), UTC, "c"));
     }
 
     @Test
     void stringUnwrapsToUuidForUuidColumns() {
-        ValueConverter converter = ClickHouseTypeMapper.converter(
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
                 new VarCharType(false, VarCharType.MAX_LENGTH), col("UUID"), UTC, "c");
         UUID uuid = UUID.randomUUID();
         assertEquals(uuid, converter.convert(StringData.fromString(uuid.toString())));
@@ -70,7 +74,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void enumTargetIsExplicitlyUnsupported() {
         TypeMappingException e = assertThrows(TypeMappingException.class,
-                () -> ClickHouseTypeMapper.converter(
+                () -> ClickHouseTypeMapper.converterFor(
                         new VarCharType(false, VarCharType.MAX_LENGTH),
                         col("Enum8('new' = 1, 'done' = 2)"), UTC, "c"));
         assertEquals(TypeMappingException.Kind.TARGET_UNSUPPORTED, e.getKind());
@@ -80,7 +84,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void timestampPrecisionMayNotExceedColumnScale() {
         TypeMappingException e = assertThrows(TypeMappingException.class,
-                () -> ClickHouseTypeMapper.converter(
+                () -> ClickHouseTypeMapper.converterFor(
                         new TimestampType(false, 9), col("DateTime64(3)"), UTC, "c"));
         assertEquals("precision 9 exceeds the column's scale 3", e.getMessage());
     }
@@ -88,7 +92,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void timestampIsInterpretedInTheSinkTimezone() {
         ZoneId tokyo = ZoneId.of("Asia/Tokyo");
-        ValueConverter converter = ClickHouseTypeMapper.converter(
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
                 new TimestampType(false, 3), col("DateTime64(3)"), tokyo, "c");
         LocalDateTime wallClock = LocalDateTime.of(2026, 1, 2, 3, 4, 5, 678_000_000);
         assertEquals(ZonedDateTime.of(wallClock, tokyo),
@@ -97,8 +101,29 @@ class ClickHouseTypeMapperTest {
 
     @Test
     void simpleAggregateFunctionIsTransparentForMatching() {
-        ValueConverter converter = ClickHouseTypeMapper.converter(
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
                 new IntType(false), col("SimpleAggregateFunction(max, Int32)"), UTC, "c");
         assertEquals(41, converter.convert(41));
+    }
+
+    @Test
+    void multisetWritesElementCountsAsLongs() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                multisetOfString(), col("Map(String, UInt64)"), UTC, "c");
+        Map<Object, Object> counts = new LinkedHashMap<>();
+        counts.put(StringData.fromString("a"), 2);
+        assertEquals(Map.of("a", 2L), converter.convert(new GenericMapData(counts)));
+    }
+
+    @Test
+    void multisetRequiresUInt64CountColumns() {
+        TypeMappingException e = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(
+                        multisetOfString(), col("Map(String, UInt32)"), UTC, "c"));
+        assertTrue(e.getMessage().contains("exactly UInt64"), e.getMessage());
+    }
+
+    private static MultisetType multisetOfString() {
+        return new MultisetType(false, new VarCharType(false, VarCharType.MAX_LENGTH));
     }
 }

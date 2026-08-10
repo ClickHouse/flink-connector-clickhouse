@@ -105,8 +105,8 @@ public final class ClickHouseTypeMapper {
      * @param sinkTimezone zone in which {@code TIMESTAMP} wall-clock values are interpreted
      * @param path         column path for runtime error messages (e.g. {@code "props value"})
      */
-    public static ValueConverter converter(LogicalType flinkType, ClickHouseColumn column,
-                                           ZoneId sinkTimezone, String path) {
+    public static ValueConverter converterFor(LogicalType flinkType, ClickHouseColumn column,
+                                              ZoneId sinkTimezone, String path) {
         ClickHouseColumn target = unwrapTransparentWrappers(column);
         checkTargetWritable(target);
         RootRule rule = RULES.get(flinkType.getTypeRoot());
@@ -479,7 +479,10 @@ public final class ClickHouseTypeMapper {
             throw noConversion(flinkType, "Map(K, V)");
         }
         MapType mapType = (MapType) flinkType;
-        return buildMapConverter(mapType.getKeyType(), mapType.getValueType(), target, zone, path);
+        ValueConverter valueConverter = buildMapValueConverter(
+                mapType.getValueType(), target.getValueInfo(), zone, path);
+        return buildMapConverter(mapType.getKeyType(), mapType.getValueType(), valueConverter,
+                target, zone, path);
     }
 
     /** MULTISET&lt;T&gt; is a map from T to a non-null int count, matched against {@code Map(T', UInt64)}. */
@@ -488,20 +491,26 @@ public final class ClickHouseTypeMapper {
         if (target.getDataType() != ClickHouseDataType.Map) {
             throw noConversion(flinkType, "Map(T, UInt64)");
         }
+        checkMultisetCountTarget(target);
+        LogicalType elementType = ((MultisetType) flinkType).getElementType();
+        // DataWriter's UInt64 write path takes a Long; the count getter yields an Integer.
+        ValueConverter countConverter = count -> ((Integer) count).longValue();
+        return buildMapConverter(elementType, new IntType(false), countConverter, target, zone, path);
+    }
+
+    private static void checkMultisetCountTarget(ClickHouseColumn target) {
         ClickHouseColumn valueColumn = unwrapTransparentWrappers(target.getValueInfo());
         if (valueColumn.getDataType() != ClickHouseDataType.UInt64 || valueColumn.isNullable()) {
             throw TypeMappingException.mismatch(String.format(
                     "MULTISET counts require a Map value type of exactly UInt64, found %s",
                     target.getValueInfo().getOriginalTypeName()));
         }
-        LogicalType elementType = ((MultisetType) flinkType).getElementType();
-        return buildMapConverter(elementType, new IntType(false), target, zone, path);
     }
 
     private static ValueConverter buildMapConverter(LogicalType keyType, LogicalType valueType,
+                                                    ValueConverter valueConverter,
                                                     ClickHouseColumn target, ZoneId zone, String path) {
         ValueConverter keyConverter = buildMapKeyConverter(keyType, target.getKeyInfo(), zone, path);
-        ValueConverter valueConverter = buildMapValueConverter(valueType, target.getValueInfo(), zone, path);
         ArrayData.ElementGetter keyGetter = ArrayData.createElementGetter(keyType);
         ArrayData.ElementGetter valueGetter = ArrayData.createElementGetter(valueType);
         return value -> convertMap((MapData) value, keyGetter, valueGetter,
@@ -599,25 +608,29 @@ public final class ClickHouseTypeMapper {
         ValueConverter[] fieldConverters = new ValueConverter[rowType.getFieldCount()];
         for (int i = 0; i < rowType.getFieldCount(); i++) {
             RowType.RowField field = rowType.getFields().get(i);
-            ClickHouseColumn element = unwrapTransparentWrappers(elements.get(i));
-            if (element.isNullable()) {
-                throw TypeMappingException.mismatch(String.format(
-                        "Nullable Tuple elements (%s at position %d) are not supported by the "
-                        + "sink's serializer — use a non-Nullable element type",
-                        elements.get(i).getOriginalTypeName(), i + 1));
-            }
-            if (field.getType().isNullable()) {
-                throw TypeMappingException.mismatch(String.format(
-                        "the Flink ROW field '%s' is nullable but the ClickHouse Tuple element %s "
-                        + "is not Nullable — declare the field NOT NULL",
-                        field.getName(), elements.get(i).getOriginalTypeName()));
-            }
             fieldGetters[i] = RowData.createFieldGetter(field.getType(), i);
-            fieldConverters[i] = converterWithContext(
-                    field.getType(), element, zone,
-                    path + "." + field.getName(), "ROW field '" + field.getName() + "'");
+            fieldConverters[i] = buildRowFieldConverter(field, elements.get(i), i, zone, path);
         }
         return value -> convertRow((RowData) value, fieldGetters, fieldConverters, path);
+    }
+
+    private static ValueConverter buildRowFieldConverter(RowType.RowField field, ClickHouseColumn element,
+                                                         int position, ZoneId zone, String path) {
+        ClickHouseColumn effective = unwrapTransparentWrappers(element);
+        if (effective.isNullable()) {
+            throw TypeMappingException.mismatch(String.format(
+                    "Nullable Tuple elements (%s at position %d) are not supported by the "
+                    + "sink's serializer — use a non-Nullable element type",
+                    element.getOriginalTypeName(), position + 1));
+        }
+        if (field.getType().isNullable()) {
+            throw TypeMappingException.mismatch(String.format(
+                    "the Flink ROW field '%s' is nullable but the ClickHouse Tuple element %s "
+                    + "is not Nullable — declare the field NOT NULL",
+                    field.getName(), element.getOriginalTypeName()));
+        }
+        return converterWithContext(field.getType(), effective, zone,
+                path + "." + field.getName(), "ROW field '" + field.getName() + "'");
     }
 
     private static Object[] convertRow(RowData row, RowData.FieldGetter[] getters,
@@ -643,7 +656,7 @@ public final class ClickHouseTypeMapper {
     private static ValueConverter converterWithContext(LogicalType flinkType, ClickHouseColumn column,
                                                        ZoneId zone, String path, String context) {
         try {
-            return converter(flinkType, column, zone, path);
+            return converterFor(flinkType, column, zone, path);
         } catch (TypeMappingException e) {
             if (e.getKind() == TypeMappingException.Kind.TARGET_UNSUPPORTED) {
                 throw e;
