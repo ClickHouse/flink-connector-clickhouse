@@ -35,6 +35,18 @@ public class ClickHouseClientConfig implements Serializable {
     private BatchFailureStrategy batchFailureStrategy = BatchFailureStrategy.STOP_FLINK;
 
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, boolean enableJsonSupportAsString) {
+        this(url, username, password, database, tableName, options, serverSettings, RetryPolicy.forever());
+        this.enableJsonSupportAsString = enableJsonSupportAsString;
+        pingLoop(initClient(database), retryPolicy);
+    }
+
+    /**
+     * Planning-time constructor used by the Table API factory: does NOT ping.
+     * Connectivity is checked explicitly via {@link #pingWithRetry()} once the factory
+     * has finished validating, so the configured retry policy (sink.max-retries)
+     * governs the ping instead of the hard-coded default.
+     */
+    public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, RetryPolicy retryPolicy) {
         this.url = url;
         this.username = username;
         this.password = password;
@@ -43,17 +55,25 @@ public class ClickHouseClientConfig implements Serializable {
         this.fullProductName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s)", ClickHouseSinkVersion.getVersion(), EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion());
         this.options = new HashMap<>(Optional.ofNullable(options).orElseGet(HashMap::new));
         this.serverSettings = new HashMap<>(Optional.ofNullable(serverSettings).orElseGet(HashMap::new));
-        this.enableJsonSupportAsString =  enableJsonSupportAsString;
+        this.enableJsonSupportAsString = false;
+        this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy must not be null");
         LOG.info("ClickHouseClientConfig: url={}, user={}, password={}, database={}", url, username, "x".repeat(password.length()), database);
-        Client clientTmp = initClient(database);
+    }
 
+    /** Pings the server, honouring the configured retry policy; throws if it stays unreachable. */
+    public void pingWithRetry() {
+        pingLoop(createClient(), retryPolicy);
+    }
+
+    private static void pingLoop(Client client, RetryPolicy retryPolicy) {
         boolean isServerAlive = false;
-        for (int i = 0; i < retryPolicy.getValueOrDefault(DEFAULT_MAX_RETRIES) && !isServerAlive; i++) {
-            isServerAlive = clientTmp.ping();
+        int maxAttempts = Math.max(1, retryPolicy.getValueOrDefault(DEFAULT_MAX_RETRIES));
+        for (int i = 0; i < maxAttempts && !isServerAlive; i++) {
+            isServerAlive = client.ping();
             if (!isServerAlive) {
                 LOG.warn(
                         "Ping failed; will retry up to {} times in {} seconds.",
-                        retryPolicy.getValueOrDefault(DEFAULT_MAX_RETRIES), 1);
+                        maxAttempts, 1);
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException ignored) {
@@ -62,7 +82,7 @@ public class ClickHouseClientConfig implements Serializable {
             }
         }
         if (!isServerAlive) {
-            throw new RuntimeException("ClickHouse server is noy accessible. Please check your configuration or ClickHouse server.");
+            throw new RuntimeException("ClickHouse server is not accessible. Please check your configuration or ClickHouse server.");
         }
     }
 

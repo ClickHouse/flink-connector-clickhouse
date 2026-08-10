@@ -56,7 +56,15 @@ dependencies {
     implementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     implementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
     implementation(project(":flink-connector-clickhouse-base"))
+    implementation(project(":flink-connector-clickhouse-table"))
+    // Table API glue (factory + sink) — provided by the Flink dist, never bundled.
+    compileOnly("org.apache.flink:flink-table-common:${project.extra["flinkVersion"]}")
 
+    testImplementation("org.apache.flink:flink-table-common:${project.extra["flinkVersion"]}")
+    testImplementation("org.apache.flink:flink-table-api-java-bridge:${project.extra["flinkVersion"]}")
+    // planner-loader keeps the planner's Scala 2.12 isolated from this module's Scala 2.13
+    testRuntimeOnly("org.apache.flink:flink-table-planner-loader:${project.extra["flinkVersion"]}")
+    testRuntimeOnly("org.apache.flink:flink-table-runtime:${project.extra["flinkVersion"]}")
     testImplementation("org.apache.flink:flink-connector-files:${project.extra["flinkVersion"]}")
     testImplementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     testImplementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
@@ -102,6 +110,7 @@ tasks.named<ShadowJar>("shadowJar") {
     dependencies {
         include(dependency("org.apache.flink.connector.clickhouse:.*"))
         include(project(":flink-connector-clickhouse-base"))
+        include(project(":flink-connector-clickhouse-table"))
         include(dependency("com.clickhouse:client-v2:${clickhouseVersion}:all"))
     }
     mergeServiceFiles()
