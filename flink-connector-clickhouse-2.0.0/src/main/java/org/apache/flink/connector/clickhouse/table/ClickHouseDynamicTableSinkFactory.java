@@ -95,42 +95,39 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
 
     @Override
     public DynamicTableSink createDynamicTableSink(Context context) {
-        FactoryUtil.TableFactoryHelper helper = FactoryUtil.createTableFactoryHelper(this, context);
-        helper.validateExcept(CLIENT_OPTIONS_PREFIX, SERVER_SETTINGS_PREFIX);
-        ReadableConfig options = helper.getOptions();
-
-        ZoneId sinkTimezone = parseSinkTimezone(options.get(SINK_TIMEZONE));
+        ReadableConfig options = validatedOptions(context);
+        // Built first so an invalid sink.timezone fails before any network call.
+        SchemaResolverOptions resolverOptions = buildResolverOptions(options);
         logIgnoredPrimaryKey(context);
 
         ClickHouseClientConfig clientConfig = buildClientConfig(context, options);
-        TableSchema clickHouseSchema = introspect(options, clientConfig);
         List<ResolvedColumnMapping> mappings = SchemaResolver.resolve(
                 context.getCatalogTable().getResolvedSchema(),
-                clickHouseSchema,
-                new SchemaResolverOptions(
-                        options.get(DATABASE), options.get(TABLE), sinkTimezone,
-                        options.get(SINK_IGNORE_UNKNOWN_FLINK_COLUMNS)));
-
-        // JSON auto-enable: send input_format_binary_read_json_as_string exactly when a
-        // JSON column is mapped — servers too old to know the setting never see it.
+                introspect(options, clientConfig),
+                resolverOptions);
+        // Servers too old to know input_format_binary_read_json_as_string never see it.
         clientConfig.setEnableJsonSupportAsString(SchemaResolver.targetsJsonColumn(mappings));
 
-        return new ClickHouseDynamicTableSink(
-                clientConfig,
-                RowDataDataMapper.of(mappings),
-                options.get(SINK_BUFFER_FLUSH_MAX_ROWS),
-                options.get(SINK_BUFFER_FLUSH_MAX_BYTES).getBytes(),
-                options.get(SINK_BUFFER_FLUSH_INTERVAL).toMillis(),
-                options.get(SINK_MAX_IN_FLIGHT_REQUESTS),
-                options.get(SINK_MAX_BUFFERED_REQUESTS),
-                options.get(SINK_RECORD_MAX_BYTES).getBytes(),
-                options.getOptional(FactoryUtil.SINK_PARALLELISM).orElse(null),
-                options.get(DATABASE) + "." + options.get(TABLE));
+        return buildSink(clientConfig, RowDataDataMapper.of(mappings), options);
     }
 
     // ------------------------------------------------------------------------------------
     // Steps
     // ------------------------------------------------------------------------------------
+
+    private ReadableConfig validatedOptions(Context context) {
+        FactoryUtil.TableFactoryHelper helper = FactoryUtil.createTableFactoryHelper(this, context);
+        helper.validateExcept(CLIENT_OPTIONS_PREFIX, SERVER_SETTINGS_PREFIX);
+        return helper.getOptions();
+    }
+
+    private static SchemaResolverOptions buildResolverOptions(ReadableConfig options) {
+        return new SchemaResolverOptions(
+                options.get(DATABASE),
+                options.get(TABLE),
+                parseSinkTimezone(options.get(SINK_TIMEZONE)),
+                options.get(SINK_IGNORE_UNKNOWN_FLINK_COLUMNS));
+    }
 
     private static ClickHouseClientConfig buildClientConfig(Context context, ReadableConfig options) {
         Map<String, String> tableOptions = context.getCatalogTable().getOptions();
@@ -148,10 +145,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         return clientConfig;
     }
 
-    /**
-     * Reads the target table's real column types. The supplier — ping, then introspect —
-     * runs only on a memoization miss, so re-invocations stay offline.
-     */
+    /** Reads the table's real column types; the ping+introspect supplier runs only on a cache miss. */
     private static TableSchema introspect(ReadableConfig options, ClickHouseClientConfig clientConfig) {
         String url = options.get(URL);
         String database = options.get(DATABASE);
@@ -166,6 +160,22 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
                     "Could not read the schema of ClickHouse table %s.%s at %s — %s",
                     database, table, url, e.getMessage()), e);
         }
+    }
+
+    private static ClickHouseDynamicTableSink buildSink(ClickHouseClientConfig clientConfig,
+                                                       RowDataDataMapper mapper,
+                                                       ReadableConfig options) {
+        return new ClickHouseDynamicTableSink(
+                clientConfig,
+                mapper,
+                options.get(SINK_BUFFER_FLUSH_MAX_ROWS),
+                options.get(SINK_BUFFER_FLUSH_MAX_BYTES).getBytes(),
+                options.get(SINK_BUFFER_FLUSH_INTERVAL).toMillis(),
+                options.get(SINK_MAX_IN_FLIGHT_REQUESTS),
+                options.get(SINK_MAX_BUFFERED_REQUESTS),
+                options.get(SINK_RECORD_MAX_BYTES).getBytes(),
+                options.getOptional(FactoryUtil.SINK_PARALLELISM).orElse(null),
+                options.get(DATABASE) + "." + options.get(TABLE));
     }
 
     private static void logIgnoredPrimaryKey(Context context) {

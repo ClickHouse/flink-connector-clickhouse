@@ -64,7 +64,7 @@ class ClickHouseTypeMapperTest {
     }
 
     @Test
-    void stringUnwrapsToUuidForUuidColumns() {
+    void stringConvertsToUuidForUuidColumns() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
                 new VarCharType(false, VarCharType.MAX_LENGTH), col("UUID"), UTC, "c");
         UUID uuid = UUID.randomUUID();

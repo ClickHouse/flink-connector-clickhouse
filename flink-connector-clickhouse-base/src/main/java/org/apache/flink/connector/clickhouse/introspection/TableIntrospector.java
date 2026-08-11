@@ -12,12 +12,12 @@ import java.util.function.Supplier;
 
 /**
  * Planning-time lookup of a ClickHouse table's real column types via client-v2's
- * {@link Client#getTableSchema(String, String)}, memoized per {@code (url, database, table)}:
- * {@code EXPLAIN}, statement sets and {@code EXECUTE PLAN} re-invoke the table factory and
- * must not ping/introspect anew. The client supplier runs only on a cache miss —
+ * {@link Client#getTableSchema(String, String)}, memoized per {@code (url, database, table)}
+ * because {@code EXPLAIN}, statement sets and {@code EXECUTE PLAN} re-invoke the table factory
+ * and must not ping or introspect anew. The client supplier runs only on a cache miss, so
  * connectivity checks belong inside it.
  *
- * <p>Lives in {@code -base}, which stays Flink-free (documented invariant).
+ * <p>Lives in {@code -base}, which stays Flink-free.
  */
 public final class TableIntrospector {
     private static final Logger LOG = LoggerFactory.getLogger(TableIntrospector.class);

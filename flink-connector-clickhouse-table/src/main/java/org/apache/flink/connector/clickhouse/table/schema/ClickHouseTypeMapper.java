@@ -38,17 +38,18 @@ import java.util.UUID;
 
 /**
  * The (Flink {@code LogicalType}, {@code ClickHouseColumn}) compatibility matrix of the
- * Table API sink: returns the {@link ValueConverter} that unwraps a Flink-internal value
- * into the plain Java value {@code DataWriter} expects, or throws a
- * {@link TypeMappingException} saying why the pair is rejected.
+ * Table API sink: returns the {@link ValueConverter} that turns a Flink-internal value into
+ * the plain Java value {@code DataWriter} expects, or throws a {@link TypeMappingException}
+ * saying why the pair is rejected.
  *
  * <p>Narrowing is rejected, lossless widening is implicit, and a signed Flink integer never
  * targets an unsigned ClickHouse integer — unsigned columns are reached via the canonical
  * pairs {@code SMALLINT}→{@code UInt8}, {@code INT}→{@code UInt16}, {@code BIGINT}→{@code UInt32},
  * {@code DECIMAL(20,0)}→{@code UInt64}.
  *
- * <p>Every {@link LogicalTypeRoot} is registered — mapped or explicitly rejected — and a
- * guard test asserts exhaustiveness.
+ * <p>{@code build*Converter} methods run once per column at planning time; {@code toPayload*}
+ * methods run per record on the TaskManager. {@code unwrap} is reserved for shedding a
+ * ClickHouse wrapper type ({@link #unwrapTransparentWrappers}).
  */
 public final class ClickHouseTypeMapper {
 
@@ -88,6 +89,9 @@ public final class ClickHouseTypeMapper {
 
     /** Digits of the largest UInt64 (18446744073709551615) — the DECIMAL(20,0) canonical pair. */
     private static final int UINT64_MAX_DIGITS = 20;
+
+    /** ClickHouse {@code Date} is UInt16 epoch days, so 2149-06-06 is its last day. */
+    private static final int DATE_MAX_EPOCH_DAY = 65535;
 
     private static final Map<LogicalTypeRoot, RootRule> RULES = buildRules();
 
@@ -170,23 +174,23 @@ public final class ClickHouseTypeMapper {
     private static Map<LogicalTypeRoot, RootRule> buildRules() {
         Map<LogicalTypeRoot, RootRule> rules = new EnumMap<>(LogicalTypeRoot.class);
 
-        rules.put(LogicalTypeRoot.BOOLEAN, ClickHouseTypeMapper::mapBoolean);
-        rules.put(LogicalTypeRoot.TINYINT, ClickHouseTypeMapper::mapTinyInt);
-        rules.put(LogicalTypeRoot.SMALLINT, ClickHouseTypeMapper::mapSmallInt);
-        rules.put(LogicalTypeRoot.INTEGER, ClickHouseTypeMapper::mapInt);
-        rules.put(LogicalTypeRoot.BIGINT, ClickHouseTypeMapper::mapBigInt);
-        rules.put(LogicalTypeRoot.DECIMAL, ClickHouseTypeMapper::mapDecimal);
-        rules.put(LogicalTypeRoot.FLOAT, ClickHouseTypeMapper::mapFloat);
-        rules.put(LogicalTypeRoot.DOUBLE, ClickHouseTypeMapper::mapDouble);
-        rules.put(LogicalTypeRoot.CHAR, ClickHouseTypeMapper::mapCharString);
-        rules.put(LogicalTypeRoot.VARCHAR, ClickHouseTypeMapper::mapCharString);
-        rules.put(LogicalTypeRoot.DATE, ClickHouseTypeMapper::mapDate);
-        rules.put(LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE, ClickHouseTypeMapper::mapTimestamp);
-        rules.put(LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE, ClickHouseTypeMapper::mapTimestampLtz);
-        rules.put(LogicalTypeRoot.ARRAY, ClickHouseTypeMapper::mapArray);
-        rules.put(LogicalTypeRoot.MAP, ClickHouseTypeMapper::mapMap);
-        rules.put(LogicalTypeRoot.MULTISET, ClickHouseTypeMapper::mapMultiset);
-        rules.put(LogicalTypeRoot.ROW, ClickHouseTypeMapper::mapRow);
+        rules.put(LogicalTypeRoot.BOOLEAN, ClickHouseTypeMapper::buildBooleanConverter);
+        rules.put(LogicalTypeRoot.TINYINT, ClickHouseTypeMapper::buildTinyIntConverter);
+        rules.put(LogicalTypeRoot.SMALLINT, ClickHouseTypeMapper::buildSmallIntConverter);
+        rules.put(LogicalTypeRoot.INTEGER, ClickHouseTypeMapper::buildIntConverter);
+        rules.put(LogicalTypeRoot.BIGINT, ClickHouseTypeMapper::buildBigIntConverter);
+        rules.put(LogicalTypeRoot.DECIMAL, ClickHouseTypeMapper::buildDecimalConverter);
+        rules.put(LogicalTypeRoot.FLOAT, ClickHouseTypeMapper::buildFloatConverter);
+        rules.put(LogicalTypeRoot.DOUBLE, ClickHouseTypeMapper::buildDoubleConverter);
+        rules.put(LogicalTypeRoot.CHAR, ClickHouseTypeMapper::buildStringConverter);
+        rules.put(LogicalTypeRoot.VARCHAR, ClickHouseTypeMapper::buildStringConverter);
+        rules.put(LogicalTypeRoot.DATE, ClickHouseTypeMapper::buildDateConverter);
+        rules.put(LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE, ClickHouseTypeMapper::buildTimestampConverter);
+        rules.put(LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE, ClickHouseTypeMapper::buildTimestampLtzConverter);
+        rules.put(LogicalTypeRoot.ARRAY, ClickHouseTypeMapper::buildArrayConverter);
+        rules.put(LogicalTypeRoot.MAP, ClickHouseTypeMapper::buildMapConverter);
+        rules.put(LogicalTypeRoot.MULTISET, ClickHouseTypeMapper::buildMultisetConverter);
+        rules.put(LogicalTypeRoot.ROW, ClickHouseTypeMapper::buildRowConverter);
 
         rules.put(LogicalTypeRoot.BINARY, rejected(
                 "the sink does not yet support binary types (DataWriter lacks a byte[] write path)"));
@@ -226,16 +230,16 @@ public final class ClickHouseTypeMapper {
     // Scalar rows
     // ------------------------------------------------------------------------------------
 
-    private static ValueConverter mapBoolean(LogicalType flinkType, ClickHouseColumn target,
-                                             ZoneId zone, String path) {
+    private static ValueConverter buildBooleanConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                       ZoneId zone, String path) {
         if (target.getDataType() == ClickHouseDataType.Bool) {
             return value -> value;
         }
         throw noConversion(flinkType, "Bool");
     }
 
-    private static ValueConverter mapTinyInt(LogicalType flinkType, ClickHouseColumn target,
-                                             ZoneId zone, String path) {
+    private static ValueConverter buildTinyIntConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                        ZoneId zone, String path) {
         switch (target.getDataType()) {
             case Int8:   return value -> value;
             case Int16:  return value -> ((Byte) value).shortValue();
@@ -247,8 +251,8 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    private static ValueConverter mapSmallInt(LogicalType flinkType, ClickHouseColumn target,
-                                              ZoneId zone, String path) {
+    private static ValueConverter buildSmallIntConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                         ZoneId zone, String path) {
         switch (target.getDataType()) {
             case Int16:  return value -> value;
             case UInt8:  return value -> ((Short) value).intValue();
@@ -260,8 +264,8 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    private static ValueConverter mapInt(LogicalType flinkType, ClickHouseColumn target,
-                                         ZoneId zone, String path) {
+    private static ValueConverter buildIntConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                    ZoneId zone, String path) {
         switch (target.getDataType()) {
             case Int32:
             case UInt16: return value -> value;
@@ -272,8 +276,8 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    private static ValueConverter mapBigInt(LogicalType flinkType, ClickHouseColumn target,
-                                            ZoneId zone, String path) {
+    private static ValueConverter buildBigIntConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                       ZoneId zone, String path) {
         switch (target.getDataType()) {
             case Int64:
             case UInt32: return value -> value;
@@ -283,8 +287,8 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    private static ValueConverter mapDecimal(LogicalType flinkType, ClickHouseColumn target,
-                                             ZoneId zone, String path) {
+    private static ValueConverter buildDecimalConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                        ZoneId zone, String path) {
         DecimalType decimalType = (DecimalType) flinkType;
         int precision = decimalType.getPrecision();
         int scale = decimalType.getScale();
@@ -334,8 +338,8 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    private static ValueConverter mapFloat(LogicalType flinkType, ClickHouseColumn target,
-                                           ZoneId zone, String path) {
+    private static ValueConverter buildFloatConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                      ZoneId zone, String path) {
         switch (target.getDataType()) {
             case Float32: return value -> value;
             case Float64: return value -> ((Float) value).doubleValue();
@@ -343,31 +347,31 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    private static ValueConverter mapDouble(LogicalType flinkType, ClickHouseColumn target,
-                                            ZoneId zone, String path) {
+    private static ValueConverter buildDoubleConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                       ZoneId zone, String path) {
         if (target.getDataType() == ClickHouseDataType.Float64) {
             return value -> value;
         }
         throw noConversion(flinkType, "Float64");
     }
 
-    private static ValueConverter mapCharString(LogicalType flinkType, ClickHouseColumn target,
-                                                ZoneId zone, String path) {
+    /** {@code CHAR}/{@code VARCHAR} arrive as {@link StringData}; every target starts from its text. */
+    private static ValueConverter buildStringConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                       ZoneId zone, String path) {
         switch (target.getDataType()) {
             case String:
             case JSON:
-                return Object::toString;
+            // A FixedString's byte length is checked at write time by DataWriter.
             case FixedString:
-                // Byte length is checked at write time by DataWriter.writeFixedString.
                 return Object::toString;
             case UUID:
-                return uuidConverter(path);
+                return buildUuidConverter(path);
             default:
                 throw noConversion(flinkType, "String, FixedString(n), UUID, JSON");
         }
     }
 
-    private static ValueConverter uuidConverter(String path) {
+    private static ValueConverter buildUuidConverter(String path) {
         return value -> {
             String text = value.toString();
             try {
@@ -379,23 +383,22 @@ public final class ClickHouseTypeMapper {
         };
     }
 
-    private static ValueConverter mapDate(LogicalType flinkType, ClickHouseColumn target,
-                                          ZoneId zone, String path) {
+    private static ValueConverter buildDateConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                     ZoneId zone, String path) {
         switch (target.getDataType()) {
             case Date32:
                 return value -> LocalDate.ofEpochDay((Integer) value);
             case Date:
-                return dateRangeCheckedConverter(path);
+                return buildRangeCheckedDateConverter(path);
             default:
                 throw noConversion(flinkType, "Date, Date32");
         }
     }
 
-    /** ClickHouse {@code Date} is UInt16 epoch days: 1970-01-01 .. 2149-06-06. */
-    private static ValueConverter dateRangeCheckedConverter(String path) {
+    private static ValueConverter buildRangeCheckedDateConverter(String path) {
         return value -> {
             int epochDay = (Integer) value;
-            if (epochDay < 0 || epochDay > 65535) {
+            if (epochDay < 0 || epochDay > DATE_MAX_EPOCH_DAY) {
                 throw new IllegalArgumentException(
                         "Column '" + path + "': DATE value " + LocalDate.ofEpochDay(epochDay)
                         + " is outside the ClickHouse Date range 1970-01-01..2149-06-06"
@@ -405,20 +408,17 @@ public final class ClickHouseTypeMapper {
         };
     }
 
-    private static ValueConverter mapTimestamp(LogicalType flinkType, ClickHouseColumn target,
-                                               ZoneId zone, String path) {
-        int precision = ((TimestampType) flinkType).getPrecision();
-        checkDateTimeTargetFits(flinkType, target, precision);
-        // Wall-clock value: interpret in sink.timezone, write instant-exactly — this keeps
-        // non-UTC DateTime(tz) columns correct.
+    /** A wall-clock value: interpreted in sink.timezone, written instant-exactly. */
+    private static ValueConverter buildTimestampConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                          ZoneId zone, String path) {
+        checkDateTimeTargetFits(flinkType, target, ((TimestampType) flinkType).getPrecision());
         return value -> ZonedDateTime.of(((TimestampData) value).toLocalDateTime(), zone);
     }
 
-    private static ValueConverter mapTimestampLtz(LogicalType flinkType, ClickHouseColumn target,
-                                                  ZoneId zone, String path) {
-        int precision = ((LocalZonedTimestampType) flinkType).getPrecision();
-        checkDateTimeTargetFits(flinkType, target, precision);
-        // Instant value: zone choice is irrelevant for the wire bytes; UTC keeps state small.
+    /** An instant: the zone cannot change the wire bytes, and UTC keeps the state small. */
+    private static ValueConverter buildTimestampLtzConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                             ZoneId zone, String path) {
+        checkDateTimeTargetFits(flinkType, target, ((LocalZonedTimestampType) flinkType).getPrecision());
         return value -> ZonedDateTime.ofInstant(((TimestampData) value).toInstant(), ZoneOffset.UTC);
     }
 
@@ -444,58 +444,52 @@ public final class ClickHouseTypeMapper {
     // Composite rows — recursive; nullability is validated structurally
     // ------------------------------------------------------------------------------------
 
-    private static ValueConverter mapArray(LogicalType flinkType, ClickHouseColumn target,
-                                           ZoneId zone, String path) {
-        if (target.getDataType() != ClickHouseDataType.Array) {
-            throw noConversion(flinkType, "Array(T)");
-        }
+    private static ValueConverter buildArrayConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                      ZoneId zone, String path) {
+        requireTargetType(target, ClickHouseDataType.Array, flinkType, "Array(T)");
         LogicalType elementType = ((ArrayType) flinkType).getElementType();
         ClickHouseColumn elementColumn = unwrapTransparentWrappers(target.getNestedColumns().get(0));
+        checkArrayElementNullability(elementType, elementColumn);
+
+        ArrayData.ElementGetter elementGetter = ArrayData.createElementGetter(elementType);
+        ValueConverter elementConverter = buildNestedConverter(
+                elementType, elementColumn, zone, path + " element", "array element");
+        return value -> toPayloadList((ArrayData) value, elementGetter, elementConverter);
+    }
+
+    /** {@code Array(Nullable(T))} is the one nested shape that can carry nulls. */
+    private static void checkArrayElementNullability(LogicalType elementType,
+                                                     ClickHouseColumn elementColumn) {
         if (elementType.isNullable() && !elementColumn.isNullable()) {
             throw TypeMappingException.mismatch(String.format(
                     "the Flink array element type %s is nullable but the ClickHouse element type %s "
                     + "is not Nullable — declare the element NOT NULL or make the element Nullable",
                     elementType.asSummaryString(), elementColumn.getOriginalTypeName()));
         }
-        ValueConverter elementConverter = converterWithContext(
-                elementType, elementColumn, zone, path + " element", "array element");
-        ArrayData.ElementGetter elementGetter = ArrayData.createElementGetter(elementType);
-        return value -> convertArray((ArrayData) value, elementGetter, elementConverter);
     }
 
-    private static List<Object> convertArray(ArrayData array, ArrayData.ElementGetter getter,
-                                             ValueConverter elementConverter) {
-        List<Object> result = new ArrayList<>(array.size());
-        for (int i = 0; i < array.size(); i++) {
-            Object element = getter.getElementOrNull(array, i);
-            result.add(element == null ? null : elementConverter.convert(element));
-        }
-        return result;
-    }
-
-    private static ValueConverter mapMap(LogicalType flinkType, ClickHouseColumn target,
-                                         ZoneId zone, String path) {
-        if (target.getDataType() != ClickHouseDataType.Map) {
-            throw noConversion(flinkType, "Map(K, V)");
-        }
+    private static ValueConverter buildMapConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                    ZoneId zone, String path) {
+        requireTargetType(target, ClickHouseDataType.Map, flinkType, "Map(K, V)");
         MapType mapType = (MapType) flinkType;
-        ValueConverter valueConverter = buildMapValueConverter(
-                mapType.getValueType(), target.getValueInfo(), zone, path);
-        return buildMapConverter(mapType.getKeyType(), mapType.getValueType(), valueConverter,
-                target, zone, path);
+        LogicalType keyType = mapType.getKeyType();
+        LogicalType valueType = mapType.getValueType();
+        ValueConverter keyConverter = buildMapKeyConverter(keyType, target.getKeyInfo(), zone, path);
+        ValueConverter valueConverter = buildMapValueConverter(valueType, target.getValueInfo(), zone, path);
+        return buildPayloadMapConverter(keyType, keyConverter, valueType, valueConverter, path);
     }
 
     /** MULTISET&lt;T&gt; is a map from T to a non-null int count, matched against {@code Map(T', UInt64)}. */
-    private static ValueConverter mapMultiset(LogicalType flinkType, ClickHouseColumn target,
-                                              ZoneId zone, String path) {
-        if (target.getDataType() != ClickHouseDataType.Map) {
-            throw noConversion(flinkType, "Map(T, UInt64)");
-        }
+    private static ValueConverter buildMultisetConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                         ZoneId zone, String path) {
+        requireTargetType(target, ClickHouseDataType.Map, flinkType, "Map(T, UInt64)");
         checkMultisetCountTarget(target);
         LogicalType elementType = ((MultisetType) flinkType).getElementType();
+        LogicalType countType = new IntType(false);
+        ValueConverter keyConverter = buildMapKeyConverter(elementType, target.getKeyInfo(), zone, path);
         // DataWriter's UInt64 write path takes a Long; the count getter yields an Integer.
         ValueConverter countConverter = count -> ((Integer) count).longValue();
-        return buildMapConverter(elementType, new IntType(false), countConverter, target, zone, path);
+        return buildPayloadMapConverter(elementType, keyConverter, countType, countConverter, path);
     }
 
     private static void checkMultisetCountTarget(ClickHouseColumn target) {
@@ -507,46 +501,62 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    private static ValueConverter buildMapConverter(LogicalType keyType, LogicalType valueType,
-                                                    ValueConverter valueConverter,
-                                                    ClickHouseColumn target, ZoneId zone, String path) {
-        ValueConverter keyConverter = buildMapKeyConverter(keyType, target.getKeyInfo(), zone, path);
+    /** Shared by MAP and MULTISET: both arrive as {@code MapData} and target a ClickHouse {@code Map}. */
+    private static ValueConverter buildPayloadMapConverter(LogicalType keyType, ValueConverter keyConverter,
+                                                      LogicalType valueType, ValueConverter valueConverter,
+                                                      String path) {
         ArrayData.ElementGetter keyGetter = ArrayData.createElementGetter(keyType);
         ArrayData.ElementGetter valueGetter = ArrayData.createElementGetter(valueType);
-        return value -> convertMap((MapData) value, keyGetter, valueGetter,
+        return value -> toPayloadMap((MapData) value, keyGetter, valueGetter,
                 keyConverter, valueConverter, path);
     }
 
     /**
-     * Keys are checkpointed as the payload map's string keys, so the converter stringifies
-     * the key and the serializer parses it back (whitelisted types only). Flink SQL marks
-     * every MAP key type nullable, so key nullability is enforced on the data at runtime,
-     * not on the type.
+     * Keys become the payload map's string keys, so the converter stringifies them and the
+     * client's serializer parses them back.
      */
     private static ValueConverter buildMapKeyConverter(LogicalType keyType, ClickHouseColumn keyColumn,
                                                        ZoneId zone, String path) {
         ClickHouseColumn effectiveKey = unwrapTransparentWrappers(keyColumn);
-        if (effectiveKey.isNullable()) {
-            throw TypeMappingException.mismatch("ClickHouse Map keys cannot be Nullable");
-        }
-        if (!STRING_RESTORABLE_MAP_KEY_TARGETS.contains(effectiveKey.getDataType())) {
-            throw TypeMappingException.mismatch(String.format(
-                    "ClickHouse Map key type %s is not supported by the sink — map keys are "
-                    + "checkpointed as strings and %s cannot be restored from a string",
-                    effectiveKey.getOriginalTypeName(), effectiveKey.getDataType()));
-        }
-        ValueConverter rawKeyConverter = converterWithContext(
+        checkMapKeyNullability(effectiveKey);
+        checkMapKeyIsRestorableFromString(effectiveKey);
+        ValueConverter keyConverter = buildNestedConverter(
                 keyType, effectiveKey, zone, path + " key", "map key");
-        return value -> String.valueOf(rawKeyConverter.convert(value));
+        return value -> String.valueOf(keyConverter.convert(value));
     }
 
     /**
-     * Nullable Map values are rejected: the client-side serializer never writes their
-     * non-null marker, so a byte-exact stream is impossible (same gap for Tuple elements).
+     * ClickHouse Map keys can never be Nullable. Flink SQL marks every MAP key type nullable, so
+     * the Flink side is exempt and a null key value fails in {@link #toPayloadMap} instead.
      */
+    private static void checkMapKeyNullability(ClickHouseColumn keyColumn) {
+        if (keyColumn.isNullable()) {
+            throw TypeMappingException.mismatch("ClickHouse Map keys cannot be Nullable");
+        }
+    }
+
+    private static void checkMapKeyIsRestorableFromString(ClickHouseColumn keyColumn) {
+        if (!STRING_RESTORABLE_MAP_KEY_TARGETS.contains(keyColumn.getDataType())) {
+            throw TypeMappingException.mismatch(String.format(
+                    "ClickHouse Map key type %s is not supported by the sink — map keys are "
+                    + "checkpointed as strings and %s cannot be restored from a string",
+                    keyColumn.getOriginalTypeName(), keyColumn.getDataType()));
+        }
+    }
+
     private static ValueConverter buildMapValueConverter(LogicalType valueType, ClickHouseColumn valueColumn,
                                                          ZoneId zone, String path) {
         ClickHouseColumn effectiveValue = unwrapTransparentWrappers(valueColumn);
+        checkMapValueNullability(valueType, valueColumn, effectiveValue);
+        return buildNestedConverter(valueType, effectiveValue, zone, path + " value", "map value");
+    }
+
+    /**
+     * Neither side may be nullable: the client's serializer never writes a Map value's
+     * non-null marker, so a Nullable value type cannot be written byte-exactly.
+     */
+    private static void checkMapValueNullability(LogicalType valueType, ClickHouseColumn valueColumn,
+                                                 ClickHouseColumn effectiveValue) {
         if (effectiveValue.isNullable()) {
             throw TypeMappingException.mismatch(String.format(
                     "Nullable Map values (%s) are not supported by the sink's serializer — "
@@ -559,15 +569,18 @@ public final class ClickHouseTypeMapper {
                     + "is not Nullable — declare the value NOT NULL",
                     valueType.asSummaryString(), valueColumn.getOriginalTypeName()));
         }
-        return converterWithContext(valueType, effectiveValue, zone, path + " value", "map value");
     }
 
-    private static Map<String, Object> convertMap(MapData map,
-                                                  ArrayData.ElementGetter keyGetter,
-                                                  ArrayData.ElementGetter valueGetter,
-                                                  ValueConverter keyConverter,
-                                                  ValueConverter valueConverter,
-                                                  String path) {
+    /**
+     * Converts every entry of a {@code MAP}/{@code MULTISET} into the string-keyed {@code Map} the
+     * payload carries. Nulls have nowhere to go here, so they fail naming the column.
+     */
+    private static Map<String, Object> toPayloadMap(MapData map,
+                                                        ArrayData.ElementGetter keyGetter,
+                                                        ArrayData.ElementGetter valueGetter,
+                                                        ValueConverter keyConverter,
+                                                        ValueConverter valueConverter,
+                                                        String path) {
         ArrayData keys = map.keyArray();
         ArrayData values = map.valueArray();
         Map<String, Object> result = new LinkedHashMap<>(map.size());
@@ -588,22 +601,25 @@ public final class ClickHouseTypeMapper {
         return result;
     }
 
-    /**
-     * ROW fields match Tuple elements positionally. Nullable Tuple elements are rejected
-     * for the same serializer gap as Nullable Map values ({@link #buildMapValueConverter}).
-     */
-    private static ValueConverter mapRow(LogicalType flinkType, ClickHouseColumn target,
-                                         ZoneId zone, String path) {
-        if (target.getDataType() != ClickHouseDataType.Tuple) {
-            throw noConversion(flinkType, "Tuple(...)");
+    /** Converts every element of an {@code ARRAY} into the plain {@code List} the payload carries. */
+    private static List<Object> toPayloadList(ArrayData array, ArrayData.ElementGetter getter,
+                                                    ValueConverter elementConverter) {
+        List<Object> result = new ArrayList<>(array.size());
+        for (int i = 0; i < array.size(); i++) {
+            Object element = getter.getElementOrNull(array, i);
+            result.add(element == null ? null : elementConverter.convert(element));
         }
+        return result;
+    }
+
+    /** ROW fields match Tuple elements positionally. */
+    private static ValueConverter buildRowConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                    ZoneId zone, String path) {
+        requireTargetType(target, ClickHouseDataType.Tuple, flinkType, "Tuple(...)");
         RowType rowType = (RowType) flinkType;
         List<ClickHouseColumn> elements = target.getNestedColumns();
-        if (rowType.getFieldCount() != elements.size()) {
-            throw TypeMappingException.mismatch(String.format(
-                    "ROW has %d fields but the Tuple has %d elements",
-                    rowType.getFieldCount(), elements.size()));
-        }
+        checkRowFieldCountMatchesTuple(rowType, elements);
+
         RowData.FieldGetter[] fieldGetters = new RowData.FieldGetter[rowType.getFieldCount()];
         ValueConverter[] fieldConverters = new ValueConverter[rowType.getFieldCount()];
         for (int i = 0; i < rowType.getFieldCount(); i++) {
@@ -611,13 +627,29 @@ public final class ClickHouseTypeMapper {
             fieldGetters[i] = RowData.createFieldGetter(field.getType(), i);
             fieldConverters[i] = buildRowFieldConverter(field, elements.get(i), i, zone, path);
         }
-        return value -> convertRow((RowData) value, fieldGetters, fieldConverters, path);
+        return value -> toPayloadTuple((RowData) value, fieldGetters, fieldConverters, path);
+    }
+
+    private static void checkRowFieldCountMatchesTuple(RowType rowType, List<ClickHouseColumn> elements) {
+        if (rowType.getFieldCount() != elements.size()) {
+            throw TypeMappingException.mismatch(String.format(
+                    "ROW has %d fields but the Tuple has %d elements",
+                    rowType.getFieldCount(), elements.size()));
+        }
     }
 
     private static ValueConverter buildRowFieldConverter(RowType.RowField field, ClickHouseColumn element,
                                                          int position, ZoneId zone, String path) {
-        ClickHouseColumn effective = unwrapTransparentWrappers(element);
-        if (effective.isNullable()) {
+        ClickHouseColumn effectiveElement = unwrapTransparentWrappers(element);
+        checkRowFieldNullability(field, element, effectiveElement, position);
+        return buildNestedConverter(field.getType(), effectiveElement, zone,
+                path + "." + field.getName(), "ROW field '" + field.getName() + "'");
+    }
+
+    /** Neither side may be nullable, for the same serializer gap as {@link #checkMapValueNullability}. */
+    private static void checkRowFieldNullability(RowType.RowField field, ClickHouseColumn element,
+                                                 ClickHouseColumn effectiveElement, int position) {
+        if (effectiveElement.isNullable()) {
             throw TypeMappingException.mismatch(String.format(
                     "Nullable Tuple elements (%s at position %d) are not supported by the "
                     + "sink's serializer — use a non-Nullable element type",
@@ -629,12 +661,11 @@ public final class ClickHouseTypeMapper {
                     + "is not Nullable — declare the field NOT NULL",
                     field.getName(), element.getOriginalTypeName()));
         }
-        return converterWithContext(field.getType(), effective, zone,
-                path + "." + field.getName(), "ROW field '" + field.getName() + "'");
     }
 
-    private static Object[] convertRow(RowData row, RowData.FieldGetter[] getters,
-                                       ValueConverter[] converters, String path) {
+    /** Converts every field of a {@code ROW} into the {@code Object[]} tuple the payload carries. */
+    private static Object[] toPayloadTuple(RowData row, RowData.FieldGetter[] getters,
+                                            ValueConverter[] converters, String path) {
         Object[] result = new Object[getters.length];
         for (int i = 0; i < getters.length; i++) {
             Object field = getters[i].getFieldOrNull(row);
@@ -652,8 +683,15 @@ public final class ClickHouseTypeMapper {
     // Shared helpers
     // ------------------------------------------------------------------------------------
 
+    private static void requireTargetType(ClickHouseColumn target, ClickHouseDataType expected,
+                                          LogicalType flinkType, String supportedTargets) {
+        if (target.getDataType() != expected) {
+            throw noConversion(flinkType, supportedTargets);
+        }
+    }
+
     /** Recurses into a nested pair, prefixing mismatch reasons with the structural context. */
-    private static ValueConverter converterWithContext(LogicalType flinkType, ClickHouseColumn column,
+    private static ValueConverter buildNestedConverter(LogicalType flinkType, ClickHouseColumn column,
                                                        ZoneId zone, String path, String context) {
         try {
             return converterFor(flinkType, column, zone, path);

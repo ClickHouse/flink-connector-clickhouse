@@ -10,7 +10,7 @@ import java.util.Objects;
 /**
  * One resolved column of the sink: the physical Flink field, the introspected ClickHouse
  * column it writes to (wrappers intact — its {@code getOriginalTypeName()} is the canonical
- * header type expression), and the accessor that unwraps the field's value.
+ * header type expression), and the accessor that converts the field's value.
  *
  * <p>Planning-time only; {@code RowDataDataMapper} extracts the serializable parts.
  */

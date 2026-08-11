@@ -7,10 +7,9 @@ import java.util.Objects;
 
 /**
  * Serializable pair of a positional {@link RowData.FieldGetter} and a {@link ValueConverter}:
- * reads one field of a {@link RowData} and unwraps it to the plain Java value its ClickHouse
- * column expects. Values are copied out of the (possibly buffer-reusing) row immediately;
- * a {@code null} field stays {@code null} — schema resolution guarantees the target column
- * is {@code Nullable}.
+ * reads one field of a {@link RowData} and converts it to the plain Java value its ClickHouse
+ * column expects. A {@code null} field stays {@code null} — schema resolution has already
+ * guaranteed the target column is {@code Nullable}.
  */
 public final class FieldAccessor implements Serializable {
     private static final long serialVersionUID = 1L;

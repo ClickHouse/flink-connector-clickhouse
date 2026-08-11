@@ -12,13 +12,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The SQL path's {@link DataMapper}: puts one TypeTags-legal Java value per resolved column
- * into the payload map, keyed by ClickHouse column name — the existing typed sink and its
- * state format stay unchanged.
+ * The SQL path's {@link DataMapper}: puts one TypeTags-legal Java value per resolved column into
+ * the payload map, keyed by ClickHouse column name, leaving the state format untouched.
  *
  * <p>{@code ClickHouseColumn} has no serialization contract, so the mapper ships
- * {@code (columnName, typeExpression)} string pairs and {@link #bindings()} re-parses them
- * on the TaskManager.
+ * {@code (columnName, typeExpression)} string pairs and {@link #bindings()} re-parses them on
+ * the TaskManager.
  */
 public class RowDataDataMapper extends DataMapper<RowData> {
     private static final long serialVersionUID = 1L;

@@ -13,7 +13,7 @@ import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.types.logical.RowType;
 
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,17 +30,20 @@ import java.util.stream.Collectors;
  */
 public final class SchemaResolver {
 
+    /** Targets whose {@code Nullable} form DataWriter cannot write a null to yet (issue #144). */
+    private static final Set<ClickHouseDataType> NULL_HANDLING_BROKEN_TARGETS = EnumSet.of(
+            ClickHouseDataType.UInt8, ClickHouseDataType.UInt16,
+            ClickHouseDataType.UInt32, ClickHouseDataType.UInt64);
+
     private SchemaResolver() {}
 
     public static List<ResolvedColumnMapping> resolve(ResolvedSchema flinkSchema,
                                                       TableSchema clickHouseSchema,
                                                       SchemaResolverOptions options) {
-        RowType physicalRow = physicalRowType(flinkSchema);
         Map<String, ClickHouseColumn> clickHouseColumns = columnsByName(clickHouseSchema);
 
         List<ResolvedColumnMapping> mappings = new ArrayList<>();
-        Set<String> mappedNames = new HashSet<>();
-        List<RowType.RowField> fields = physicalRow.getFields();
+        List<RowType.RowField> fields = physicalRowType(flinkSchema).getFields();
         for (int i = 0; i < fields.size(); i++) {
             RowType.RowField field = fields.get(i);
             checkNotReservedName(field.getName());
@@ -52,10 +55,9 @@ public final class SchemaResolver {
                 throw unknownFlinkColumn(field.getName(), clickHouseColumns, options);
             }
             mappings.add(resolveColumn(i, field, column, options));
-            mappedNames.add(field.getName());
         }
 
-        checkOmittedColumnsHaveDefaults(clickHouseSchema, mappedNames, options);
+        checkOmittedColumnsHaveDefaults(clickHouseSchema, mappedNames(mappings), options);
         checkNotEmpty(mappings, options);
         return mappings;
     }
@@ -106,10 +108,8 @@ public final class SchemaResolver {
                 column.getColumnName(), column.getOriginalTypeName(), e.getMessage()));
     }
 
-    /** MATERIALIZED/ALIAS/EPHEMERAL columns are not insertable. */
     private static void checkInsertable(String name, ClickHouseColumn column) {
-        if (column.hasDefault() && column.getDefaultValue() != null
-                && column.getDefaultValue() != ClickHouseColumn.DefaultValue.DEFAULT) {
+        if (isServerComputed(column)) {
             throw new ValidationException(String.format(
                     "Column '%s': ClickHouse column '%s %s' is %s and cannot be inserted into. "
                     + "Exclude the column from the Flink schema.",
@@ -118,16 +118,24 @@ public final class SchemaResolver {
         }
     }
 
-    /**
-     * A byte-exact header cannot carry a null, so a nullable Flink column may only target
-     * a Nullable ClickHouse column. Nullable(UInt8/16/32/64) targets are additionally
-     * rejected while DataWriter's null handling for them is broken (issue #144).
-     */
+    /** MATERIALIZED/ALIAS/EPHEMERAL columns are computed by the server, so nothing may be sent. */
+    private static boolean isServerComputed(ClickHouseColumn column) {
+        return column.hasDefault() && column.getDefaultValue() != null
+                && column.getDefaultValue() != ClickHouseColumn.DefaultValue.DEFAULT;
+    }
+
     private static void checkNullability(RowType.RowField field, ClickHouseColumn column,
                                          ClickHouseColumn effective) {
         if (!field.getType().isNullable()) {
             return;
         }
+        checkTargetIsNullable(field, column, effective);
+        checkTargetNullHandlingWorks(field, column, effective);
+    }
+
+    /** A byte-exact header cannot carry a null, so the target column must be Nullable. */
+    private static void checkTargetIsNullable(RowType.RowField field, ClickHouseColumn column,
+                                              ClickHouseColumn effective) {
         if (!effective.isNullable()) {
             throw new ValidationException(String.format(
                     "Column '%s': Flink type %s is nullable but ClickHouse column '%s %s' is not "
@@ -136,7 +144,11 @@ public final class SchemaResolver {
                     field.getName(), field.getType().asSummaryString(),
                     column.getColumnName(), column.getOriginalTypeName()));
         }
-        if (isUnsignedUpTo64(effective.getDataType())) {
+    }
+
+    private static void checkTargetNullHandlingWorks(RowType.RowField field, ClickHouseColumn column,
+                                                     ClickHouseColumn effective) {
+        if (NULL_HANDLING_BROKEN_TARGETS.contains(effective.getDataType())) {
             throw new ValidationException(String.format(
                     "Column '%s': nullable Flink type %s cannot be written to ClickHouse column "
                     + "'%s %s' — null handling for Nullable(UInt8/16/32/64) is broken in the current "
@@ -144,11 +156,6 @@ public final class SchemaResolver {
                     field.getName(), field.getType().asSummaryString(),
                     column.getColumnName(), column.getOriginalTypeName()));
         }
-    }
-
-    private static boolean isUnsignedUpTo64(ClickHouseDataType type) {
-        return type == ClickHouseDataType.UInt8 || type == ClickHouseDataType.UInt16
-                || type == ClickHouseDataType.UInt32 || type == ClickHouseDataType.UInt64;
     }
 
     /** The payload map key {@code __clickhouse_raw__} is reserved for STRING-mode payloads. */
@@ -226,6 +233,10 @@ public final class SchemaResolver {
         return clickHouseSchema.getColumns().stream().collect(Collectors.toMap(
                 ClickHouseColumn::getColumnName, c -> c,
                 (a, b) -> a, LinkedHashMap::new));
+    }
+
+    private static Set<String> mappedNames(List<ResolvedColumnMapping> mappings) {
+        return mappings.stream().map(ResolvedColumnMapping::columnName).collect(Collectors.toSet());
     }
 
     private static boolean containsJson(ClickHouseColumn column) {
