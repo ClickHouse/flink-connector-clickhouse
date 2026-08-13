@@ -13,8 +13,8 @@ CI runs the Gradle launcher on JDK 17.
 Beyond the commands in `CONTRIBUTING.md`:
 
 ```bash
-# Scala tests are a separate task, NOT covered by `test`
-./gradlew clean :flink-connector-clickhouse-1.17:runScalaTests
+# Scala tests are a separate task, NOT covered by `test`; both version modules have one
+./gradlew clean :flink-connector-clickhouse-1.17:runScalaTests :flink-connector-clickhouse-2.0.0:runScalaTests
 
 # Integration tests: publish both connectors and build the examples FIRST.
 # Skipping the example builds fails loudly; skipping the publish does NOT —
