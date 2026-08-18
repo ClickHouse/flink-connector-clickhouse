@@ -13,7 +13,6 @@ import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.types.logical.RowType;
 
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,11 +28,6 @@ import java.util.stream.Collectors;
  * order is the Flink schema's order.
  */
 public final class SchemaResolver {
-
-    /** Targets whose {@code Nullable} form DataWriter cannot write a null to yet (issue #144). */
-    private static final Set<ClickHouseDataType> NULL_HANDLING_BROKEN_TARGETS = EnumSet.of(
-            ClickHouseDataType.UInt8, ClickHouseDataType.UInt16,
-            ClickHouseDataType.UInt32, ClickHouseDataType.UInt64);
 
     private SchemaResolver() {}
 
@@ -118,8 +112,12 @@ public final class SchemaResolver {
         }
     }
 
-    /** MATERIALIZED/ALIAS/EPHEMERAL columns are computed by the server, so nothing may be sent. */
-    private static boolean isServerComputed(ClickHouseColumn column) {
+    /**
+     * MATERIALIZED/ALIAS/EPHEMERAL columns are computed by the server, so nothing may be
+     * sent. The resolver rejects them; the read-only catalog uses the same predicate to
+     * leave them out of the schemas it emits.
+     */
+    public static boolean isServerComputed(ClickHouseColumn column) {
         return column.hasDefault() && column.getDefaultValue() != null
                 && column.getDefaultValue() != ClickHouseColumn.DefaultValue.DEFAULT;
     }
@@ -148,7 +146,7 @@ public final class SchemaResolver {
 
     private static void checkTargetNullHandlingWorks(RowType.RowField field, ClickHouseColumn column,
                                                      ClickHouseColumn effective) {
-        if (NULL_HANDLING_BROKEN_TARGETS.contains(effective.getDataType())) {
+        if (ClickHouseTypeMapper.NULL_HANDLING_BROKEN_TARGETS.contains(effective.getDataType())) {
             throw new ValidationException(String.format(
                     "Column '%s': nullable Flink type %s cannot be written to ClickHouse column "
                     + "'%s %s' — null handling for Nullable(UInt8/16/32/64) is broken in the current "

@@ -1,1 +1,2 @@
 org.apache.flink.connector.clickhouse.table.ClickHouseDynamicTableSinkFactory
+org.apache.flink.connector.clickhouse.table.catalog.ClickHouseCatalogFactory
