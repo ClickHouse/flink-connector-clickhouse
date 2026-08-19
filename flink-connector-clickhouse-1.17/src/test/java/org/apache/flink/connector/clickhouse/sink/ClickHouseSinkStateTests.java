@@ -165,6 +165,43 @@ class ClickHouseSinkStateTests {
         assertTrue(ex.getMessage().contains(ClickHousePayload.RAW_KEY));
     }
 
+    @Test void conversionFailureIsPropagated() {
+        DataMapper<String> mapper = new DataMapper<String>() {
+            @Override public void toMap(String input, Map<String, Object> map) {
+                throw new IllegalStateException("bad record");
+            }
+            @Override public List<ColumnBinding> bindings() {
+                return List.of();
+            }
+        };
+        ClickHouseConvertor<String> conv = new ClickHouseConvertor<>(String.class, mapper);
+        conv.open(null);
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> conv.apply("bad", null));
+
+        assertTrue(ex.getMessage().contains("Failed to convert input"));
+        assertEquals("bad record", ex.getCause().getMessage());
+    }
+
+    @Test void nullInputIsRejected() {
+        ClickHouseConvertor<String> conv = new ClickHouseConvertor<>(String.class);
+
+        assertThrows(IllegalArgumentException.class, () -> conv.apply(null, null));
+    }
+
+    @Test void zeroSizedPayloadStateRoundTrips() throws IOException {
+        ClickHousePayload p = ClickHousePayload.ofEmpty();
+        p.setCachedBytes(new byte[0]);
+
+        ClickHouseAsyncSinkSerializer ser = new ClickHouseAsyncSinkSerializer(false);
+        BufferedRequestState<ClickHousePayload> restored = roundTrip(ser, wrap(p));
+
+        ClickHousePayload r = restored.getBufferedRequestEntries().iterator().next().getRequestEntry();
+        assertNotNull(r);
+        assertTrue(r.getData().isEmpty());
+    }
+
     @Test void schemaEvolutionMissingKeyDeserializesNull() throws IOException {
         // Serialize a Map without key "newKey"; deserialize; verify new bindings can read null safely.
         ClickHousePayload p = ClickHousePayload.ofEmpty();
