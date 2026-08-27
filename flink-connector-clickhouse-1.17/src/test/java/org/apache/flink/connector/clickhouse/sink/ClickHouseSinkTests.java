@@ -418,8 +418,11 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 tooManyPartsErrors = ClickHouseServerForTests.countQueryLogErrors(
                         getDatabase(), tableName, 252);
             }
-            // resume merges so the part count can drop below the threshold again and the
-            // retried inserts succeed; the bounded job then finishes on its own
+            // lift the throttle (back to the server default) and resume merges so the pending
+            // retries succeed immediately; draining must not race the build's merge speed
+            // against the writer's no-backoff retry loop
+            ClickHouseServerForTests.executeSql(String.format(
+                    "ALTER TABLE `%s`.`%s` MODIFY SETTING parts_to_throw_insert = 3000", getDatabase(), tableName));
             ClickHouseServerForTests.executeSql(String.format(
                     "SYSTEM START MERGES `%s`.`%s`", getDatabase(), tableName));
             Assertions.assertTrue(tooManyPartsErrors > 0,
