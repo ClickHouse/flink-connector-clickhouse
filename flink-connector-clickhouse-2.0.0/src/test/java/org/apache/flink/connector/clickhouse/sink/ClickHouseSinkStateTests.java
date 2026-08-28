@@ -134,6 +134,10 @@ class ClickHouseSinkStateTests {
 
     /** Framing identical to parent {@code AsyncSinkWriterStateSerializer}: DATA_IDENTIFIER, num_entries, [size][body]. */
     private static byte[] synthesizeV1Blob(byte[] entryPayload) throws IOException {
+        return synthesizeV1Blob(entryPayload.length + 8L, entryPayload);
+    }
+
+    private static byte[] synthesizeV1Blob(long requestSize, byte[] entryPayload) throws IOException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (DataOutputStream out = new DataOutputStream(baos)) {
             out.writeLong(-1L);                          // DATA_IDENTIFIER (parent constant)
@@ -141,10 +145,12 @@ class ClickHouseSinkStateTests {
             ByteArrayOutputStream body = new ByteArrayOutputStream();
             try (DataOutputStream b = new DataOutputStream(body)) {
                 b.writeInt(1);                           // ENTRY_BYTES_ONLY marker
-                b.writeInt(entryPayload.length);
-                b.write(entryPayload);
+                b.writeInt(entryPayload == null ? -1 : entryPayload.length);
+                if (entryPayload != null) {
+                    b.write(entryPayload);
+                }
             }
-            out.writeLong(body.size());                  // per-entry size prefix
+            out.writeLong(requestSize);                  // per-entry size prefix
             out.write(body.toByteArray());
         }
         return baos.toByteArray();
@@ -190,16 +196,29 @@ class ClickHouseSinkStateTests {
         assertThrows(IllegalArgumentException.class, () -> conv.apply(null, null));
     }
 
-    @Test void zeroSizedPayloadStateRoundTrips() throws IOException {
-        ClickHousePayload p = ClickHousePayload.ofEmpty();
-        p.setCachedBytes(new byte[0]);
+    @Test void negativeRequestSizeIsRecomputedFromRestoredRawPayload() throws IOException {
+        byte[] legacyPayload = new byte[]{1, 2, 3};
+        byte[] blob = synthesizeV1Blob(-1L, legacyPayload);
 
-        ClickHouseAsyncSinkSerializer ser = new ClickHouseAsyncSinkSerializer(false);
-        BufferedRequestState<ClickHousePayload> restored = roundTrip(ser, wrap(p));
+        ClickHouseAsyncSinkSerializer ser = new ClickHouseAsyncSinkSerializer(true);
+        BufferedRequestState<ClickHousePayload> restored = ser.deserialize(1, blob);
 
-        ClickHousePayload r = restored.getBufferedRequestEntries().iterator().next().getRequestEntry();
-        assertNotNull(r);
-        assertTrue(r.getData().isEmpty());
+        RequestEntryWrapper<ClickHousePayload> wrapper =
+                restored.getBufferedRequestEntries().iterator().next();
+        assertEquals(legacyPayload.length, wrapper.getSize());
+    }
+
+    @Test void nullLegacyPayloadWithNegativeRequestSizeRestoresAsEmpty() throws IOException {
+        byte[] blob = synthesizeV1Blob(-1L, null);
+
+        ClickHouseAsyncSinkSerializer ser = new ClickHouseAsyncSinkSerializer(true);
+        BufferedRequestState<ClickHousePayload> restored = ser.deserialize(1, blob);
+
+        RequestEntryWrapper<ClickHousePayload> wrapper =
+                restored.getBufferedRequestEntries().iterator().next();
+        assertEquals(0L, wrapper.getSize());
+        assertArrayEquals(new byte[0],
+                (byte[]) wrapper.getRequestEntry().getData().get(ClickHousePayload.RAW_KEY));
     }
 
     @Test void schemaEvolutionMissingKeyDeserializesNull() throws IOException {
