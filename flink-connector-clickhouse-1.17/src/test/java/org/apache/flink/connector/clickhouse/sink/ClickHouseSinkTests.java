@@ -22,6 +22,7 @@ import org.apache.flink.connector.file.src.FileSource;
 import org.apache.flink.connector.file.src.reader.TextLineInputFormat;
 import org.apache.flink.connector.test.FlinkClusterTests;
 import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests;
+import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
@@ -33,6 +34,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 import static org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests.*;
 import static org.apache.flink.connector.clickhouse.sink.ClickHouseSinkTestUtils.*;
@@ -347,6 +349,8 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         In this test, we lower the parts_to_throw_insert setting (https://clickhouse.com/docs/operations/settings/merge-tree-settings#parts_to_throw_insert) to trigger the "Too Many Parts" error more easily.
         Once we exceed this threshold, ClickHouse will reject INSERT operations with a "Too Many Parts" error.
         Our retry implementation will demonstrate how it handles these failures by retrying the inserts until all rows are successfully inserted. We will make the batch size two records to observe this behavior.
+        Merges are stopped so the threshold is crossed deterministically instead of racing the
+        merge scheduler (issue #156), then resumed after the first rejection so retries succeed.
     */
     @Test
     void SimplePOJODataTooManyPartsTest() throws Exception {
@@ -358,7 +362,8 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         // create table
         String tableSql = SimplePOJO.createTableSQL(getDatabase(), tableName, 10);
         ClickHouseServerForTests.executeSql(tableSql);
-        //ClickHouseServerForTests.executeSql(String.format("SYSTEM STOP MERGES `%s.%s`", getDatabase(), tableName));
+        ClickHouseServerForTests.executeSql(String.format(
+                "SYSTEM STOP MERGES `%s`.`%s`", getDatabase(), tableName));
 
         TableSchema simpleTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
         DataMapper<SimplePOJO> simplePOJOMapper = new SimplePOJODataMapper();
@@ -399,18 +404,37 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         // send to a sink
         simplePOJOs.sinkTo(simplePOJOSink);
 
-        int rows = executeBlockingJob(env, tableName);
-
-        // flush ClickHouse's query log so the system.query_log is queryable immediately
-        ClickHouseServerForTests.executeSql("SYSTEM FLUSH LOGS");
-
-        // directly verify that 'Too Many Parts' errors occurred (code 252) - this means the connector retried the batch at least once
-        int tooManyPartsErrors = ClickHouseServerForTests.countQueryLogErrors(
-                getDatabase(), tableName, 252);
-        Assertions.assertTrue(tooManyPartsErrors > 0,
-                "Expected at least one 'Too Many Parts' error in system.query_log, but found none");
+        // the job cannot be executed blocking: while merges are stopped every insert past the
+        // threshold fails and is retried forever, so the job only finishes once merges resume
+        JobClient jobClient = env.executeAsync("SimplePOJODataTooManyPartsTest");
+        try {
+            // wait until ClickHouse has rejected at least one insert with 'Too Many Parts'
+            // (code 252) - this means the connector retried the batch at least once
+            int tooManyPartsErrors = 0;
+            for (int i = 0; i < 60 && tooManyPartsErrors == 0; i++) {
+                Thread.sleep(1000);
+                // flush ClickHouse's query log so the system.query_log is queryable immediately
+                ClickHouseServerForTests.executeSql("SYSTEM FLUSH LOGS");
+                tooManyPartsErrors = ClickHouseServerForTests.countQueryLogErrors(
+                        getDatabase(), tableName, 252);
+            }
+            // lift the throttle (back to the server default) and resume merges so the pending
+            // retries succeed immediately; draining must not race the build's merge speed
+            // against the writer's no-backoff retry loop
+            ClickHouseServerForTests.executeSql(String.format(
+                    "ALTER TABLE `%s`.`%s` MODIFY SETTING parts_to_throw_insert = 3000", getDatabase(), tableName));
+            ClickHouseServerForTests.executeSql(String.format(
+                    "SYSTEM START MERGES `%s`.`%s`", getDatabase(), tableName));
+            Assertions.assertTrue(tooManyPartsErrors > 0,
+                    "Expected at least one 'Too Many Parts' error in system.query_log, but found none");
+            jobClient.getJobExecutionResult().get(5, TimeUnit.MINUTES);
+        } finally {
+            // no-op once the job has finished; on failure it stops the forever-retrying writers
+            jobClient.cancel();
+        }
 
         // verify all rows landed after retries succeeded
+        int rows = ClickHouseServerForTests.countRows(tableName);
         Assertions.assertEquals(EXPECTED_ROWS, rows);
     }
 
@@ -801,6 +825,10 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
         String tableSql = SimplePOJO.createTableSQL(getDatabase(), tableName, 10);
         ClickHouseServerForTests.executeSql(tableSql);
+        // stop merges (never resumed - the job is expected to fail) so the threshold is
+        // crossed deterministically instead of racing the merge scheduler (issue #156)
+        ClickHouseServerForTests.executeSql(String.format(
+                "SYSTEM STOP MERGES `%s`.`%s`", getDatabase(), tableName));
 
         TableSchema simpleTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
         DataMapper<SimplePOJO> simplePOJOMapper = new SimplePOJODataMapper();
@@ -811,9 +839,9 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
                 getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
         // Bounded budget: the writer's retry path has no backoff, so a small budget
-        // exhausts within milliseconds — long before background merges clear the
-        // "Too Many Parts" condition. The job must fail with the original
-        // RetriableException after attemptCount > 2.
+        // exhausts within milliseconds. With merges stopped and never resumed, the
+        // condition holds and the job must fail with the original RetriableException
+        // after attemptCount > 2.
         clickHouseClientConfig.setRetryPolicy(RetryPolicy.limited(2));
         clickHouseClientConfig.setSupportDefault(simpleTableSchema.hasDefaults());
         clickHouseClientConfig.setServerSettings(Collections.singletonMap("async_insert", "0"));
