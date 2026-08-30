@@ -32,13 +32,13 @@ jobs:
           java-version: '17'
           distribution: 'adopt'
           architecture: x64
-      - name: Setup and execute Gradle 'test' task
-        uses: gradle/gradle-build-action@v2
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Execute Gradle 'test' task
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
           FLINK_VERSION: ${{ matrix.flink }}
-        with:
-          arguments: :flink-connector-clickhouse-1.17:runScalaTests
+        run: ./gradlew :flink-connector-clickhouse-1.17:runScalaTests
   test-flink-2:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -55,9 +55,9 @@ jobs:
           java-version: '17'
           distribution: 'adopt'
           architecture: x64
-      - name: Setup and execute Gradle 'test' task
-        uses: gradle/gradle-build-action@v2
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Execute Gradle 'test' task
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
-        with:
-          arguments: :flink-connector-clickhouse-2.0.0:runScalaTests
+        run: ./gradlew :flink-connector-clickhouse-2.0.0:runScalaTests
