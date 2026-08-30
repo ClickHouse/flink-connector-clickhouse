@@ -4,14 +4,12 @@ import com.clickhouse.data.ClickHouseColumn;
 import com.clickhouse.data.ClickHouseDataType;
 
 import org.apache.flink.connector.clickhouse.table.data.ValueConverter;
-import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.data.ArrayData;
 import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.data.MapData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
-import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.IntType;
@@ -52,8 +50,6 @@ import java.util.UUID;
  * <p>{@code build*Converter} methods run once per column at planning time; {@code toPayload*}
  * methods run per record on the TaskManager. {@code unwrap} is reserved for shedding a
  * ClickHouse wrapper type ({@link #unwrapTransparentWrappers}).
- *
- * <p>Also hosts the reverse direction ({@link #toFlinkType}), used by the read-only catalog.
  */
 public final class ClickHouseTypeMapper {
 
@@ -90,11 +86,6 @@ public final class ClickHouseTypeMapper {
             ClickHouseDataType.Int64, ClickHouseDataType.Int128, ClickHouseDataType.Int256,
             ClickHouseDataType.UInt8, ClickHouseDataType.UInt16, ClickHouseDataType.UInt32,
             ClickHouseDataType.UInt64, ClickHouseDataType.UInt128, ClickHouseDataType.UInt256);
-
-    /** Targets whose {@code Nullable} form DataWriter cannot write a null to yet (issue #144). */
-    static final Set<ClickHouseDataType> NULL_HANDLING_BROKEN_TARGETS = EnumSet.of(
-            ClickHouseDataType.UInt8, ClickHouseDataType.UInt16,
-            ClickHouseDataType.UInt32, ClickHouseDataType.UInt64);
 
     /** Digits of the largest UInt64 (18446744073709551615) — the DECIMAL(20,0) canonical pair. */
     private static final int UINT64_MAX_DIGITS = 20;
@@ -686,126 +677,6 @@ public final class ClickHouseTypeMapper {
             result[i] = converters[i].convert(field);
         }
         return result;
-    }
-
-    // ------------------------------------------------------------------------------------
-    // Reverse matrix — ClickHouse → Flink, for the read-only catalog
-    // ------------------------------------------------------------------------------------
-
-    /**
-     * The matrix's reverse direction: the Flink type a user would have declared by hand for
-     * {@code column}, or a {@link TypeMappingException} when no declarable Flink type can
-     * write it. Correctness invariant, locked by the round-trip test: every emitted type
-     * passes {@link #converterFor} — and therefore {@code SchemaResolver} — against the very
-     * column it came from.
-     */
-    public static DataType toFlinkType(ClickHouseColumn column) {
-        ClickHouseColumn target = unwrapTransparentWrappers(column);
-        DataType flinkType = toFlinkTypeOf(target).notNull();
-        return emitsNullable(target) ? flinkType.nullable() : flinkType;
-    }
-
-    /**
-     * {@code Nullable(UInt8/16/32/64)} is clamped to NOT NULL: DataWriter cannot write its
-     * nulls yet (issue #144), and {@code SchemaResolver}'s error for the nullable pairing
-     * tells the user to declare exactly that.
-     */
-    private static boolean emitsNullable(ClickHouseColumn target) {
-        return target.isNullable() && !NULL_HANDLING_BROKEN_TARGETS.contains(target.getDataType());
-    }
-
-    private static DataType toFlinkTypeOf(ClickHouseColumn target) {
-        switch (target.getDataType()) {
-            case Bool:        return DataTypes.BOOLEAN();
-            case Int8:        return DataTypes.TINYINT();
-            case Int16:
-            case UInt8:       return DataTypes.SMALLINT();
-            case Int32:
-            case UInt16:      return DataTypes.INT();
-            case Int64:
-            case UInt32:      return DataTypes.BIGINT();
-            case UInt64:      return DataTypes.DECIMAL(UINT64_MAX_DIGITS, 0);
-            case Int128:
-            case Int256:
-            case UInt128:
-            case UInt256:     return DataTypes.DECIMAL(DecimalType.MAX_PRECISION, 0);
-            case Float32:     return DataTypes.FLOAT();
-            case Float64:     return DataTypes.DOUBLE();
-            case Decimal:
-            case Decimal32:
-            case Decimal64:
-            case Decimal128:
-            case Decimal256:  return toFlinkDecimal(target);
-            case String:
-            // Not CHAR(n): FixedString is n bytes, not n characters, and CHAR's implicit
-            // space padding would corrupt values — DataWriter checks the byte length instead.
-            case FixedString:
-            case UUID:
-            case JSON:        return DataTypes.STRING();
-            case Date:
-            case Date32:      return DataTypes.DATE();
-            // DateTime stores an instant (epoch seconds); its timezone is display metadata.
-            case DateTime:    return DataTypes.TIMESTAMP_LTZ(0);
-            case DateTime64:  return DataTypes.TIMESTAMP_LTZ(target.getScale());
-            case Array:       return toFlinkArray(target);
-            case Map:         return toFlinkMap(target);
-            case Tuple:       return toFlinkRow(target);
-            default:
-                throw TypeMappingException.targetUnsupported(
-                        unsupportedTargetReason(target.getDataType()));
-        }
-    }
-
-    /**
-     * Precision beyond Flink DECIMAL's 38 digits is capped, not rejected: a sink only writes
-     * what Flink can hold, and DECIMAL(38, s) is the widest declarable type the forward
-     * matrix accepts for the column. Only a scale beyond 38 digits has no counterpart.
-     */
-    private static DataType toFlinkDecimal(ClickHouseColumn target) {
-        int scale = target.getScale();
-        if (scale > DecimalType.MAX_PRECISION) {
-            throw TypeMappingException.mismatch(String.format(
-                    "scale %d exceeds Flink DECIMAL's maximum of %d digits",
-                    scale, DecimalType.MAX_PRECISION));
-        }
-        return DataTypes.DECIMAL(Math.min(target.getPrecision(), DecimalType.MAX_PRECISION), scale);
-    }
-
-    private static DataType toFlinkArray(ClickHouseColumn target) {
-        return DataTypes.ARRAY(toFlinkType(target.getNestedColumns().get(0)));
-    }
-
-    private static DataType toFlinkMap(ClickHouseColumn target) {
-        checkMapKeyIsRestorableFromString(unwrapTransparentWrappers(target.getKeyInfo()));
-        if (unwrapTransparentWrappers(target.getValueInfo()).isNullable()) {
-            throw TypeMappingException.mismatch(String.format(
-                    "Nullable Map values (%s) are not supported by the sink's serializer, so "
-                    + "no declarable Flink schema can write them",
-                    target.getValueInfo().getOriginalTypeName()));
-        }
-        return DataTypes.MAP(toFlinkType(target.getKeyInfo()), toFlinkType(target.getValueInfo()));
-    }
-
-    private static DataType toFlinkRow(ClickHouseColumn target) {
-        List<ClickHouseColumn> elements = target.getNestedColumns();
-        DataTypes.Field[] fields = new DataTypes.Field[elements.size()];
-        for (int i = 0; i < elements.size(); i++) {
-            ClickHouseColumn element = elements.get(i);
-            if (unwrapTransparentWrappers(element).isNullable()) {
-                throw TypeMappingException.mismatch(String.format(
-                        "Nullable Tuple elements (%s at position %d) are not supported by the "
-                        + "sink's serializer, so no declarable Flink schema can write them",
-                        element.getOriginalTypeName(), i + 1));
-            }
-            fields[i] = DataTypes.FIELD(rowFieldName(element, i), toFlinkType(element));
-        }
-        return DataTypes.ROW(fields);
-    }
-
-    /** Unnamed Tuple elements get positional names; ROW ↔ Tuple matching is positional anyway. */
-    private static String rowFieldName(ClickHouseColumn element, int position) {
-        String name = element.getColumnName();
-        return name == null || name.isEmpty() ? "f" + position : name;
     }
 
     // ------------------------------------------------------------------------------------
