@@ -39,10 +39,18 @@ dependencies {
     implementation("org.apache.logging.log4j:log4j-core:${project.extra["log4jVersion"]}")
 
     // ClickHouse Client Libraries
-    implementation("com.clickhouse:client-v2:${clickhouseVersion}:all")
+    // Exclude the client's external lz4: the ':all' jar embeds it, and from client 0.10 the
+    // at.yawk.lz4 fork capability-clashes with Flink's org.lz4:lz4-java (#160).
+    implementation("com.clickhouse:client-v2:${clickhouseVersion}:all") {
+        exclude(group = "org.lz4", module = "lz4-java")
+        exclude(group = "at.yawk.lz4", module = "lz4-java")
+    }
 
     // For testing
-    testFixturesImplementation("com.clickhouse:client-v2:${clickhouseVersion}:all")
+    testFixturesImplementation("com.clickhouse:client-v2:${clickhouseVersion}:all") {
+        exclude(group = "org.lz4", module = "lz4-java")
+        exclude(group = "at.yawk.lz4", module = "lz4-java")
+    }
     testFixturesImplementation("org.testcontainers:testcontainers:${project.extra["testContainersVersion"]}")
     testFixturesImplementation("org.testcontainers:clickhouse:${project.extra["testContainersVersion"]}")
     testFixturesImplementation("com.squareup.okhttp3:okhttp:5.1.0")
