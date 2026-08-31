@@ -14,6 +14,7 @@ import org.apache.flink.table.types.logical.DateType;
 import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
+import org.apache.flink.table.types.logical.MapType;
 import org.apache.flink.table.types.logical.MultisetType;
 import org.apache.flink.table.types.logical.SmallIntType;
 import org.apache.flink.table.types.logical.TimestampType;
@@ -184,6 +185,38 @@ class ClickHouseTypeMapperTest {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> converter.convert(new GenericMapData(counts)));
         assertTrue(e.getMessage().contains("MULTISET count -1"), e.getMessage());
+    }
+
+    @Test
+    void uInt64MapKeysAreRejectedAtPlanning() {
+        // client-v2 hardcodes Long.parseLong for UInt64 map keys, so keys above 2^63-1 fail.
+        MapType mapType = new MapType(false,
+                new DecimalType(false, 20, 0), new VarCharType(false, VarCharType.MAX_LENGTH));
+        TypeMappingException e = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(mapType, col("Map(UInt64, String)"), UTC, "c"));
+        assertTrue(e.getMessage().contains("Map keys of type UInt64"), e.getMessage());
+        assertTrue(e.getMessage().contains("upper half of the UInt64 range"), e.getMessage());
+
+        TypeMappingException multisetError = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(
+                        new MultisetType(false, new DecimalType(false, 20, 0)),
+                        col("Map(UInt64, UInt64)"), UTC, "c"));
+        assertTrue(multisetError.getMessage().contains("Map keys of type UInt64"),
+                multisetError.getMessage());
+    }
+
+    @Test
+    void uInt128MapKeysStayAccepted() {
+        // UInt128 keys use client-v2's BigInteger parse — the full range round-trips.
+        MapType mapType = new MapType(false,
+                new DecimalType(false, 38, 0), new VarCharType(false, VarCharType.MAX_LENGTH));
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                mapType, col("Map(UInt128, String)"), UTC, "c");
+        Map<Object, Object> entries = new LinkedHashMap<>();
+        entries.put(DecimalData.fromBigDecimal(new BigDecimal("18446744073709551616"), 38, 0),
+                StringData.fromString("v"));
+        assertEquals(Map.of("18446744073709551616", "v"),
+                converter.convert(new GenericMapData(entries)));
     }
 
     @Test

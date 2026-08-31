@@ -1,19 +1,10 @@
 # Code review findings — feat/42-table-api-sql-sink
 
-Review of `main...HEAD` (~2,900 added lines: Table API/SQL sink). 9 open findings, ordered by priority — original numbering kept. Findings 1–6 (stale planner schema memo, credential-less cache key, planner-side client leak, `sink.max-retries` driving the planning ping, unvalidated signed→unsigned writes, unchecked Date32/DateTime/DateTime64 ranges) were fixed on this branch (de-memoized `TableIntrospector`; `createPlanningClient()` is closed after introspection and pings a fixed 3 attempts, re-interrupting on cancel; unsigned and date/datetime converters range-check per record naming the column) and removed. Where a finding says "identical in the 1.17 copy", apply the fix to both the `flink-connector-clickhouse-2.0.0` and `flink-connector-clickhouse-1.17` variants of the file.
+Review of `main...HEAD` (~2,900 added lines: Table API/SQL sink). 8 open findings, ordered by priority — original numbering kept. Findings 1–7 (stale planner schema memo, credential-less cache key, planner-side client leak, `sink.max-retries` driving the planning ping, unvalidated signed→unsigned writes, unchecked Date32/DateTime/DateTime64 ranges, UInt64 map keys unparseable by the client) were fixed on this branch (de-memoized `TableIntrospector`; `createPlanningClient()` is closed after introspection and pings a fixed 3 attempts, re-interrupting on cancel; unsigned and date/datetime converters range-check per record naming the column; UInt64 map keys rejected at planning) and removed. Where a finding says "identical in the 1.17 copy", apply the fix to both the `flink-connector-clickhouse-2.0.0` and `flink-connector-clickhouse-1.17` variants of the file.
 
 ---
 
 ## High priority
-
-### 7. UInt64 map keys are re-parsed via `Long.parseLong`
-`flink-connector-clickhouse-table/src/main/java/org/apache/flink/connector/clickhouse/table/schema/ClickHouseTypeMapper.java:83`
-
-UInt64 is whitelisted as a string-restorable Map key type, but the client serializer re-parses stringified UInt64 keys with `Long.parseLong`.
-
-**Failure:** `MAP<DECIMAL(20,0) NOT NULL, ...>` mapped to `Map(UInt64, ...)` passes planning; key `18446744073709551615` → `SerializerUtils.convertToLong` → `NumberFormatException` at flush (job death under default `stop-flink`); key `"-1"` parses and is written via unchecked `writeUnsignedInt64(long)` as 18446744073709551615 — silent corruption. Int128/UInt128/Int256/UInt256 keys use BigInteger parsing and are fine.
-
-**Fix direction:** Either route UInt64 keys through the BigInteger path or remove UInt64 from the string-restorable key whitelist (reject at planning).
 
 ### 8. PASSWORD option's "masked in logs and EXPLAIN" claim is false
 `flink-connector-clickhouse-table/src/main/java/org/apache/flink/connector/clickhouse/table/ClickHouseConnectorOptions.java:41`

@@ -81,14 +81,15 @@ public final class ClickHouseTypeMapper {
     /**
      * Map key types the sink supports: keys are checkpointed as strings (the state format
      * requires string map keys) and only these types parse back from a string in the
-     * client's serializer.
+     * client's serializer. UInt64 is absent because client-v2's SerializerUtils hardcodes
+     * Long.parseLong for it, so keys above 2^63-1 fail.
      */
     private static final Set<ClickHouseDataType> STRING_RESTORABLE_MAP_KEY_TARGETS = EnumSet.of(
             ClickHouseDataType.String, ClickHouseDataType.FixedString,
             ClickHouseDataType.Int8, ClickHouseDataType.Int16, ClickHouseDataType.Int32,
             ClickHouseDataType.Int64, ClickHouseDataType.Int128, ClickHouseDataType.Int256,
             ClickHouseDataType.UInt8, ClickHouseDataType.UInt16, ClickHouseDataType.UInt32,
-            ClickHouseDataType.UInt64, ClickHouseDataType.UInt128, ClickHouseDataType.UInt256);
+            ClickHouseDataType.UInt128, ClickHouseDataType.UInt256);
 
     /** Digits of the largest UInt64 (18446744073709551615) — the DECIMAL(20,0) canonical pair. */
     private static final int UINT64_MAX_DIGITS = 20;
@@ -640,12 +641,20 @@ public final class ClickHouseTypeMapper {
     }
 
     private static void checkMapKeyIsRestorableFromString(ClickHouseColumn keyColumn) {
-        if (!STRING_RESTORABLE_MAP_KEY_TARGETS.contains(keyColumn.getDataType())) {
-            throw TypeMappingException.mismatch(String.format(
-                    "ClickHouse Map key type %s is not supported by the sink — map keys are "
-                    + "checkpointed as strings and %s cannot be restored from a string",
-                    keyColumn.getOriginalTypeName(), keyColumn.getDataType()));
+        if (STRING_RESTORABLE_MAP_KEY_TARGETS.contains(keyColumn.getDataType())) {
+            return;
         }
+        if (keyColumn.getDataType() == ClickHouseDataType.UInt64) {
+            throw TypeMappingException.mismatch(
+                    "ClickHouse Map keys of type UInt64 are not supported by the sink — map keys "
+                    + "are checkpointed as strings and the client serializer restores them with a "
+                    + "signed-long parse, which fails for the upper half of the UInt64 range; "
+                    + "use an Int64 or UInt128 key column instead");
+        }
+        throw TypeMappingException.mismatch(String.format(
+                "ClickHouse Map key type %s is not supported by the sink — map keys are "
+                + "checkpointed as strings and %s cannot be restored from a string",
+                keyColumn.getOriginalTypeName(), keyColumn.getDataType()));
     }
 
     private static ValueConverter buildMapValueConverter(LogicalType valueType, ClickHouseColumn valueColumn,
