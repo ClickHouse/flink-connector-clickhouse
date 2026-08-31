@@ -163,6 +163,23 @@ public class ClickHouseTableApiIntegrationTests {
     }
 
     @Test
+    void negativeBigIntIntoUInt32FailsNamingTheColumn() throws Exception {
+        String table = "table_api_unsigned";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, hits UInt32) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_unsigned", table, "id BIGINT NOT NULL, hits BIGINT NOT NULL"));
+
+        Exception e = Assertions.assertThrows(Exception.class,
+                () -> env.executeSql("INSERT INTO ch_unsigned VALUES (1, -1)").await());
+        Assertions.assertTrue(exceptionChainContains(e,
+                        "Column 'hits': value -1 is outside the UInt32 range"),
+                "Unexpected failure: " + e);
+    }
+
+    @Test
     void unknownFlinkColumnFailsAtPlanningWithPreciseMessage() throws Exception {
         String table = "table_api_reject";
         ClickHouseServerForTests.executeSql(String.format(

@@ -3,16 +3,25 @@ package org.apache.flink.connector.clickhouse.table.schema;
 import com.clickhouse.data.ClickHouseColumn;
 
 import org.apache.flink.connector.clickhouse.table.data.ValueConverter;
+import org.apache.flink.table.data.DecimalData;
+import org.apache.flink.table.data.GenericArrayData;
 import org.apache.flink.table.data.GenericMapData;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
+import org.apache.flink.table.types.logical.ArrayType;
+import org.apache.flink.table.types.logical.BigIntType;
+import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.MultisetType;
+import org.apache.flink.table.types.logical.SmallIntType;
 import org.apache.flink.table.types.logical.TimestampType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -121,6 +130,68 @@ class ClickHouseTypeMapperTest {
                 () -> ClickHouseTypeMapper.converterFor(
                         multisetOfString(), col("Map(String, UInt32)"), UTC, "c"));
         assertTrue(e.getMessage().contains("exactly UInt64"), e.getMessage());
+    }
+
+    @Test
+    void unsignedTargetsRejectSignAndOverflowNamingTheColumn() {
+        ValueConverter toUInt8 = ClickHouseTypeMapper.converterFor(
+                new SmallIntType(false), col("UInt8"), UTC, "c");
+        assertEquals(255, toUInt8.convert((short) 255));
+        assertRangeError(() -> toUInt8.convert((short) -1), "UInt8 range 0..255");
+        assertRangeError(() -> toUInt8.convert((short) 256), "UInt8 range 0..255");
+
+        ValueConverter toUInt16 = ClickHouseTypeMapper.converterFor(
+                new IntType(false), col("UInt16"), UTC, "c");
+        assertEquals(65535, toUInt16.convert(65535));
+        assertRangeError(() -> toUInt16.convert(-1), "UInt16 range 0..65535");
+        assertRangeError(() -> toUInt16.convert(65536), "UInt16 range 0..65535");
+
+        ValueConverter toUInt32 = ClickHouseTypeMapper.converterFor(
+                new BigIntType(false), col("UInt32"), UTC, "c");
+        assertEquals(4294967295L, toUInt32.convert(4294967295L));
+        assertRangeError(() -> toUInt32.convert(-1L), "UInt32 range 0..4294967295");
+        assertRangeError(() -> toUInt32.convert(4294967296L), "UInt32 range 0..4294967295");
+    }
+
+    @Test
+    void decimalToUInt64IsRangeCheckedPerRecord() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                new DecimalType(false, 20, 0), col("UInt64"), UTC, "c");
+        assertEquals(new BigInteger("18446744073709551615"),
+                converter.convert(decimal("18446744073709551615")));
+        // 20 digits pass the planning precision check but exceed UInt64's maximum.
+        assertRangeError(() -> converter.convert(decimal("99999999999999999999")), "UInt64 range");
+        assertRangeError(() -> converter.convert(decimal("-1")), "unsigned type UInt64");
+    }
+
+    @Test
+    void nestedUnsignedValuesAreRangeCheckedToo() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                new ArrayType(false, new BigIntType(false)), col("Array(UInt32)"), UTC, "c");
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> converter.convert(new GenericArrayData(new long[]{1L, -1L})));
+        assertTrue(e.getMessage().contains("Column 'c element'"), e.getMessage());
+    }
+
+    @Test
+    void multisetRejectsNegativeCounts() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                multisetOfString(), col("Map(String, UInt64)"), UTC, "c");
+        Map<Object, Object> counts = new LinkedHashMap<>();
+        counts.put(StringData.fromString("a"), -1);
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> converter.convert(new GenericMapData(counts)));
+        assertTrue(e.getMessage().contains("MULTISET count -1"), e.getMessage());
+    }
+
+    private static void assertRangeError(Executable call, String expectedFragment) {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, call);
+        assertTrue(e.getMessage().contains("Column 'c'"), e.getMessage());
+        assertTrue(e.getMessage().contains(expectedFragment), e.getMessage());
+    }
+
+    private static DecimalData decimal(String unscaled) {
+        return DecimalData.fromBigDecimal(new BigDecimal(unscaled), 20, 0);
     }
 
     private static MultisetType multisetOfString() {

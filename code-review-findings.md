@@ -1,19 +1,10 @@
 # Code review findings — feat/42-table-api-sql-sink
 
-Review of `main...HEAD` (~2,900 added lines: Table API/SQL sink). 11 open findings, ordered by priority — original numbering kept. Findings 1–4 (stale planner schema memo, credential-less cache key, planner-side client leak, `sink.max-retries` driving the planning ping) were fixed on this branch (de-memoized `TableIntrospector`; `createPlanningClient()` is closed after introspection and pings a fixed 3 attempts, re-interrupting on cancel) and removed. Where a finding says "identical in the 1.17 copy", apply the fix to both the `flink-connector-clickhouse-2.0.0` and `flink-connector-clickhouse-1.17` variants of the file.
+Review of `main...HEAD` (~2,900 added lines: Table API/SQL sink). 10 open findings, ordered by priority — original numbering kept. Findings 1–5 (stale planner schema memo, credential-less cache key, planner-side client leak, `sink.max-retries` driving the planning ping, unvalidated signed→unsigned writes) were fixed on this branch (de-memoized `TableIntrospector`; `createPlanningClient()` is closed after introspection and pings a fixed 3 attempts, re-interrupting on cancel; unsigned converters range-check per record naming the column) and removed. Where a finding says "identical in the 1.17 copy", apply the fix to both the `flink-connector-clickhouse-2.0.0` and `flink-connector-clickhouse-1.17` variants of the file.
 
 ---
 
 ## High priority
-
-### 5. Signed→unsigned mappings have no sign/range validation
-`flink-connector-clickhouse-table/src/main/java/org/apache/flink/connector/clickhouse/table/schema/ClickHouseTypeMapper.java:283`
-
-The canonical signed→unsigned pairs (SMALLINT→UInt8, INT→UInt16, BIGINT→UInt32, DECIMAL(20,0)→UInt64) are validated neither at planning nor in the converters.
-
-**Failure:** BIGINT `-1` into UInt32 (or DECIMAL(20,0) value `99999999999999999999` into UInt64, which passes the precision-20 planning check since UInt64.MAX is 18446744073709551615) → at flush `BinaryStreamUtils` throws `IllegalArgumentException "long(-1) should be between 0 and 4294967295..."` with no column/row context, and the default `stop-flink` strategy kills the job on one bad row. The same `-1` nested inside an Array/Map/Tuple, or as a MULTISET count, goes through the unchecked `writeUnsignedInt64(long)`/`SerializerUtils` path and is **silently stored** as 18446744073709551615.
-
-**Fix direction:** Range-check in the converters (top-level and nested uniformly) and throw an error naming the column and value, mirroring the existing DATE→Date check.
 
 ### 6. Date32/DateTime64 writes skip range checks; DateTime error is column-less
 `flink-connector-clickhouse-table/src/main/java/org/apache/flink/connector/clickhouse/table/schema/ClickHouseTypeMapper.java:389`

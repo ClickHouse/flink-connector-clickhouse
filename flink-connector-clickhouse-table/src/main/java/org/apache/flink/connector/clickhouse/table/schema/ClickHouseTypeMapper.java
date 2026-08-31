@@ -45,7 +45,9 @@ import java.util.UUID;
  * <p>Narrowing is rejected, lossless widening is implicit, and a signed Flink integer never
  * targets an unsigned ClickHouse integer — unsigned columns are reached via the canonical
  * pairs {@code SMALLINT}→{@code UInt8}, {@code INT}→{@code UInt16}, {@code BIGINT}→{@code UInt32},
- * {@code DECIMAL(20,0)}→{@code UInt64}.
+ * {@code DECIMAL(20,0)}→{@code UInt64}, whose values are range-checked per record: the wire
+ * format cannot represent a sign, and the client's writer would otherwise fail without the
+ * column name or (UInt64 inside composites) wrap the value silently.
  *
  * <p>{@code build*Converter} methods run once per column at planning time; {@code toPayload*}
  * methods run per record on the TaskManager. {@code unwrap} is reserved for shedding a
@@ -89,6 +91,9 @@ public final class ClickHouseTypeMapper {
 
     /** Digits of the largest UInt64 (18446744073709551615) — the DECIMAL(20,0) canonical pair. */
     private static final int UINT64_MAX_DIGITS = 20;
+
+    /** The largest UInt64 itself — 20 digits admit values above it, so writes re-check. */
+    private static final BigInteger UINT64_MAX = new BigInteger("18446744073709551615");
 
     /** ClickHouse {@code Date} is UInt16 epoch days, so 2149-06-06 is its last day. */
     private static final int DATE_MAX_EPOCH_DAY = 65535;
@@ -255,7 +260,7 @@ public final class ClickHouseTypeMapper {
                                                          ZoneId zone, String path) {
         switch (target.getDataType()) {
             case Int16:  return value -> value;
-            case UInt8:  return value -> ((Short) value).intValue();
+            case UInt8:  return value -> (int) checkUnsignedRange((Short) value, 255L, "UInt8", path);
             case Int32:  return value -> ((Short) value).intValue();
             case Int64:  return value -> ((Short) value).longValue();
             case Int128:
@@ -267,8 +272,8 @@ public final class ClickHouseTypeMapper {
     private static ValueConverter buildIntConverter(LogicalType flinkType, ClickHouseColumn target,
                                                     ZoneId zone, String path) {
         switch (target.getDataType()) {
-            case Int32:
-            case UInt16: return value -> value;
+            case Int32:  return value -> value;
+            case UInt16: return value -> (int) checkUnsignedRange((Integer) value, 65535L, "UInt16", path);
             case Int64:  return value -> ((Integer) value).longValue();
             case Int128:
             case Int256: return value -> BigInteger.valueOf((Integer) value);
@@ -279,8 +284,8 @@ public final class ClickHouseTypeMapper {
     private static ValueConverter buildBigIntConverter(LogicalType flinkType, ClickHouseColumn target,
                                                        ZoneId zone, String path) {
         switch (target.getDataType()) {
-            case Int64:
-            case UInt32: return value -> value;
+            case Int64:  return value -> value;
+            case UInt32: return value -> checkUnsignedRange((Long) value, 4294967295L, "UInt32", path);
             case Int128:
             case Int256: return value -> BigInteger.valueOf((Long) value);
             default:     throw noConversion(flinkType, "Int64, UInt32, Int128, Int256");
@@ -302,11 +307,13 @@ public final class ClickHouseTypeMapper {
                 return value -> ((DecimalData) value).toBigDecimal();
             case Int128:
             case Int256:
+                checkDecimalFitsInteger(precision, scale, target);
+                return value -> ((DecimalData) value).toBigDecimal().toBigIntegerExact();
             case UInt64:
             case UInt128:
             case UInt256:
                 checkDecimalFitsInteger(precision, scale, target);
-                return value -> ((DecimalData) value).toBigDecimal().toBigIntegerExact();
+                return buildRangeCheckedUnsignedDecimalConverter(target.getDataType(), path);
             default:
                 throw noConversion(flinkType, "Decimal(p,s), Int128, Int256, UInt64, UInt128, UInt256");
         }
@@ -336,6 +343,28 @@ public final class ClickHouseTypeMapper {
             throw TypeMappingException.mismatch(String.format(
                     "precision %d exceeds UInt64's %d digits", precision, UINT64_MAX_DIGITS));
         }
+    }
+
+    /**
+     * DECIMAL(p, 0) → UInt64/UInt128/UInt256: a sign never fits an unsigned column, and
+     * UInt64's maximum sits below the 20-digit precision the planning check admits.
+     */
+    private static ValueConverter buildRangeCheckedUnsignedDecimalConverter(ClickHouseDataType targetType,
+                                                                            String path) {
+        return value -> {
+            BigInteger integer = ((DecimalData) value).toBigDecimal().toBigIntegerExact();
+            if (integer.signum() < 0) {
+                throw new IllegalArgumentException(
+                        "Column '" + path + "': value " + integer
+                        + " is negative and cannot be written to the unsigned type " + targetType);
+            }
+            if (targetType == ClickHouseDataType.UInt64 && integer.compareTo(UINT64_MAX) > 0) {
+                throw new IllegalArgumentException(
+                        "Column '" + path + "': value " + integer
+                        + " is outside the UInt64 range 0.." + UINT64_MAX);
+            }
+            return integer;
+        };
     }
 
     private static ValueConverter buildFloatConverter(LogicalType flinkType, ClickHouseColumn target,
@@ -488,8 +517,21 @@ public final class ClickHouseTypeMapper {
         LogicalType countType = new IntType(false);
         ValueConverter keyConverter = buildMapKeyConverter(elementType, target.getKeyInfo(), zone, path);
         // DataWriter's UInt64 write path takes a Long; the count getter yields an Integer.
-        ValueConverter countConverter = count -> ((Integer) count).longValue();
+        ValueConverter countConverter = buildMultisetCountConverter(path);
         return buildPayloadMapConverter(elementType, keyConverter, countType, countConverter, path);
+    }
+
+    /** Counts are non-negative by definition; a corrupt negative count must not wrap into UInt64. */
+    private static ValueConverter buildMultisetCountConverter(String path) {
+        return count -> {
+            int value = (Integer) count;
+            if (value < 0) {
+                throw new IllegalArgumentException(
+                        "Column '" + path + "': MULTISET count " + value
+                        + " is negative and cannot be written to UInt64");
+            }
+            return (long) value;
+        };
     }
 
     private static void checkMultisetCountTarget(ClickHouseColumn target) {
@@ -682,6 +724,19 @@ public final class ClickHouseTypeMapper {
     // ------------------------------------------------------------------------------------
     // Shared helpers
     // ------------------------------------------------------------------------------------
+
+    /**
+     * Unsigned targets reject sign/overflow per record, mirroring the DATE→Date range check:
+     * the client's writer would otherwise fail without naming the column.
+     */
+    private static long checkUnsignedRange(long value, long max, String targetType, String path) {
+        if (value < 0 || value > max) {
+            throw new IllegalArgumentException(
+                    "Column '" + path + "': value " + value + " is outside the "
+                    + targetType + " range 0.." + max);
+        }
+        return value;
+    }
 
     private static void requireTargetType(ClickHouseColumn target, ClickHouseDataType expected,
                                           LogicalType flinkType, String supportedTargets) {
