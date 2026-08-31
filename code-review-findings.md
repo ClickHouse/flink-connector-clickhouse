@@ -1,19 +1,10 @@
 # Code review findings — feat/42-table-api-sql-sink
 
-Review of `main...HEAD` (~2,900 added lines: Table API/SQL sink). 12 open findings, ordered by priority — original numbering kept. Findings 1–3 (stale planner schema memo, credential-less cache key, planner-side client leak) were fixed on this branch (de-memoized `TableIntrospector`; `createPlanningClient()` pings and is closed after introspection) and removed. Where a finding says "identical in the 1.17 copy", apply the fix to both the `flink-connector-clickhouse-2.0.0` and `flink-connector-clickhouse-1.17` variants of the file.
+Review of `main...HEAD` (~2,900 added lines: Table API/SQL sink). 11 open findings, ordered by priority — original numbering kept. Findings 1–4 (stale planner schema memo, credential-less cache key, planner-side client leak, `sink.max-retries` driving the planning ping) were fixed on this branch (de-memoized `TableIntrospector`; `createPlanningClient()` is closed after introspection and pings a fixed 3 attempts, re-interrupting on cancel) and removed. Where a finding says "identical in the 1.17 copy", apply the fix to both the `flink-connector-clickhouse-2.0.0` and `flink-connector-clickhouse-1.17` variants of the file.
 
 ---
 
 ## High priority
-
-### 4. `sink.max-retries` drives a blocking, uncancellable planning-time ping loop with inverted `-1` semantics
-`flink-connector-clickhouse-2.0.0/src/main/java/org/apache/flink/connector/clickhouse/sink/ClickHouseClientConfig.java:88` (identical in the 1.17 copy)
-
-`sink.max-retries` — a runtime batch-retry knob also consumed by `ClickHouseAsyncWriter` — directly becomes the planning-time ping attempt count (via `createPlanningClient()`, on every plan) with a 1s sleep per attempt. The loop is uncancellable because `catch (InterruptedException ignored)` swallows the flag without re-interrupt, and the default `-1` ("retry forever") inverts to pinging only `DEFAULT_MAX_RETRIES=3` times.
-
-**Failure:** `'sink.max-retries' = '1000'` for batch resilience + briefly unreachable endpoint at submission → `createDynamicTableSink` blocks up to ~1000×(ping timeout+1s) on the planning thread; cancelling the statement drops the interrupt flag and keeps looping. Meanwhile any finite value > 3 out-pings "forever".
-
-**Fix direction:** Decouple planning-time ping attempts from `sink.max-retries` (use a small fixed count or a dedicated option) and re-interrupt on `InterruptedException`.
 
 ### 5. Signed→unsigned mappings have no sign/range validation
 `flink-connector-clickhouse-table/src/main/java/org/apache/flink/connector/clickhouse/table/schema/ClickHouseTypeMapper.java:283`

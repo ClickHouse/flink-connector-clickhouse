@@ -138,6 +138,31 @@ public class ClickHouseTableApiIntegrationTests {
     }
 
     @Test
+    void planningPingIsNotGovernedBySinkMaxRetries() {
+        TableEnvironment env = tableEnvironment();
+        // Port 1 never listens, so every ping fails immediately with connection refused.
+        env.executeSql(
+                "CREATE TABLE ch_unreachable (id BIGINT NOT NULL) WITH ("
+                        + "'connector' = 'clickhouse',"
+                        + "'url' = 'http://localhost:1',"
+                        + "'username' = 'default',"
+                        + "'password' = '',"
+                        + "'database' = 'default',"
+                        + "'table' = 'whatever',"
+                        + "'sink.max-retries' = '100000')");
+
+        long start = System.nanoTime();
+        Exception e = Assertions.assertThrows(Exception.class,
+                () -> env.executeSql("INSERT INTO ch_unreachable VALUES (1)"));
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+        Assertions.assertTrue(exceptionChainContains(e, "not accessible"), "Unexpected failure: " + e);
+        // The ping is a fixed 3 attempts with 1s pauses; 100 000 attempts would block for days.
+        Assertions.assertTrue(elapsedMs < 60_000,
+                "Planning ping blocked for " + elapsedMs + "ms — is sink.max-retries driving it again?");
+    }
+
+    @Test
     void unknownFlinkColumnFailsAtPlanningWithPreciseMessage() throws Exception {
         String table = "table_api_reject";
         ClickHouseServerForTests.executeSql(String.format(

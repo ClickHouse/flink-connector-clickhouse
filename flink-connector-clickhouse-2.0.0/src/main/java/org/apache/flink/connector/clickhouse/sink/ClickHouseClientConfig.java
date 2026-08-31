@@ -37,13 +37,13 @@ public class ClickHouseClientConfig implements Serializable {
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, boolean enableJsonSupportAsString) {
         this(url, username, password, database, tableName, options, serverSettings, RetryPolicy.forever());
         this.enableJsonSupportAsString = enableJsonSupportAsString;
-        pingLoop(initClient(database), retryPolicy);
+        pingLoop(initClient(database));
     }
 
     /**
      * No-ping constructor for the Table API factory: connectivity is checked separately via
-     * {@link #createPlanningClient()}, so the configured retry policy (sink.max-retries)
-     * governs the ping instead of the hard-coded default.
+     * {@link #createPlanningClient()} on a short-lived client the factory closes after
+     * introspection. The retry policy governs runtime batch retries only, never the ping.
      */
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, RetryPolicy retryPolicy) {
         this.url = url;
@@ -68,14 +68,14 @@ public class ClickHouseClientConfig implements Serializable {
     }
 
     /**
-     * Builds a fresh client for planning-time use and verifies connectivity with the
-     * configured retry policy. Bypasses the cached runtime client so nothing long-lived
-     * is left open planner-side; the caller owns the returned client and must close it.
+     * Builds a fresh client for planning-time use and verifies connectivity with a short
+     * fixed ping. Bypasses the cached runtime client so nothing long-lived is left open
+     * planner-side; the caller owns the returned client and must close it.
      */
     public Client createPlanningClient() {
         Client planningClient = initClient(database);
         try {
-            pingLoop(planningClient, retryPolicy);
+            pingLoop(planningClient);
         } catch (RuntimeException e) {
             planningClient.close();
             throw e;
@@ -83,19 +83,25 @@ public class ClickHouseClientConfig implements Serializable {
         return planningClient;
     }
 
-    private static void pingLoop(Client client, RetryPolicy retryPolicy) {
+    /**
+     * Pings up to {@link #DEFAULT_MAX_RETRIES} times, 1s apart — a fixed bound, deliberately
+     * not governed by sink.max-retries, which configures runtime batch retries: reusing it
+     * here would let a batch-resilience setting block planning for minutes. An interrupt
+     * stops the loop and is re-asserted for the caller.
+     */
+    private static void pingLoop(Client client) {
         boolean isServerAlive = false;
-        int maxAttempts = Math.max(1, retryPolicy.getValueOrDefault(DEFAULT_MAX_RETRIES));
-        for (int i = 0; i < maxAttempts && !isServerAlive; i++) {
+        for (int i = 0; i < DEFAULT_MAX_RETRIES && !isServerAlive; i++) {
             isServerAlive = client.ping();
             if (!isServerAlive) {
                 LOG.warn(
                         "Ping failed; will retry up to {} times in {} seconds.",
-                        maxAttempts, 1);
+                        DEFAULT_MAX_RETRIES, 1);
                 try {
                     Thread.sleep(1000);
-                } catch (InterruptedException ignored) {
-
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
                 }
             }
         }
