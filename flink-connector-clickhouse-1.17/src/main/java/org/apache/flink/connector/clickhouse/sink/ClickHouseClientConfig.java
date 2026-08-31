@@ -42,8 +42,8 @@ public class ClickHouseClientConfig implements Serializable {
 
     /**
      * No-ping constructor for the Table API factory: connectivity is checked separately via
-     * {@link #pingWithRetry()}, so the configured retry policy (sink.max-retries) governs
-     * the ping instead of the hard-coded default.
+     * {@link #createPlanningClient()}, so the configured retry policy (sink.max-retries)
+     * governs the ping instead of the hard-coded default.
      */
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, RetryPolicy retryPolicy) {
         this.url = url;
@@ -67,9 +67,20 @@ public class ClickHouseClientConfig implements Serializable {
         this(url, username, password, database, tableName, new HashMap<>(), new HashMap<>(), enableJsonSupport);
     }
 
-    /** Pings the server, honouring the configured retry policy; throws if it stays unreachable. */
-    public void pingWithRetry() {
-        pingLoop(createClient(), retryPolicy);
+    /**
+     * Builds a fresh client for planning-time use and verifies connectivity with the
+     * configured retry policy. Bypasses the cached runtime client so nothing long-lived
+     * is left open planner-side; the caller owns the returned client and must close it.
+     */
+    public Client createPlanningClient() {
+        Client planningClient = initClient(database);
+        try {
+            pingLoop(planningClient, retryPolicy);
+        } catch (RuntimeException e) {
+            planningClient.close();
+            throw e;
+        }
+        return planningClient;
     }
 
     private static void pingLoop(Client client, RetryPolicy retryPolicy) {

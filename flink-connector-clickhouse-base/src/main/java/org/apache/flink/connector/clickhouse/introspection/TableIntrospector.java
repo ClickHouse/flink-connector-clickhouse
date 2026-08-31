@@ -6,29 +6,27 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.function.Supplier;
 
 /**
  * Planning-time lookup of a ClickHouse table's real column types via client-v2's
- * {@link Client#getTableSchema(String, String)}, memoized per {@code (url, database, table)}
- * because {@code EXPLAIN}, statement sets and {@code EXECUTE PLAN} re-invoke the table factory
- * and must not ping or introspect anew. The client supplier runs only on a cache miss, so
- * connectivity checks belong inside it.
+ * {@link Client#getTableSchema(String, String)}. Deliberately unmemoized: planning must
+ * validate against the table as it exists now, and a JVM-wide memo goes stale after
+ * {@code ALTER TABLE} in a long-lived planner (SQL gateway, session cluster). {@code EXPLAIN},
+ * statement sets and {@code EXECUTE PLAN} re-invoke the table factory, so each invocation
+ * costs one short-lived client — created by the supplier (connectivity checks belong inside
+ * it), closed before returning.
  *
  * <p>Lives in {@code -base}, which stays Flink-free.
  */
 public final class TableIntrospector {
     private static final Logger LOG = LoggerFactory.getLogger(TableIntrospector.class);
 
-    private static final ConcurrentMap<String, TableSchema> CACHE = new ConcurrentHashMap<>();
-
     private TableIntrospector() {}
 
     /**
-     * Returns the schema of {@code database.table} — through the supplied client on first
-     * use, from the memo on every re-invocation with the same {@code (url, database, table)}.
+     * Returns the current schema of {@code database.table}, read through the client the
+     * supplier creates; the client is closed before returning.
      */
     public static TableSchema introspect(String url, String database, String table,
                                          Supplier<Client> clientSupplier) {
@@ -36,19 +34,9 @@ public final class TableIntrospector {
         Objects.requireNonNull(database, "database");
         Objects.requireNonNull(table, "table");
         Objects.requireNonNull(clientSupplier, "clientSupplier");
-        return CACHE.computeIfAbsent(cacheKey(url, database, table), key -> {
-            LOG.info("Introspecting ClickHouse table {}.{} at {}", database, table, url);
-            return clientSupplier.get().getTableSchema(table, database);
-        });
-    }
-
-    /** Drops all memoized schemas — intended for tests. */
-    public static void clearCache() {
-        CACHE.clear();
-    }
-
-    private static String cacheKey(String url, String database, String table) {
-        // NUL (octal escape) cannot appear in identifiers, so the key is collision-free.
-        return url + '\0' + database + '\0' + table;
+        LOG.info("Introspecting ClickHouse table {}.{} at {}", database, table, url);
+        try (Client client = clientSupplier.get()) {
+            return client.getTableSchema(table, database);
+        }
     }
 }

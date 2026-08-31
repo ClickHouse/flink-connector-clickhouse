@@ -79,7 +79,7 @@ public class ClickHouseTableApiIntegrationTests {
                 + "'123e4567-e89b-12d3-a456-426614174000', DATE '1970-01-01', false, -1.5, "
                 + "ARRAY['x'], MAP['k2', 'v2'])";
 
-        // EXPLAIN re-invokes the factory; introspection must be memoized, not re-run.
+        // EXPLAIN re-invokes the factory; the INSERT below plans again and re-introspects.
         Assertions.assertFalse(env.explainSql(insert).isEmpty());
         env.executeSql(insert).await();
 
@@ -108,6 +108,33 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals("1970-01-01", second.getString("day_s"));
         Assertions.assertFalse(second.getBoolean("is_active"));
         Assertions.assertEquals("['x']", second.getString("tags_s"));
+    }
+
+    @Test
+    void replanningAfterAlterSeesTheCurrentSchema() throws Exception {
+        String table = "table_api_alter";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_alter_before", table, "id BIGINT NOT NULL"));
+        // Introspect once pre-ALTER, so a schema memo (were one to exist) would be populated.
+        Assertions.assertFalse(env.explainSql("INSERT INTO ch_alter_before VALUES (1)").isEmpty());
+
+        ClickHouseServerForTests.executeSql(String.format(
+                "ALTER TABLE `%s`.`%s` ADD COLUMN label String",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        // Same-JVM re-planning must see the post-ALTER schema and accept the new column.
+        env.executeSql(sinkDdl("ch_alter_after", table, "id BIGINT NOT NULL, label STRING NOT NULL"));
+        env.executeSql("INSERT INTO ch_alter_after VALUES (7, 'post-alter')").await();
+
+        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+                "id, label", ClickHouseServerForTests.getDatabase(), table, "id");
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals(7L, rows.get(0).getLong("id"));
+        Assertions.assertEquals("post-alter", rows.get(0).getString("label"));
     }
 
     @Test

@@ -51,9 +51,10 @@ import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOpt
  * introspect the target table → resolve the schema → build the sink. All option, schema
  * and connectivity errors surface here, at planning time.
  *
- * <p>Re-invoked by {@code EXPLAIN}, statement sets and {@code EXECUTE PLAN} —
- * ping + introspection are memoized per {@code (url, database, table)} inside
- * {@link TableIntrospector}.
+ * <p>Re-invoked by {@code EXPLAIN}, statement sets and {@code EXECUTE PLAN} — each
+ * invocation pings and introspects anew through a short-lived client, so planning always
+ * validates against the table's current schema, even after {@code ALTER TABLE} in a
+ * long-lived planner JVM (SQL gateway, session cluster).
  */
 public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactory {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseDynamicTableSinkFactory.class);
@@ -145,16 +146,14 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         return clientConfig;
     }
 
-    /** Reads the table's real column types; the ping+introspect supplier runs only on a cache miss. */
+    /** Reads the table's current column types through a short-lived, pinged client. */
     private static TableSchema introspect(ReadableConfig options, ClickHouseClientConfig clientConfig) {
         String url = options.get(URL);
         String database = options.get(DATABASE);
         String table = options.get(TABLE);
         try {
-            return TableIntrospector.introspect(url, database, table, () -> {
-                clientConfig.pingWithRetry();
-                return clientConfig.createClient();
-            });
+            return TableIntrospector.introspect(url, database, table,
+                    clientConfig::createPlanningClient);
         } catch (Exception e) {
             throw new ValidationException(String.format(
                     "Could not read the schema of ClickHouse table %s.%s at %s — %s",
