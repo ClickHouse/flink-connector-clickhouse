@@ -56,7 +56,7 @@ public class ClickHouseClientConfig implements Serializable {
         this.serverSettings = new HashMap<>(Optional.ofNullable(serverSettings).orElseGet(HashMap::new));
         this.enableJsonSupportAsString = false;
         this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy must not be null");
-        LOG.info("ClickHouseClientConfig: url={}, user={}, password={}, database={}", url, username, "x".repeat(password.length()), database);
+        LOG.info("ClickHouseClientConfig: url={}, user={}, password=******, database={}", url, username, database);
     }
 
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName) {

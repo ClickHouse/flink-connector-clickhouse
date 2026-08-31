@@ -1,19 +1,6 @@
 # Code review findings — feat/42-table-api-sql-sink
 
-Review of `main...HEAD` (~2,900 added lines: Table API/SQL sink). 8 open findings, ordered by priority — original numbering kept. Findings 1–7 (stale planner schema memo, credential-less cache key, planner-side client leak, `sink.max-retries` driving the planning ping, unvalidated signed→unsigned writes, unchecked Date32/DateTime/DateTime64 ranges, UInt64 map keys unparseable by the client) were fixed on this branch (de-memoized `TableIntrospector`; `createPlanningClient()` is closed after introspection and pings a fixed 3 attempts, re-interrupting on cancel; unsigned and date/datetime converters range-check per record naming the column; UInt64 map keys rejected at planning) and removed. Where a finding says "identical in the 1.17 copy", apply the fix to both the `flink-connector-clickhouse-2.0.0` and `flink-connector-clickhouse-1.17` variants of the file.
-
----
-
-## High priority
-
-### 8. PASSWORD option's "masked in logs and EXPLAIN" claim is false
-`flink-connector-clickhouse-table/src/main/java/org/apache/flink/connector/clickhouse/table/ClickHouseConnectorOptions.java:41`
-
-No masking exists beyond one constructor log line (which still leaks the password length). EXPLAIN merely omits options, while `SHOW CREATE TABLE` and `COMPILE PLAN`/`EXECUTE PLAN` JSON — which the factory javadoc explicitly advertises — emit the cleartext password verbatim (verified: Flink's `ResolvedCatalogTableJsonSerializer` and `ShowCreateUtil` write options unfiltered).
-
-**Failure:** A user trusts the description, runs `COMPILE PLAN FOR INSERT INTO ch_events ...`, and the plan file contains `'password' = '<cleartext>'`; the file gets checked into VCS, leaking the credential.
-
-**Fix direction:** Correct the option description and README (state plainly that the password appears in catalog/plan serializations), and consider Flink's supported mechanisms for secret options if applicable. Do not claim masking the code doesn't do.
+Review of `main...HEAD` (~2,900 added lines: Table API/SQL sink). 7 open findings, ordered by priority — original numbering kept. Findings 1–8 (stale planner schema memo, credential-less cache key, planner-side client leak, `sink.max-retries` driving the planning ping, unvalidated signed→unsigned writes, unchecked Date32/DateTime/DateTime64 ranges, UInt64 map keys unparseable by the client, false password-masking claim) were fixed on this branch (de-memoized `TableIntrospector`; `createPlanningClient()` is closed after introspection and pings a fixed 3 attempts, re-interrupting on cancel; unsigned and date/datetime converters range-check per record naming the column; UInt64 map keys rejected at planning; the password description now states the catalog/plan exposure and the log no longer leaks its length) and removed. Where a finding says "identical in the 1.17 copy", apply the fix to both the `flink-connector-clickhouse-2.0.0` and `flink-connector-clickhouse-1.17` variants of the file.
 
 ---
 

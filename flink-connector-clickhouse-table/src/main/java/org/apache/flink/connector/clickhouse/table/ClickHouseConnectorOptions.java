@@ -38,7 +38,10 @@ public final class ClickHouseConnectorOptions {
             .key("password")
             .stringType()
             .defaultValue("")
-            .withDescription("ClickHouse password (masked in logs and EXPLAIN).");
+            .withDescription("ClickHouse password. Stored verbatim in the catalog table's "
+                    + "options: SHOW CREATE TABLE prints it in cleartext and COMPILE PLAN "
+                    + "embeds it in the plan file unless 'table.plan.compile.catalog-objects' "
+                    + "is lowered from its default 'ALL'.");
 
     public static final ConfigOption<String> DATABASE = ConfigOptions
             .key("database")
