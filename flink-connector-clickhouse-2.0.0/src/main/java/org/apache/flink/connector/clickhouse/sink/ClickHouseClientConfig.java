@@ -29,7 +29,7 @@ public class ClickHouseClientConfig implements Serializable {
     private Boolean supportDefault = null;
     private final Map<String, String> options;
     private final Map<String, String> serverSettings;
-    private boolean enableJsonSupportAsString = true;
+    private boolean enableJsonSupportAsString;
     private transient Client client = null;
     private RetryPolicy retryPolicy = RetryPolicy.forever();
     private BatchFailureStrategy batchFailureStrategy = BatchFailureStrategy.STOP_FLINK;
@@ -44,6 +44,9 @@ public class ClickHouseClientConfig implements Serializable {
      * No-ping constructor for the Table API factory: connectivity is checked separately via
      * {@link #createPlanningClient()} on a short-lived client the factory closes after
      * introspection. The retry policy governs runtime batch retries only, never the ping.
+     *
+     * <p>JSON-as-string stays disabled here; the factory enables it via
+     * {@link #setEnableJsonSupportAsString} once schema resolution maps a JSON column.
      */
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, RetryPolicy retryPolicy) {
         this.url = url;
@@ -54,7 +57,6 @@ public class ClickHouseClientConfig implements Serializable {
         this.fullProductName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s)", ClickHouseSinkVersion.getVersion(), EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion());
         this.options = new HashMap<>(Optional.ofNullable(options).orElseGet(HashMap::new));
         this.serverSettings = new HashMap<>(Optional.ofNullable(serverSettings).orElseGet(HashMap::new));
-        this.enableJsonSupportAsString = false;
         this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy must not be null");
         LOG.info("ClickHouseClientConfig: url={}, user={}, password=******, database={}", url, username, database);
     }
