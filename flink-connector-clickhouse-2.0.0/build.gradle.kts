@@ -106,6 +106,9 @@ sourceSets {
         }
         java {
             srcDirs("src/test/java")
+            // Table API / SQL unit tests, run here against this module's Flink — the
+            // LogicalTypeRoot exhaustiveness guard can only fire on the generation under test
+            srcDir(project(":flink-connector-clickhouse-table").file("src/test/java"))
         }
     }
 }
