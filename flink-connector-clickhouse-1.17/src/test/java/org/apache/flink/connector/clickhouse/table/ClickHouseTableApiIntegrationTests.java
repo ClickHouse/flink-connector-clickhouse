@@ -180,6 +180,24 @@ public class ClickHouseTableApiIntegrationTests {
     }
 
     @Test
+    void outOfRangeDate32FailsNamingTheColumn() throws Exception {
+        String table = "table_api_date32";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, event_day Date32) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_date32", table, "id BIGINT NOT NULL, event_day DATE NOT NULL"));
+
+        // Pre-fix this was written raw and stored as a different date, with no error anywhere.
+        Exception e = Assertions.assertThrows(Exception.class,
+                () -> env.executeSql("INSERT INTO ch_date32 VALUES (1, DATE '9999-12-31')").await());
+        Assertions.assertTrue(exceptionChainContains(e,
+                        "Column 'event_day': DATE value 9999-12-31 is outside the ClickHouse Date32 range"),
+                "Unexpected failure: " + e);
+    }
+
+    @Test
     void unknownFlinkColumnFailsAtPlanningWithPreciseMessage() throws Exception {
         String table = "table_api_reject";
         ClickHouseServerForTests.executeSql(String.format(

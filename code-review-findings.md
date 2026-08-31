@@ -1,19 +1,10 @@
 # Code review findings — feat/42-table-api-sql-sink
 
-Review of `main...HEAD` (~2,900 added lines: Table API/SQL sink). 10 open findings, ordered by priority — original numbering kept. Findings 1–5 (stale planner schema memo, credential-less cache key, planner-side client leak, `sink.max-retries` driving the planning ping, unvalidated signed→unsigned writes) were fixed on this branch (de-memoized `TableIntrospector`; `createPlanningClient()` is closed after introspection and pings a fixed 3 attempts, re-interrupting on cancel; unsigned converters range-check per record naming the column) and removed. Where a finding says "identical in the 1.17 copy", apply the fix to both the `flink-connector-clickhouse-2.0.0` and `flink-connector-clickhouse-1.17` variants of the file.
+Review of `main...HEAD` (~2,900 added lines: Table API/SQL sink). 9 open findings, ordered by priority — original numbering kept. Findings 1–6 (stale planner schema memo, credential-less cache key, planner-side client leak, `sink.max-retries` driving the planning ping, unvalidated signed→unsigned writes, unchecked Date32/DateTime/DateTime64 ranges) were fixed on this branch (de-memoized `TableIntrospector`; `createPlanningClient()` is closed after introspection and pings a fixed 3 attempts, re-interrupting on cancel; unsigned and date/datetime converters range-check per record naming the column) and removed. Where a finding says "identical in the 1.17 copy", apply the fix to both the `flink-connector-clickhouse-2.0.0` and `flink-connector-clickhouse-1.17` variants of the file.
 
 ---
 
 ## High priority
-
-### 6. Date32/DateTime64 writes skip range checks; DateTime error is column-less
-`flink-connector-clickhouse-table/src/main/java/org/apache/flink/connector/clickhouse/table/schema/ClickHouseTypeMapper.java:389`
-
-Only DATE→Date received the PR's friendly range check. DATE→Date32 and TIMESTAMP→DateTime64 write out-of-range values raw; TIMESTAMP→DateTime throws a generic error.
-
-**Failure:** DATE `'9999-12-31'` into Date32 (valid 1900-01-01..2299-12-31): epochDay 2932896 is written as raw Int32 (`SerializerUtils.writeDate32` → `BinaryStreamUtils.writeInt32`, no check) — ClickHouse stores a clamped/wrapped date and SELECT returns a different value than inserted, with no error anywhere. TIMESTAMP `'1969-12-31 23:00:00'` into DateTime → `writeUnsignedInt32` throws `"long(-3600) should be between 0 and 4294967295..."` at flush, killing the batch with no column or row named.
-
-**Fix direction:** Extend the DATE→Date-style range check to Date32, DateTime, and DateTime64 targets.
 
 ### 7. UInt64 map keys are re-parsed via `Long.parseLong`
 `flink-connector-clickhouse-table/src/main/java/org/apache/flink/connector/clickhouse/table/schema/ClickHouseTypeMapper.java:83`

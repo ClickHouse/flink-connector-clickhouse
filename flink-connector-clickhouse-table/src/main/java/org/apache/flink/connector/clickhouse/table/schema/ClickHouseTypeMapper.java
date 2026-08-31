@@ -22,6 +22,7 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.TimestampType;
 
 import java.math.BigInteger;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -97,6 +98,17 @@ public final class ClickHouseTypeMapper {
 
     /** ClickHouse {@code Date} is UInt16 epoch days, so 2149-06-06 is its last day. */
     private static final int DATE_MAX_EPOCH_DAY = 65535;
+
+    /** ClickHouse {@code Date32} covers 1900-01-01..2299-12-31, as signed epoch days. */
+    private static final int DATE32_MIN_EPOCH_DAY = -25567;
+    private static final int DATE32_MAX_EPOCH_DAY = 120529;
+
+    /** ClickHouse {@code DateTime} is UInt32 epoch seconds, ending 2106-02-07T06:28:15Z. */
+    private static final long DATETIME_MAX_EPOCH_SECOND = 4294967295L;
+
+    /** ClickHouse {@code DateTime64} covers 1900-01-01T00:00:00Z..2299-12-31T23:59:59Z. */
+    private static final long DATETIME64_MIN_EPOCH_SECOND = -2208988800L;
+    private static final long DATETIME64_MAX_EPOCH_SECOND = 10413791999L;
 
     private static final Map<LogicalTypeRoot, RootRule> RULES = buildRules();
 
@@ -416,12 +428,25 @@ public final class ClickHouseTypeMapper {
                                                      ZoneId zone, String path) {
         switch (target.getDataType()) {
             case Date32:
-                return value -> LocalDate.ofEpochDay((Integer) value);
+                return buildRangeCheckedDate32Converter(path);
             case Date:
                 return buildRangeCheckedDateConverter(path);
             default:
                 throw noConversion(flinkType, "Date, Date32");
         }
+    }
+
+    /** The client writes Date32 as a raw Int32, so an out-of-range day would be stored wrapped. */
+    private static ValueConverter buildRangeCheckedDate32Converter(String path) {
+        return value -> {
+            int epochDay = (Integer) value;
+            if (epochDay < DATE32_MIN_EPOCH_DAY || epochDay > DATE32_MAX_EPOCH_DAY) {
+                throw new IllegalArgumentException(
+                        "Column '" + path + "': DATE value " + LocalDate.ofEpochDay(epochDay)
+                        + " is outside the ClickHouse Date32 range 1900-01-01..2299-12-31");
+            }
+            return LocalDate.ofEpochDay(epochDay);
+        };
     }
 
     private static ValueConverter buildRangeCheckedDateConverter(String path) {
@@ -441,14 +466,51 @@ public final class ClickHouseTypeMapper {
     private static ValueConverter buildTimestampConverter(LogicalType flinkType, ClickHouseColumn target,
                                                           ZoneId zone, String path) {
         checkDateTimeTargetFits(flinkType, target, ((TimestampType) flinkType).getPrecision());
-        return value -> ZonedDateTime.of(((TimestampData) value).toLocalDateTime(), zone);
+        return rangeCheckedDateTimeConverter(target, path,
+                value -> ZonedDateTime.of(((TimestampData) value).toLocalDateTime(), zone));
     }
 
     /** An instant: the zone cannot change the wire bytes, and UTC keeps the state small. */
     private static ValueConverter buildTimestampLtzConverter(LogicalType flinkType, ClickHouseColumn target,
                                                              ZoneId zone, String path) {
         checkDateTimeTargetFits(flinkType, target, ((LocalZonedTimestampType) flinkType).getPrecision());
-        return value -> ZonedDateTime.ofInstant(((TimestampData) value).toInstant(), ZoneOffset.UTC);
+        return rangeCheckedDateTimeConverter(target, path,
+                value -> ZonedDateTime.ofInstant(((TimestampData) value).toInstant(), ZoneOffset.UTC));
+    }
+
+    /**
+     * Wraps a timestamp converter with the target's instant range: DateTime is UInt32 epoch
+     * seconds (the client's writer rejects the rest without naming the column) and DateTime64
+     * spans 1900..2299 — less at scale 9, where the client's Int64 tick math wraps silently.
+     */
+    private static ValueConverter rangeCheckedDateTimeConverter(ClickHouseColumn target, String path,
+                                                                ValueConverter toZonedDateTime) {
+        boolean isDateTime64 = target.getDataType() == ClickHouseDataType.DateTime64;
+        long minEpochSecond = isDateTime64 ? DATETIME64_MIN_EPOCH_SECOND : 0L;
+        long maxEpochSecond = isDateTime64
+                ? Math.min(DATETIME64_MAX_EPOCH_SECOND, maxTickSafeEpochSecond(target.getScale()))
+                : DATETIME_MAX_EPOCH_SECOND;
+        String targetName = isDateTime64 ? "DateTime64" : "DateTime";
+        String range = Instant.ofEpochSecond(minEpochSecond) + ".." + Instant.ofEpochSecond(maxEpochSecond);
+        return value -> {
+            ZonedDateTime converted = (ZonedDateTime) toZonedDateTime.convert(value);
+            long epochSecond = converted.toEpochSecond();
+            if (epochSecond < minEpochSecond || epochSecond > maxEpochSecond) {
+                throw new IllegalArgumentException(
+                        "Column '" + path + "': TIMESTAMP value " + converted
+                        + " is outside the ClickHouse " + targetName + " range " + range);
+            }
+            return converted;
+        };
+    }
+
+    /** The largest epoch second whose DateTime64 ticks (second × 10^scale + fraction) fit an Int64. */
+    private static long maxTickSafeEpochSecond(int scale) {
+        long pow = 1L;
+        for (int i = 0; i < scale; i++) {
+            pow *= 10L;
+        }
+        return (Long.MAX_VALUE - (pow - 1)) / pow;
     }
 
     /** The target must be DateTime (scale 0) or DateTime64(s) with s >= the Flink precision. */

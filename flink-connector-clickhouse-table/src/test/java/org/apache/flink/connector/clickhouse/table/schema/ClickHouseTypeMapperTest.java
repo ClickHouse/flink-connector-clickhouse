@@ -10,6 +10,7 @@ import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.BigIntType;
+import org.apache.flink.table.types.logical.DateType;
 import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.function.Executable;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -182,6 +184,59 @@ class ClickHouseTypeMapperTest {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> converter.convert(new GenericMapData(counts)));
         assertTrue(e.getMessage().contains("MULTISET count -1"), e.getMessage());
+    }
+
+    @Test
+    void date32IsRangeCheckedPerRecord() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                new DateType(false), col("Date32"), UTC, "c");
+        assertEquals(LocalDate.of(1900, 1, 1),
+                converter.convert((int) LocalDate.of(1900, 1, 1).toEpochDay()));
+        assertEquals(LocalDate.of(2299, 12, 31),
+                converter.convert((int) LocalDate.of(2299, 12, 31).toEpochDay()));
+        assertRangeError(() -> converter.convert((int) LocalDate.of(9999, 12, 31).toEpochDay()),
+                "Date32 range 1900-01-01..2299-12-31");
+        assertRangeError(() -> converter.convert((int) LocalDate.of(1899, 12, 31).toEpochDay()),
+                "Date32 range");
+    }
+
+    @Test
+    void dateTimeRejectsInstantsOutsideUInt32Seconds() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                new TimestampType(false, 0), col("DateTime"), UTC, "c");
+        converter.convert(TimestampData.fromLocalDateTime(LocalDateTime.of(1970, 1, 1, 0, 0)));
+        converter.convert(TimestampData.fromLocalDateTime(LocalDateTime.of(2106, 2, 7, 6, 28, 15)));
+        assertRangeError(() -> converter.convert(
+                        TimestampData.fromLocalDateTime(LocalDateTime.of(1969, 12, 31, 23, 0))),
+                "DateTime range");
+        assertRangeError(() -> converter.convert(
+                        TimestampData.fromLocalDateTime(LocalDateTime.of(2106, 2, 7, 6, 28, 16))),
+                "DateTime range");
+    }
+
+    @Test
+    void dateTime64RejectsInstantsOutsideItsDocumentedRange() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                new TimestampType(false, 3), col("DateTime64(3)"), UTC, "c");
+        converter.convert(TimestampData.fromLocalDateTime(LocalDateTime.of(1900, 1, 1, 0, 0)));
+        converter.convert(TimestampData.fromLocalDateTime(LocalDateTime.of(2299, 12, 31, 23, 59, 59)));
+        assertRangeError(() -> converter.convert(
+                        TimestampData.fromLocalDateTime(LocalDateTime.of(1899, 12, 31, 23, 59))),
+                "DateTime64 range");
+        assertRangeError(() -> converter.convert(
+                        TimestampData.fromLocalDateTime(LocalDateTime.of(9999, 12, 31, 0, 0))),
+                "DateTime64 range");
+    }
+
+    @Test
+    void dateTime64Scale9CapsAtInt64TickRange() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                new TimestampType(false, 9), col("DateTime64(9)"), UTC, "c");
+        converter.convert(TimestampData.fromLocalDateTime(LocalDateTime.of(2262, 4, 11, 0, 0)));
+        // Inside the documented 2299 bound, but its scale-9 ticks overflow Int64.
+        assertRangeError(() -> converter.convert(
+                        TimestampData.fromLocalDateTime(LocalDateTime.of(2263, 1, 1, 0, 0))),
+                "DateTime64 range");
     }
 
     private static void assertRangeError(Executable call, String expectedFragment) {
