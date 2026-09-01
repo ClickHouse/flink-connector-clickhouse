@@ -37,6 +37,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import static com.clickhouse.utils.writer.DataWriter.unwrapTransparentWrappers;
+
 /**
  * The (Flink {@code LogicalType}, {@code ClickHouseColumn}) compatibility matrix of the
  * Table API sink: returns the {@link ValueConverter} that turns a Flink-internal value into
@@ -51,8 +53,8 @@ import java.util.UUID;
  * column name or (UInt64 inside composites) wrap the value silently.
  *
  * <p>{@code build*Converter} methods run once per column at planning time; {@code toPayload*}
- * methods run per record on the TaskManager. {@code unwrap} is reserved for shedding a
- * ClickHouse wrapper type ({@link #unwrapTransparentWrappers}).
+ * methods run per record on the TaskManager. Wrapper shedding is shared with the write path
+ * (DataWriter#unwrapTransparentWrappers).
  */
 public final class ClickHouseTypeMapper {
 
@@ -138,19 +140,6 @@ public final class ClickHouseTypeMapper {
                     "Flink type root " + flinkType.getTypeRoot() + " is unknown to this connector build");
         }
         return rule.apply(flinkType, target, sinkTimezone, path);
-    }
-
-    /**
-     * {@code SimpleAggregateFunction(f, T)} is wire-encoded as its inner type {@code T} and
-     * matched as such; {@code LowCardinality}/{@code Nullable} are flags on the column itself.
-     */
-    public static ClickHouseColumn unwrapTransparentWrappers(ClickHouseColumn column) {
-        ClickHouseColumn c = column;
-        while (c.getDataType() == ClickHouseDataType.SimpleAggregateFunction
-                && c.hasNestedColumn()) {
-            c = c.getNestedColumns().get(0);
-        }
-        return c;
     }
 
     /** Roots the matrix covers — the guard test asserts this equals all of {@link LogicalTypeRoot}. */

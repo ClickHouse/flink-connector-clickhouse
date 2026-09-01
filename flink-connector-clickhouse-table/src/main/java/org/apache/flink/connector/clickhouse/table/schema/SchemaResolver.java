@@ -20,6 +20,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static com.clickhouse.utils.writer.DataWriter.unwrapTransparentWrappers;
+
 /**
  * Pure function from {@code (ResolvedSchema, ClickHouse TableSchema, options)} to the
  * ordered {@code List<ResolvedColumnMapping>} driving the typed sink. All planning-time
@@ -75,7 +77,7 @@ public final class SchemaResolver {
                                                        ClickHouseColumn column,
                                                        SchemaResolverOptions options) {
         checkInsertable(field.getName(), column);
-        ClickHouseColumn effective = ClickHouseTypeMapper.unwrapTransparentWrappers(column);
+        ClickHouseColumn effective = unwrapTransparentWrappers(column);
         checkNullability(field, column, effective);
         ValueConverter converter = converterFor(field, column, options);
         FieldAccessor accessor = FieldAccessor.of(
@@ -196,7 +198,7 @@ public final class SchemaResolver {
         if (column.hasDefault()) {
             return false;
         }
-        return !ClickHouseTypeMapper.unwrapTransparentWrappers(column).isNullable();
+        return !unwrapTransparentWrappers(column).isNullable();
     }
 
     private static void checkNotEmpty(List<ResolvedColumnMapping> mappings,
