@@ -73,6 +73,12 @@ class DataWriterDispatchTest {
         assertTrue(r.length >= 5);
     }
 
+    @Test void dispatchNullableFixedStringWritesFullWidth() throws IOException {
+        // Sizing must come from getPrecision(): getEstimatedLength() is 1 for Nullable(FixedString(n)).
+        byte[] r = serialize("12345", ClickHouseColumn.of("c", "Nullable(FixedString(5))"));
+        assertArrayEquals(new byte[]{0, '1', '2', '3', '4', '5'}, r);
+    }
+
     @Test void dispatchUUID() throws IOException {
         byte[] r = serialize(UUID.randomUUID(), ClickHouseColumn.of("c", "UUID"));
         assertTrue(r.length >= 16);

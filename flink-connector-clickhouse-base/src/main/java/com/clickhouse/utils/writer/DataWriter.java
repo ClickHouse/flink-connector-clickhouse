@@ -280,8 +280,9 @@ public class DataWriter {
                              column.getPrecision(), column.getScale());
                 break;
             case String:      writeString     ((java.lang.String) value, nullable, type, name); break;
+            // getEstimatedLength() is 1 for Nullable(FixedString(n)); only getPrecision() carries n.
             case FixedString: writeFixedString((java.lang.String) value, nullable, type, name,
-                                               column.getEstimatedLength()); break;
+                                               column.getPrecision()); break;
             case JSON:        writeJSON       ((java.lang.String) value, nullable, type, name); break;
             case UUID:        writeUUID       ((UUID) value, nullable, type, name); break;
             case Date:
