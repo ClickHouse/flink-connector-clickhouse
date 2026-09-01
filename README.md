@@ -212,7 +212,7 @@ Notes for SQL users:
 ### Example
 
 See the round-trip integration test
-[`ClickHouseTableApiIntegrationTests`](flink-connector-clickhouse-2.0.0/src/test/java/org/apache/flink/connector/clickhouse/table/ClickHouseTableApiIntegrationTests.java)
+[`ClickHouseTableApiIntegrationTests`](flink-connector-clickhouse-table/src/integrationTest/java/org/apache/flink/connector/clickhouse/table/ClickHouseTableApiIntegrationTests.java)
 for a complete DDL + `INSERT INTO` example against a real ClickHouse.
 
 ## Supported ClickHouse Types
