@@ -3,6 +3,7 @@ package org.apache.flink.connector.clickhouse.table;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ConfigOptions;
 import org.apache.flink.configuration.MemorySize;
+import org.apache.flink.connector.clickhouse.sink.ClickHouseSinkDefaults;
 
 import java.time.Duration;
 
@@ -62,37 +63,37 @@ public final class ClickHouseConnectorOptions {
     public static final ConfigOption<Integer> SINK_BUFFER_FLUSH_MAX_ROWS = ConfigOptions
             .key("sink.buffer-flush.max-rows")
             .intType()
-            .defaultValue(500)
+            .defaultValue(ClickHouseSinkDefaults.MAX_BATCH_SIZE)
             .withDescription("Rows buffered per insert batch before a flush is triggered.");
 
     public static final ConfigOption<MemorySize> SINK_BUFFER_FLUSH_MAX_BYTES = ConfigOptions
             .key("sink.buffer-flush.max-bytes")
             .memoryType()
-            .defaultValue(MemorySize.parse("5mb"))
+            .defaultValue(new MemorySize(ClickHouseSinkDefaults.MAX_BATCH_SIZE_IN_BYTES))
             .withDescription("Bytes buffered per insert batch before a flush is triggered.");
 
     public static final ConfigOption<Duration> SINK_BUFFER_FLUSH_INTERVAL = ConfigOptions
             .key("sink.buffer-flush.interval")
             .durationType()
-            .defaultValue(Duration.ofSeconds(5))
+            .defaultValue(Duration.ofMillis(ClickHouseSinkDefaults.MAX_TIME_IN_BUFFER_MS))
             .withDescription("Longest time a record may sit in the buffer before a flush.");
 
     public static final ConfigOption<Integer> SINK_MAX_IN_FLIGHT_REQUESTS = ConfigOptions
             .key("sink.max-in-flight-requests")
             .intType()
-            .defaultValue(50)
+            .defaultValue(ClickHouseSinkDefaults.MAX_IN_FLIGHT_REQUESTS)
             .withDescription("Maximum concurrent in-flight insert requests.");
 
     public static final ConfigOption<Integer> SINK_MAX_BUFFERED_REQUESTS = ConfigOptions
             .key("sink.max-buffered-requests")
             .intType()
-            .defaultValue(10_000)
+            .defaultValue(ClickHouseSinkDefaults.MAX_BUFFERED_REQUESTS)
             .withDescription("Maximum buffered records before backpressure kicks in.");
 
     public static final ConfigOption<MemorySize> SINK_RECORD_MAX_BYTES = ConfigOptions
             .key("sink.record.max-bytes")
             .memoryType()
-            .defaultValue(MemorySize.parse("1mb"))
+            .defaultValue(new MemorySize(ClickHouseSinkDefaults.MAX_RECORD_SIZE_IN_BYTES))
             .withDescription("Maximum serialized size of a single record.");
 
     // sink.parallelism is FactoryUtil.SINK_PARALLELISM — validated via the factory helper.

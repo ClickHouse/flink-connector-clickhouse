@@ -25,13 +25,6 @@ public class ClickHouseAsyncSinkBuilder<InputT>
         extends AsyncSinkBaseBuilder<
                 InputT, ClickHousePayload, ClickHouseAsyncSinkBuilder<InputT>> {
 
-    private static final int DEFAULT_MAX_BATCH_SIZE = 500;
-    private static final int DEFAULT_MAX_IN_FLIGHT_REQUESTS = 50;
-    private static final int DEFAULT_MAX_BUFFERED_REQUESTS = 10_000;
-    private static final long DEFAULT_MAX_BATCH_SIZE_IN_BYTES = 5L * 1024 * 1024;
-    private static final long DEFAULT_MAX_TIME_IN_BUFFER_MS = 5_000;
-    private static final long DEFAULT_MAX_RECORD_SIZE_IN_BYTES = 1L * 1024 * 1024;
-
     private ClickHouseConvertor<InputT> elementConverter;
     private ClickHouseClientConfig clickHouseClientConfig;
     private ClickHouseFormat clickHouseFormat;
@@ -62,12 +55,12 @@ public class ClickHouseAsyncSinkBuilder<InputT>
 
         return new ClickHouseAsyncSink<>(
                 elementConverter,
-                Optional.ofNullable(getMaxBatchSize()).orElse(DEFAULT_MAX_BATCH_SIZE),
-                Optional.ofNullable(getMaxInFlightRequests()).orElse(DEFAULT_MAX_IN_FLIGHT_REQUESTS),
-                Optional.ofNullable(getMaxBufferedRequests()).orElse(DEFAULT_MAX_BUFFERED_REQUESTS),
-                Optional.ofNullable(getMaxBatchSizeInBytes()).orElse(DEFAULT_MAX_BATCH_SIZE_IN_BYTES),
-                Optional.ofNullable(getMaxTimeInBufferMS()).orElse(DEFAULT_MAX_TIME_IN_BUFFER_MS),
-                Optional.ofNullable(getMaxRecordSizeInBytes()).orElse(DEFAULT_MAX_RECORD_SIZE_IN_BYTES),
+                Optional.ofNullable(getMaxBatchSize()).orElse(ClickHouseSinkDefaults.MAX_BATCH_SIZE),
+                Optional.ofNullable(getMaxInFlightRequests()).orElse(ClickHouseSinkDefaults.MAX_IN_FLIGHT_REQUESTS),
+                Optional.ofNullable(getMaxBufferedRequests()).orElse(ClickHouseSinkDefaults.MAX_BUFFERED_REQUESTS),
+                Optional.ofNullable(getMaxBatchSizeInBytes()).orElse(ClickHouseSinkDefaults.MAX_BATCH_SIZE_IN_BYTES),
+                Optional.ofNullable(getMaxTimeInBufferMS()).orElse(ClickHouseSinkDefaults.MAX_TIME_IN_BUFFER_MS),
+                Optional.ofNullable(getMaxRecordSizeInBytes()).orElse(ClickHouseSinkDefaults.MAX_RECORD_SIZE_IN_BYTES),
                 clickHouseClientConfig,
                 clickHouseFormat,
                 elementConverter.isStringMode());
