@@ -3,7 +3,6 @@ package org.apache.flink.connector.clickhouse.table.schema;
 import com.clickhouse.data.ClickHouseColumn;
 
 import org.apache.flink.connector.clickhouse.table.data.FieldAccessor;
-import org.apache.flink.table.types.logical.LogicalType;
 
 import java.util.Objects;
 
@@ -17,14 +16,12 @@ import java.util.Objects;
 public final class ResolvedColumnMapping {
 
     public final int flinkFieldIndex;
-    public final LogicalType flinkType;
     public final ClickHouseColumn column;
     public final FieldAccessor accessor;
 
-    public ResolvedColumnMapping(int flinkFieldIndex, LogicalType flinkType,
-                                 ClickHouseColumn column, FieldAccessor accessor) {
+    public ResolvedColumnMapping(int flinkFieldIndex, ClickHouseColumn column,
+                                 FieldAccessor accessor) {
         this.flinkFieldIndex = flinkFieldIndex;
-        this.flinkType = Objects.requireNonNull(flinkType, "flinkType");
         this.column = Objects.requireNonNull(column, "column");
         this.accessor = Objects.requireNonNull(accessor, "accessor");
     }

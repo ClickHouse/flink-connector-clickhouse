@@ -179,15 +179,38 @@ class SchemaResolverTest {
     }
 
     @Test
-    void omittedClickHouseColumnsNeedNullabilityOrDefault() {
+    void nestedSimpleAggregateFunctionIsRejectedAtPlanning() {
+        // client-v2 has no serializer case for SAF inside a composite; accepted schemas would
+        // fail on the first record, so planning rejects them.
+        ValidationException array = assertThrows(ValidationException.class, () ->
+                SchemaResolver.resolve(
+                        ResolvedSchema.of(Column.physical("v",
+                                DataTypes.ARRAY(DataTypes.BIGINT().notNull()).notNull())),
+                        clickHouseSchema("v Array(SimpleAggregateFunction(max, Int64))"),
+                        options(false)));
+        assertTrue(array.getMessage().contains("only writable as a top-level column"),
+                array.getMessage());
+        assertTrue(array.getMessage().contains("Array element"), array.getMessage());
+
+        ValidationException map = assertThrows(ValidationException.class, () ->
+                SchemaResolver.resolve(
+                        ResolvedSchema.of(Column.physical("m",
+                                DataTypes.MAP(DataTypes.STRING().notNull(),
+                                        DataTypes.BIGINT().notNull()).notNull())),
+                        clickHouseSchema("m Map(String, SimpleAggregateFunction(max, Int64))"),
+                        options(false)));
+        assertTrue(map.getMessage().contains("Map value"), map.getMessage());
+    }
+
+    @Test
+    void omittedClickHouseColumnsAreAllowedRegardlessOfDefaults() {
         ResolvedSchema schema = ResolvedSchema.of(Column.physical("id", DataTypes.BIGINT().notNull()));
         // Nullable extra column: allowed, server default applies.
         SchemaResolver.resolve(schema, clickHouseSchema("id Int64, note Nullable(String)"), options(false));
-        // Non-Nullable extra column without a DEFAULT: rejected at planning.
-        ValidationException e = assertThrows(ValidationException.class, () ->
-                SchemaResolver.resolve(schema, clickHouseSchema("id Int64, note String"), options(false)));
-        assertTrue(e.getMessage().contains("neither Nullable nor has a DEFAULT"), e.getMessage());
-        // The same column with a DEFAULT: allowed.
+        // Non-Nullable extra column without a DEFAULT: allowed too (warned) — the writer sets
+        // input_format_defaults_for_omitted_fields=1, so the server fills the type default.
+        SchemaResolver.resolve(schema, clickHouseSchema("id Int64, note String"), options(false));
+        // And with a DEFAULT: allowed.
         TableSchema withDefault = clickHouseSchema("id Int64, note String");
         ClickHouseColumn note = withDefault.getColumnByName("note");
         note.setHasDefault(true);

@@ -22,6 +22,7 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.TimestampType;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -172,6 +173,20 @@ public final class ClickHouseTypeMapper {
             default:
                 return "no write path and no unambiguous Flink counterpart";
         }
+    }
+
+    /**
+     * The client serializer can wire-encode SimpleAggregateFunction only as a top-level column;
+     * inside a composite it has no case for it and every record would fail on the TaskManager.
+     */
+    private static ClickHouseColumn rejectNestedSimpleAggregateFunction(ClickHouseColumn column,
+                                                                        String position) {
+        if (column.getDataType() == ClickHouseDataType.SimpleAggregateFunction) {
+            throw TypeMappingException.targetUnsupported(String.format(
+                    "SimpleAggregateFunction is only writable as a top-level column, not as %s",
+                    position));
+        }
+        return column;
     }
 
     // ------------------------------------------------------------------------------------
@@ -392,9 +407,9 @@ public final class ClickHouseTypeMapper {
         switch (target.getDataType()) {
             case String:
             case JSON:
-            // A FixedString's byte length is checked at write time by DataWriter.
-            case FixedString:
                 return Object::toString;
+            case FixedString:
+                return buildFixedStringConverter(target.getPrecision(), path);
             case UUID:
                 return buildUuidConverter(path);
             default:
@@ -402,15 +417,35 @@ public final class ClickHouseTypeMapper {
         }
     }
 
+    /** The write-time length check throws without the column name, so enforce n here instead. */
+    private static ValueConverter buildFixedStringConverter(int maxBytes, String path) {
+        return value -> {
+            String text = value.toString();
+            int byteLength = text.getBytes(StandardCharsets.UTF_8).length;
+            if (byteLength > maxBytes) {
+                throw new IllegalArgumentException(String.format(
+                        "Column '%s': value of %d bytes does not fit FixedString(%d): %s",
+                        path, byteLength, maxBytes, text));
+            }
+            return text;
+        };
+    }
+
     private static ValueConverter buildUuidConverter(String path) {
         return value -> {
             String text = value.toString();
             try {
-                return UUID.fromString(text);
+                UUID uuid = UUID.fromString(text);
+                // fromString also zero-expands forms like '1-1-1-1-1'; accept only the canonical form.
+                if (uuid.toString().equalsIgnoreCase(text)) {
+                    return uuid;
+                }
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException(
                         "Column '" + path + "': value is not a valid UUID: " + text, e);
             }
+            throw new IllegalArgumentException(
+                    "Column '" + path + "': value is not a valid UUID: " + text);
         };
     }
 
@@ -529,7 +564,8 @@ public final class ClickHouseTypeMapper {
                                                       ZoneId zone, String path) {
         requireTargetType(target, ClickHouseDataType.Array, flinkType, "Array(T)");
         LogicalType elementType = ((ArrayType) flinkType).getElementType();
-        ClickHouseColumn elementColumn = unwrapTransparentWrappers(target.getNestedColumns().get(0));
+        ClickHouseColumn elementColumn = rejectNestedSimpleAggregateFunction(
+                target.getNestedColumns().get(0), "an Array element");
         checkArrayElementNullability(elementType, elementColumn);
 
         ArrayData.ElementGetter elementGetter = ArrayData.createElementGetter(elementType);
@@ -587,7 +623,8 @@ public final class ClickHouseTypeMapper {
     }
 
     private static void checkMultisetCountTarget(ClickHouseColumn target) {
-        ClickHouseColumn valueColumn = unwrapTransparentWrappers(target.getValueInfo());
+        ClickHouseColumn valueColumn = rejectNestedSimpleAggregateFunction(
+                target.getValueInfo(), "the MULTISET count value");
         if (valueColumn.getDataType() != ClickHouseDataType.UInt64 || valueColumn.isNullable()) {
             throw TypeMappingException.mismatch(String.format(
                     "MULTISET counts require a Map value type of exactly UInt64, found %s",
@@ -611,7 +648,7 @@ public final class ClickHouseTypeMapper {
      */
     private static ValueConverter buildMapKeyConverter(LogicalType keyType, ClickHouseColumn keyColumn,
                                                        ZoneId zone, String path) {
-        ClickHouseColumn effectiveKey = unwrapTransparentWrappers(keyColumn);
+        ClickHouseColumn effectiveKey = rejectNestedSimpleAggregateFunction(keyColumn, "a Map key");
         checkMapKeyNullability(effectiveKey);
         checkMapKeyIsRestorableFromString(effectiveKey);
         ValueConverter keyConverter = buildNestedConverter(
@@ -648,7 +685,7 @@ public final class ClickHouseTypeMapper {
 
     private static ValueConverter buildMapValueConverter(LogicalType valueType, ClickHouseColumn valueColumn,
                                                          ZoneId zone, String path) {
-        ClickHouseColumn effectiveValue = unwrapTransparentWrappers(valueColumn);
+        ClickHouseColumn effectiveValue = rejectNestedSimpleAggregateFunction(valueColumn, "a Map value");
         checkMapValueNullability(valueType, valueColumn, effectiveValue);
         return buildNestedConverter(valueType, effectiveValue, zone, path + " value", "map value");
     }
@@ -685,8 +722,10 @@ public final class ClickHouseTypeMapper {
                                                         String path) {
         ArrayData keys = map.keyArray();
         ArrayData values = map.valueArray();
-        Map<String, Object> result = new LinkedHashMap<>(map.size());
-        for (int i = 0; i < map.size(); i++) {
+        int size = map.size();
+        // initialCapacity is a bucket count, not an entry count — undershoot forces a rehash.
+        Map<String, Object> result = new LinkedHashMap<>((int) (size / 0.75f) + 1);
+        for (int i = 0; i < size; i++) {
             Object key = keyGetter.getElementOrNull(keys, i);
             if (key == null) {
                 throw new IllegalArgumentException(
@@ -742,7 +781,7 @@ public final class ClickHouseTypeMapper {
 
     private static ValueConverter buildRowFieldConverter(RowType.RowField field, ClickHouseColumn element,
                                                          int position, ZoneId zone, String path) {
-        ClickHouseColumn effectiveElement = unwrapTransparentWrappers(element);
+        ClickHouseColumn effectiveElement = rejectNestedSimpleAggregateFunction(element, "a Tuple element");
         checkRowFieldNullability(field, element, effectiveElement, position);
         return buildNestedConverter(field.getType(), effectiveElement, zone,
                 path + "." + field.getName(), "ROW field '" + field.getName() + "'");

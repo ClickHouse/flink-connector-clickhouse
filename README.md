@@ -136,7 +136,8 @@ At planning time the connector reads the real column types from the target Click
 and validates the Flink schema against them, so typos, type mismatches, narrowing and
 unsupported types fail at job submission with a precise message instead of at the first
 flush. Columns are matched **by name, case-sensitively**; ClickHouse columns you leave out of
-the Flink schema get their server-side `DEFAULT`. A nullable Flink column can only target a
+the Flink schema get their server-side `DEFAULT`, or the type's default value (`0`/`''`/empty)
+if they have none — the latter is logged as a warning at planning. A nullable Flink column can only target a
 `Nullable(...)` ClickHouse column — declare columns `NOT NULL` when the target column isn't
 `Nullable` (in Flink SQL, columns and collection elements are nullable unless declared
 otherwise).
@@ -189,7 +190,7 @@ Connection options (required unless noted): `url`, `username`, `password` (defau
 
 | Option | Default | Effect |
 |---|---|---|
-| `sink.timezone` | `UTC` | zone in which `TIMESTAMP` (no time zone) wall-clock values are interpreted |
+| `sink.timezone` | `UTC` | zone in which `TIMESTAMP` (no time zone) wall-clock values are interpreted; DST gap wall clocks shift forward, ambiguous fall-back wall clocks take the earlier offset |
 | `sink.ignore-unknown-flink-columns` | `false` | `true` drops Flink columns absent from the ClickHouse table instead of failing |
 
 **Passthrough**: `clickhouse.client.<key>` options are forwarded to the ClickHouse client,

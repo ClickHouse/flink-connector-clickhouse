@@ -11,6 +11,8 @@ import org.apache.flink.table.api.ValidationException;
 import org.apache.flink.table.catalog.ResolvedSchema;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.types.logical.RowType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -31,6 +33,8 @@ import static com.clickhouse.utils.writer.DataWriter.unwrapTransparentWrappers;
  * order is the Flink schema's order.
  */
 public final class SchemaResolver {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SchemaResolver.class);
 
     /** Targets whose {@code Nullable} form DataWriter cannot write a null to yet (issue #144). */
     private static final Set<ClickHouseDataType> NULL_HANDLING_BROKEN_TARGETS = EnumSet.of(
@@ -59,7 +63,7 @@ public final class SchemaResolver {
             mappings.add(resolveColumn(i, field, column, options));
         }
 
-        checkOmittedColumnsHaveDefaults(clickHouseSchema, mappedNames(mappings), options);
+        warnOnOmittedColumnsWithoutDefaults(clickHouseSchema, mappedNames(mappings), options);
         checkNotEmpty(mappings, options);
         return mappings;
     }
@@ -82,7 +86,7 @@ public final class SchemaResolver {
         ValueConverter converter = converterFor(field, column, options);
         FieldAccessor accessor = FieldAccessor.of(
                 RowData.createFieldGetter(field.getType(), fieldIndex), converter);
-        return new ResolvedColumnMapping(fieldIndex, field.getType(), column, accessor);
+        return new ResolvedColumnMapping(fieldIndex, column, accessor);
     }
 
     private static ValueConverter converterFor(RowType.RowField field, ClickHouseColumn column,
@@ -174,23 +178,23 @@ public final class SchemaResolver {
     // ------------------------------------------------------------------------------------
 
     /**
-     * An omitted ClickHouse column gets its server-side DEFAULT — a non-Nullable column
-     * without one has nothing to fall back on and is rejected.
+     * An omitted ClickHouse column gets its server-side DEFAULT; without one the server still
+     * fills the type default (0/''/empty) because the writer sets
+     * {@code input_format_defaults_for_omitted_fields=1}. That may be unintentional, so warn.
      * MATERIALIZED/ALIAS/EPHEMERAL columns are exempt.
      */
-    private static void checkOmittedColumnsHaveDefaults(TableSchema clickHouseSchema,
-                                                        Set<String> mappedNames,
-                                                        SchemaResolverOptions options) {
+    private static void warnOnOmittedColumnsWithoutDefaults(TableSchema clickHouseSchema,
+                                                            Set<String> mappedNames,
+                                                            SchemaResolverOptions options) {
         for (ClickHouseColumn column : clickHouseSchema.getColumns()) {
             if (mappedNames.contains(column.getColumnName()) || !isRequired(column)) {
                 continue;
             }
-            throw new ValidationException(String.format(
-                    "ClickHouse column '%s %s' in %s.%s is neither Nullable nor has a DEFAULT and "
-                    + "is missing from the Flink schema — add the column to the Flink schema or "
-                    + "give it a DEFAULT.",
+            LOG.warn("ClickHouse column '{} {}' in {}.{} is neither Nullable nor has a DEFAULT "
+                    + "and is missing from the Flink schema — every insert fills it with the "
+                    + "type default (0/''/empty).",
                     column.getColumnName(), column.getOriginalTypeName(),
-                    options.database, options.table));
+                    options.database, options.table);
         }
     }
 

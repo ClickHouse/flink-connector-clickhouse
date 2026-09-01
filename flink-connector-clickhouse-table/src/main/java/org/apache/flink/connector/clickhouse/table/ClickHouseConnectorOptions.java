@@ -122,7 +122,10 @@ public final class ClickHouseConnectorOptions {
             .key("sink.timezone")
             .stringType()
             .defaultValue("UTC")
-            .withDescription("Zone in which TIMESTAMP (no time zone) wall-clock values are interpreted.");
+            .withDescription("Zone in which TIMESTAMP (no time zone) wall-clock values are interpreted. "
+                    + "In a DST-observing zone, wall clocks inside a spring-forward gap are shifted "
+                    + "forward by the gap length, and ambiguous fall-back wall clocks resolve to the "
+                    + "earlier (pre-transition) offset.");
 
     public static final ConfigOption<Boolean> SINK_IGNORE_UNKNOWN_FLINK_COLUMNS = ConfigOptions
             .key("sink.ignore-unknown-flink-columns")

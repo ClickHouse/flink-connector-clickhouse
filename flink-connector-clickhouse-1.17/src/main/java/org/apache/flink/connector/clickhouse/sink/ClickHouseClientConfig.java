@@ -99,7 +99,12 @@ public class ClickHouseClientConfig implements Serializable {
         try {
             pingLoop(planningClient);
         } catch (RuntimeException e) {
-            planningClient.close();
+            try {
+                planningClient.close();
+            } catch (RuntimeException closeFailure) {
+                // A failing close must not replace the ping error the user needs to see.
+                e.addSuppressed(closeFailure);
+            }
             throw e;
         }
         return planningClient;

@@ -24,6 +24,7 @@ import org.junit.jupiter.api.function.Executable;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -81,6 +82,32 @@ class ClickHouseTypeMapperTest {
                 new VarCharType(false, VarCharType.MAX_LENGTH), col("UUID"), UTC, "c");
         UUID uuid = UUID.randomUUID();
         assertEquals(uuid, converter.convert(StringData.fromString(uuid.toString())));
+        assertEquals(uuid, converter.convert(
+                StringData.fromString(uuid.toString().toUpperCase())));
+    }
+
+    @Test
+    void overlongStringIntoFixedStringFailsNamingTheColumn() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                new VarCharType(false, VarCharType.MAX_LENGTH), col("FixedString(4)"), UTC, "c");
+        assertEquals("abcd", converter.convert(StringData.fromString("abcd")));
+        assertEquals("ab", converter.convert(StringData.fromString("ab")));
+        // Three chars but six UTF-8 bytes — the limit is bytes, not characters.
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> converter.convert(StringData.fromString("ééé")));
+        assertTrue(e.getMessage().contains("Column 'c'"), e.getMessage());
+        assertTrue(e.getMessage().contains("FixedString(4)"), e.getMessage());
+    }
+
+    @Test
+    void nonCanonicalUuidTextIsRejectedNamingTheColumn() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                new VarCharType(false, VarCharType.MAX_LENGTH), col("UUID"), UTC, "c");
+        // UUID.fromString would silently zero-expand this to 00000001-0001-...-000000000001.
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> converter.convert(StringData.fromString("1-1-1-1-1")));
+        assertTrue(e.getMessage().contains("Column 'c'"), e.getMessage());
+        assertTrue(e.getMessage().contains("not a valid UUID"), e.getMessage());
     }
 
     @Test
@@ -109,6 +136,21 @@ class ClickHouseTypeMapperTest {
         LocalDateTime wallClock = LocalDateTime.of(2026, 1, 2, 3, 4, 5, 678_000_000);
         assertEquals(ZonedDateTime.of(wallClock, tokyo),
                 converter.convert(TimestampData.fromLocalDateTime(wallClock)));
+    }
+
+    @Test
+    void dstGapAndOverlapResolveAsDocumented() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                new TimestampType(false, 3), col("DateTime64(3)"),
+                ZoneId.of("America/New_York"), "c");
+        // 02:30 does not exist on 2026-03-08 (spring forward): shifted an hour ahead.
+        ZonedDateTime gap = (ZonedDateTime) converter.convert(
+                TimestampData.fromLocalDateTime(LocalDateTime.of(2026, 3, 8, 2, 30)));
+        assertEquals(Instant.parse("2026-03-08T07:30:00Z"), gap.toInstant());
+        // 01:30 occurs twice on 2026-11-01 (fall back): the earlier (-04:00) pass wins.
+        ZonedDateTime overlap = (ZonedDateTime) converter.convert(
+                TimestampData.fromLocalDateTime(LocalDateTime.of(2026, 11, 1, 1, 30)));
+        assertEquals(Instant.parse("2026-11-01T05:30:00Z"), overlap.toInstant());
     }
 
     @Test

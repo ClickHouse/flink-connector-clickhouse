@@ -179,6 +179,34 @@ public class ClickHouseTableApiIntegrationTests {
     }
 
     @Test
+    void batchRowsNotBelowBufferedRequestsIsRejectedAtPlanning() {
+        TableEnvironment env = tableEnvironment();
+        // Equal to the sink.max-buffered-requests default; the AsyncSink needs strictly greater.
+        env.executeSql(sinkDdl("ch_invalid_buffering", "does_not_exist", "id BIGINT NOT NULL",
+                ", 'sink.buffer-flush.max-rows' = '10000'"));
+
+        Exception e = Assertions.assertThrows(Exception.class,
+                () -> env.executeSql("INSERT INTO ch_invalid_buffering VALUES (1)"));
+        Assertions.assertTrue(exceptionChainContains(e,
+                        "'sink.max-buffered-requests' (10000) must be strictly greater than "
+                                + "'sink.buffer-flush.max-rows' (10000)"),
+                "Unexpected failure: " + e);
+    }
+
+    @Test
+    void batchBytesBelowRecordBytesIsRejectedAtPlanning() {
+        TableEnvironment env = tableEnvironment();
+        // Below the 1mb sink.record.max-bytes default, so one record could never fit a batch.
+        env.executeSql(sinkDdl("ch_invalid_bytes", "does_not_exist", "id BIGINT NOT NULL",
+                ", 'sink.buffer-flush.max-bytes' = '512kb'"));
+
+        Exception e = Assertions.assertThrows(Exception.class,
+                () -> env.executeSql("INSERT INTO ch_invalid_bytes VALUES (1)"));
+        Assertions.assertTrue(exceptionChainContains(e, "must be at least 'sink.record.max-bytes'"),
+                "Unexpected failure: " + e);
+    }
+
+    @Test
     void negativeBigIntIntoUInt32FailsNamingTheColumn() throws Exception {
         String table = "table_api_unsigned";
         ClickHouseServerForTests.executeSql(String.format(
@@ -355,19 +383,24 @@ public class ClickHouseTableApiIntegrationTests {
     }
 
     @Test
-    void omittedRequiredClickHouseColumnFailsAtPlanning() throws Exception {
-        String table = "table_api_required";
+    void omittedNoDefaultColumnIsFilledWithTheTypeDefault() throws Exception {
+        String table = "table_api_no_default";
         ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, req String) ENGINE = MergeTree() ORDER BY id",
+                "CREATE TABLE `%s`.`%s` (id Int64, req String, tags Array(String)) "
+                        + "ENGINE = MergeTree() ORDER BY id",
                 ClickHouseServerForTests.getDatabase(), table));
 
         TableEnvironment env = tableEnvironment();
-        env.executeSql(sinkDdl("ch_required", table, "id BIGINT NOT NULL"));
+        env.executeSql(sinkDdl("ch_no_default", table, "id BIGINT NOT NULL"));
+        env.executeSql("INSERT INTO ch_no_default VALUES (1)").await();
 
-        Exception e = Assertions.assertThrows(Exception.class,
-                () -> env.executeSql("INSERT INTO ch_required VALUES (1)"));
-        Assertions.assertTrue(exceptionChainContains(e, "is neither Nullable nor has a DEFAULT"),
-                "Unexpected failure: " + e);
+        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+                "id, req, length(tags) AS tags_len",
+                ClickHouseServerForTests.getDatabase(), table, "id");
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals(1L, rows.get(0).getLong("id"));
+        Assertions.assertEquals("", rows.get(0).getString("req"));
+        Assertions.assertEquals(0L, rows.get(0).getLong("tags_len"));
     }
 
     @Test

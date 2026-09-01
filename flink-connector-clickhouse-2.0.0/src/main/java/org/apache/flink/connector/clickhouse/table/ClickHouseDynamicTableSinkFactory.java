@@ -97,6 +97,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
     @Override
     public DynamicTableSink createDynamicTableSink(Context context) {
         ReadableConfig options = validatedOptions(context);
+        validateBatchingOptions(options);
         // Built first so an invalid sink.timezone or unsupported table name fails before any network call.
         SchemaResolverOptions resolverOptions = buildResolverOptions(options);
         logIgnoredPrimaryKey(context);
@@ -120,6 +121,40 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         FactoryUtil.TableFactoryHelper helper = FactoryUtil.createTableFactoryHelper(this, context);
         helper.validateExcept(CLIENT_OPTIONS_PREFIX, SERVER_SETTINGS_PREFIX);
         return helper.getOptions();
+    }
+
+    /** The AsyncSink writer re-checks these at task start; failing here names the SQL options instead. */
+    private static void validateBatchingOptions(ReadableConfig options) {
+        int maxRows = options.get(SINK_BUFFER_FLUSH_MAX_ROWS);
+        long maxBytes = options.get(SINK_BUFFER_FLUSH_MAX_BYTES).getBytes();
+        int maxBuffered = options.get(SINK_MAX_BUFFERED_REQUESTS);
+        long recordMaxBytes = options.get(SINK_RECORD_MAX_BYTES).getBytes();
+
+        requirePositive(SINK_BUFFER_FLUSH_MAX_ROWS.key(), maxRows);
+        requirePositive(SINK_BUFFER_FLUSH_MAX_BYTES.key(), maxBytes);
+        requirePositive(SINK_BUFFER_FLUSH_INTERVAL.key(), options.get(SINK_BUFFER_FLUSH_INTERVAL).toMillis());
+        requirePositive(SINK_MAX_IN_FLIGHT_REQUESTS.key(), options.get(SINK_MAX_IN_FLIGHT_REQUESTS));
+        requirePositive(SINK_MAX_BUFFERED_REQUESTS.key(), maxBuffered);
+        requirePositive(SINK_RECORD_MAX_BYTES.key(), recordMaxBytes);
+        if (maxBuffered <= maxRows) {
+            throw new ValidationException(String.format(
+                    "'%s' (%d) must be strictly greater than '%s' (%d).",
+                    SINK_MAX_BUFFERED_REQUESTS.key(), maxBuffered,
+                    SINK_BUFFER_FLUSH_MAX_ROWS.key(), maxRows));
+        }
+        if (maxBytes < recordMaxBytes) {
+            throw new ValidationException(String.format(
+                    "'%s' (%d bytes) must be at least '%s' (%d bytes).",
+                    SINK_BUFFER_FLUSH_MAX_BYTES.key(), maxBytes,
+                    SINK_RECORD_MAX_BYTES.key(), recordMaxBytes));
+        }
+    }
+
+    private static void requirePositive(String key, long value) {
+        if (value <= 0) {
+            throw new ValidationException(
+                    String.format("'%s' must be positive, but was %d.", key, value));
+        }
     }
 
     private static SchemaResolverOptions buildResolverOptions(ReadableConfig options) {
@@ -157,7 +192,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         } catch (Exception e) {
             throw new ValidationException(String.format(
                     "Could not read the schema of ClickHouse table %s.%s at %s — %s",
-                    database, table, url, e.getMessage()), e);
+                    database, table, url, e.getMessage() != null ? e.getMessage() : e.toString()), e);
         }
     }
 
