@@ -116,6 +116,26 @@ sourceSets {
     }
 }
 
+// The Table API factory pair is hand-duplicated across the version modules: it needs this
+// module's ClickHouseAsyncSink/ClickHouseClientConfig, so it cannot be single-sourced in
+// :flink-connector-clickhouse-table until those are. Fail the build on drift instead.
+val checkTableApiCopiesInSync by tasks.registering {
+    val copies = listOf(
+        "src/main/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSink.java",
+        "src/main/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSinkFactory.java",
+        "src/main/resources/META-INF/services/org.apache.flink.table.factories.Factory",
+    ).map { file(it) to project(":flink-connector-clickhouse-1.17").file(it) }
+    inputs.files(copies.flatMap { listOf(it.first, it.second) })
+    doLast {
+        copies.forEach { (ours, theirs) ->
+            check(ours.readBytes().contentEquals(theirs.readBytes())) {
+                "$ours differs from $theirs — these copies must stay identical; apply the change to both."
+            }
+        }
+    }
+}
+tasks.named("check") { dependsOn(checkTableApiCopiesInSync) }
+
 tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("all")
     dependencies {
