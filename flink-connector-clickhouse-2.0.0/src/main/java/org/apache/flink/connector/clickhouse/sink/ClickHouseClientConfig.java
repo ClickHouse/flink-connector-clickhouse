@@ -69,6 +69,26 @@ public class ClickHouseClientConfig implements Serializable {
         this(url, username, password, database, tableName, new HashMap<>(), new HashMap<>(), enableJsonSupport);
     }
 
+    private ClickHouseClientConfig(ClickHouseClientConfig other) {
+        this.url = other.url;
+        this.username = other.username;
+        this.password = other.password;
+        this.database = other.database;
+        this.tableName = other.tableName;
+        this.fullProductName = other.fullProductName;
+        this.options = new HashMap<>(other.options);
+        this.serverSettings = new HashMap<>(other.serverSettings);
+        this.supportDefault = other.supportDefault;
+        this.enableJsonSupportAsString = other.enableJsonSupportAsString;
+        this.retryPolicy = other.retryPolicy;
+        this.batchFailureStrategy = other.batchFailureStrategy;
+    }
+
+    /** Deep copy for DynamicTableSink#copy(); the cached client is not shared. */
+    public ClickHouseClientConfig copy() {
+        return new ClickHouseClientConfig(this);
+    }
+
     /**
      * Builds a fresh client for planning-time use and verifies connectivity with a short
      * fixed ping. Bypasses the cached runtime client so nothing long-lived is left open

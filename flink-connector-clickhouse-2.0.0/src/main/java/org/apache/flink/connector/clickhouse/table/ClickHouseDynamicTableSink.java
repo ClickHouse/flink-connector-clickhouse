@@ -84,8 +84,8 @@ public class ClickHouseDynamicTableSink implements DynamicTableSink {
 
     @Override
     public DynamicTableSink copy() {
-        // All state is planning-time immutable, so sharing the references is safe.
-        return new ClickHouseDynamicTableSink(clientConfig, mapper, maxBatchSize,
+        // The config is mutable (setters, cached client) and must not be shared; the rest is immutable.
+        return new ClickHouseDynamicTableSink(clientConfig.copy(), mapper, maxBatchSize,
                 maxBatchSizeInBytes, maxTimeInBufferMs, maxInFlightRequests,
                 maxBufferedRequests, maxRecordSizeInBytes, parallelism, summaryName);
     }
