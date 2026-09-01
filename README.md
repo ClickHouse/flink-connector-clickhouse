@@ -199,6 +199,36 @@ Connection options (required unless noted): `url`, `username`, `password` (defau
 Flink `STRING` into a ClickHouse `JSON` column works out of the box — the connector enables
 the client's JSON-as-string mode automatically exactly when a `JSON` column is mapped.
 
+### Type mapping
+
+Widening is implicit, unsigned targets are range-checked per record, and any other pair fails
+at planning naming the column and both types.
+
+| Flink SQL type | ClickHouse column types | Notes |
+|---|---|---|
+| `BOOLEAN` | `Bool` | |
+| `TINYINT` | `Int8` or wider signed | |
+| `SMALLINT` | `Int16`, `UInt8`, wider signed | |
+| `INT` | `Int32`, `UInt16`, wider signed | |
+| `BIGINT` | `Int64`, `UInt32`, `Int128`, `Int256` | |
+| `DECIMAL(p, s)` | a `Decimal(p', s')` it fits; with `s = 0` also `Int128/256`, `UInt64/128/256` | `DECIMAL(20, 0)` covers the full `UInt64` range |
+| `FLOAT` / `DOUBLE` | `Float32` (`FLOAT` only), `Float64` | |
+| `CHAR` / `VARCHAR` / `STRING` | `String`, `FixedString(n)`, `UUID`, `JSON` | `FixedString` checked in bytes; `UUID` must be canonical text |
+| `DATE` | `Date`, `Date32` | range-checked per record |
+| `TIMESTAMP(p)` / `TIMESTAMP_LTZ(p)` | `DateTime` (`p = 0`), `DateTime64(s >= p)` | Flink's default `TIMESTAMP` is precision 6 — declare `TIMESTAMP(3)` for `DateTime64(3)`. `TIMESTAMP` is a wall clock in `sink.timezone`; `TIMESTAMP_LTZ` an instant |
+| `ARRAY<t>` | `Array(T)` | only `Array(Nullable(T))` can carry nested NULLs |
+| `MAP<k, v>` | `Map(K, V)` | string/integer keys except `UInt64`; values not `Nullable` |
+| `MULTISET<t>` | `Map(T, UInt64)` | counts become the values |
+| `ROW<...>` | `Tuple(...)` | positional; fields/elements not nullable |
+
+Unsupported: `BINARY`/`VARBINARY`, `TIME`, `TIMESTAMP WITH TIME ZONE`, `INTERVAL`; ClickHouse
+`Enum` (#43), `Variant` (#60), `Time` (#91), `IPv4/6`, `Dynamic`, geo — exclude such columns
+and let server defaults fill them.
+
+Everywhere: nullable Flink columns need `Nullable(...)` targets — except `Nullable(UInt8/16/32/64)`,
+blocked until issue #144 — and composites must be `NOT NULL`. `LowCardinality` is transparent;
+`SimpleAggregateFunction(f, T)` matches as `T`, top-level only.
+
 Notes for SQL users:
 - Operator names are planner-generated (e.g. `Sink: ch_events[3]`), which affects metric
   identifiers; `numRecordsSend` counts at flush, so retried batches double-count versus
@@ -217,6 +247,9 @@ See the round-trip integration test
 for a complete DDL + `INSERT INTO` example against a real ClickHouse.
 
 ## Supported ClickHouse Types
+
+This is the DataStream (Java value) view; for the Flink SQL / Table API pairing rules see
+[Type mapping](#type-mapping).
 
 | Java Type       | ClickHouse Type | Supported | Serialize Method            |
 |-----------------|-----------------|-----------|-----------------------------| 
