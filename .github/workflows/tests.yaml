@@ -46,7 +46,10 @@ jobs:
       fail-fast: false
       matrix:
         clickhouse: [ "25.3", "25.8", "25.10", "25.11", "25.12", "latest" ]
-    name: Apache Flink 2.0.0 ClickHouse Connector tests with ClickHouse ${{ matrix.clickhouse }}
+        # 2.1+ first needs the new LogicalTypeRoots mapped or rejected in ClickHouseTypeMapper
+        # (the exhaustiveness guard fails the build on them by design).
+        flink: [ "2.0.0" ]
+    name: Apache Flink ${{ matrix.flink }} ClickHouse Connector tests with ClickHouse ${{ matrix.clickhouse }}
     steps:
       - uses: actions/checkout@v3
       - name: Set up JDK 17
@@ -59,5 +62,6 @@ jobs:
         uses: gradle/gradle-build-action@v2
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
+          FLINK_2_VERSION: ${{ matrix.flink }}
         with:
           arguments: :flink-connector-clickhouse-2.0.0:test
