@@ -10,11 +10,9 @@
  * check against the oldest supported flink-table-common.
  */
 
+// No publishing/signing plugins: this module ships no artifact (see header).
 plugins {
-    `maven-publish`
     java
-    signing
-    id("com.gradleup.nmcp") version "0.0.8"
 }
 
 val sinkVersion: String by rootProject.extra
