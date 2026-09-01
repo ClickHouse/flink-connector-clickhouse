@@ -32,6 +32,11 @@ public class ClickHouseTableApiIntegrationTests {
     }
 
     private static String sinkDdl(String flinkTable, String clickHouseTable, String columns) {
+        return sinkDdl(flinkTable, clickHouseTable, columns, "");
+    }
+
+    private static String sinkDdl(String flinkTable, String clickHouseTable, String columns,
+                                  String extraOptions) {
         return String.format(
                 "CREATE TABLE %s (%s) WITH ("
                         + "'connector' = 'clickhouse',"
@@ -39,13 +44,13 @@ public class ClickHouseTableApiIntegrationTests {
                         + "'username' = '%s',"
                         + "'password' = '%s',"
                         + "'database' = '%s',"
-                        + "'table' = '%s')",
+                        + "'table' = '%s'%s)",
                 flinkTable, columns,
                 ClickHouseServerForTests.getURL(),
                 ClickHouseServerForTests.getUsername(),
                 ClickHouseServerForTests.getPassword(),
                 ClickHouseServerForTests.getDatabase(),
-                clickHouseTable);
+                clickHouseTable, extraOptions);
     }
 
     @Test
@@ -55,7 +60,8 @@ public class ClickHouseTableApiIntegrationTests {
                 "CREATE TABLE `%s`.`%s` ("
                         + "id Int64, name String, amount Decimal(18, 4), created_at DateTime64(3), "
                         + "uid UUID, event_day Date, is_active Bool, score Float64, "
-                        + "tags Array(String), props Map(String, String)"
+                        + "tags Array(String), props Map(String, String), "
+                        + "category LowCardinality(String), code FixedString(4)"
                         + ") ENGINE = MergeTree() ORDER BY id",
                 ClickHouseServerForTests.getDatabase(), table));
 
@@ -70,15 +76,17 @@ public class ClickHouseTableApiIntegrationTests {
                         + "is_active BOOLEAN NOT NULL,"
                         + "score DOUBLE NOT NULL,"
                         + "tags ARRAY<STRING NOT NULL> NOT NULL,"
-                        + "props MAP<STRING, STRING NOT NULL> NOT NULL"));
+                        + "props MAP<STRING, STRING NOT NULL> NOT NULL,"
+                        + "category STRING NOT NULL,"
+                        + "code STRING NOT NULL"));
 
         String insert = "INSERT INTO ch_events VALUES "
                 + "(1, 'alice', CAST(12.5 AS DECIMAL(18, 4)), TIMESTAMP '2026-01-02 03:04:05.678', "
                 + "'f47ac10b-58cc-4372-a567-0e02b2c3d479', DATE '2026-01-02', true, 99.25, "
-                + "ARRAY['a', 'b'], MAP['k1', 'v1']), "
+                + "ARRAY['a', 'b'], MAP['k1', 'v1'], 'gold', 'AB12'), "
                 + "(2, 'bob', CAST(7 AS DECIMAL(18, 4)), TIMESTAMP '2026-01-02 03:04:06', "
                 + "'123e4567-e89b-12d3-a456-426614174000', DATE '1970-01-01', false, -1.5, "
-                + "ARRAY['x'], MAP['k2', 'v2'])";
+                + "ARRAY['x'], MAP['k2', 'v2'], 'silver', 'ZZ99')";
 
         // EXPLAIN re-invokes the factory; the INSERT below plans again and re-introspects.
         Assertions.assertFalse(env.explainSql(insert).isEmpty());
@@ -87,7 +95,7 @@ public class ClickHouseTableApiIntegrationTests {
         List<GenericRecord> rows = ClickHouseServerForTests.extractData(
                 "id, name, amount, toString(created_at) AS created_at_s, toString(uid) AS uid_s, "
                         + "toString(event_day) AS day_s, is_active, score, toString(tags) AS tags_s, "
-                        + "toString(props) AS props_s",
+                        + "toString(props) AS props_s, category, toString(code) AS code_s",
                 ClickHouseServerForTests.getDatabase(), table, "id");
 
         Assertions.assertEquals(2, rows.size());
@@ -102,6 +110,8 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals(99.25, first.getDouble("score"));
         Assertions.assertEquals("['a','b']", first.getString("tags_s"));
         Assertions.assertEquals("{'k1':'v1'}", first.getString("props_s"));
+        Assertions.assertEquals("gold", first.getString("category"));
+        Assertions.assertEquals("AB12", first.getString("code_s"));
 
         GenericRecord second = rows.get(1);
         Assertions.assertEquals(2L, second.getLong("id"));
@@ -109,6 +119,8 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals("1970-01-01", second.getString("day_s"));
         Assertions.assertFalse(second.getBoolean("is_active"));
         Assertions.assertEquals("['x']", second.getString("tags_s"));
+        Assertions.assertEquals("silver", second.getString("category"));
+        Assertions.assertEquals("ZZ99", second.getString("code_s"));
     }
 
     @Test
@@ -379,6 +391,106 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals("first", rows.get(1).getString("src"));
         Assertions.assertEquals("second", rows.get(2).getString("src"));
         Assertions.assertEquals("second", rows.get(3).getString("src"));
+    }
+
+    @Test
+    void columnsMapByNameNotPosition() throws Exception {
+        String table = "table_api_permuted";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (a Int64, b String, c Float64) ENGINE = MergeTree() ORDER BY a",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        // Deliberately not the ClickHouse order; positional mapping could not even plan this.
+        env.executeSql(sinkDdl("ch_permuted", table,
+                "c DOUBLE NOT NULL, a BIGINT NOT NULL, b STRING NOT NULL"));
+        env.executeSql("INSERT INTO ch_permuted VALUES (1.5, 7, 'x')").await();
+
+        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+                "a, b, c", ClickHouseServerForTests.getDatabase(), table, "a");
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals(7L, rows.get(0).getLong("a"));
+        Assertions.assertEquals("x", rows.get(0).getString("b"));
+        Assertions.assertEquals(1.5, rows.get(0).getDouble("c"));
+    }
+
+    @Test
+    void typeMismatchFailsAtPlanningNamingColumnAndBothTypes() throws Exception {
+        String table = "table_api_mismatch";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, label Int64) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_mismatch", table, "id BIGINT NOT NULL, label STRING NOT NULL"));
+
+        Exception e = Assertions.assertThrows(Exception.class,
+                () -> env.executeSql("INSERT INTO ch_mismatch VALUES (1, 'nope')"));
+        Assertions.assertTrue(exceptionChainContains(e,
+                        "Column 'label': Flink type STRING NOT NULL cannot be written to "
+                                + "ClickHouse column 'label Int64'"),
+                "Unexpected failure: " + e);
+    }
+
+    @Test
+    void ignoredUnknownFlinkColumnIsSkippedAtWriteTime() throws Exception {
+        String table = "table_api_ignore_unknown";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, name String) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        // 'extra' sits between the mapped columns, so the surviving accessors must keep their indices.
+        env.executeSql(sinkDdl("ch_ignore_unknown", table,
+                "id BIGINT NOT NULL, extra STRING NOT NULL, name STRING NOT NULL",
+                ", 'sink.ignore-unknown-flink-columns' = 'true'"));
+        env.executeSql("INSERT INTO ch_ignore_unknown VALUES (3, 'dropped', 'carol')").await();
+
+        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+                "id, name", ClickHouseServerForTests.getDatabase(), table, "id");
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals(3L, rows.get(0).getLong("id"));
+        Assertions.assertEquals("carol", rows.get(0).getString("name"));
+    }
+
+    @Test
+    void computedColumnsAreExcludedFromTheSinkSchema() throws Exception {
+        String table = "table_api_computed";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, name String) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        // 'id_plus' has no ClickHouse counterpart and must never reach schema resolution.
+        env.executeSql(sinkDdl("ch_computed", table,
+                "id BIGINT NOT NULL, name STRING NOT NULL, id_plus AS id + 1"));
+        env.executeSql("INSERT INTO ch_computed VALUES (1, 'x')").await();
+
+        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+                "id, name", ClickHouseServerForTests.getDatabase(), table, "id");
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals(1L, rows.get(0).getLong("id"));
+        Assertions.assertEquals("x", rows.get(0).getString("name"));
+    }
+
+    @Test
+    void primaryKeyIsAcceptedAndIgnored() throws Exception {
+        String table = "table_api_primary_key";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, v String) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_primary_key", table,
+                "id BIGINT NOT NULL, v STRING NOT NULL, PRIMARY KEY (id) NOT ENFORCED"));
+        // Same key twice: the sink appends both — no silent upsert until #148 makes it a choice.
+        env.executeSql("INSERT INTO ch_primary_key VALUES (1, 'first'), (1, 'second')").await();
+
+        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+                "id, v", ClickHouseServerForTests.getDatabase(), table, "v");
+        Assertions.assertEquals(2, rows.size());
+        Assertions.assertEquals("first", rows.get(0).getString("v"));
+        Assertions.assertEquals("second", rows.get(1).getString("v"));
     }
 
     /**
