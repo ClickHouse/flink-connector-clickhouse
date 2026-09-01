@@ -106,6 +106,18 @@ class DataWriterDispatchTest {
         assertTrue(r.length > 0);
     }
 
+    // Object[] is the tuple shape the Table API mapper produces (toPayloadTuple).
+    @Test void dispatchTupleFromObjectArray() throws IOException {
+        byte[] r = serialize(new Object[]{42, "ab"}, ClickHouseColumn.of("c", "Tuple(Int32, String)"));
+        assertArrayEquals(new byte[]{42, 0, 0, 0, 2, 'a', 'b'}, r);
+    }
+
+    @Test void dispatchArrayNullableElementWritesNullMarker() throws IOException {
+        byte[] r = serialize(Arrays.asList(7, null), ClickHouseColumn.of("c", "Array(Nullable(Int32))"));
+        // varint count, then per element: null marker byte (+ value when non-null).
+        assertArrayEquals(new byte[]{2, 0, 7, 0, 0, 0, 1}, r);
+    }
+
     @Test void dispatchBoolean() throws IOException {
         byte[] r = serialize(true, ClickHouseColumn.of("c", "Bool"));
         assertTrue(r.length >= 1);

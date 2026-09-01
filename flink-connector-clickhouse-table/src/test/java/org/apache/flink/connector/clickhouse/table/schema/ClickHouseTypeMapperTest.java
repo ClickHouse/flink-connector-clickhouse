@@ -6,6 +6,7 @@ import org.apache.flink.connector.clickhouse.table.data.ValueConverter;
 import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.data.GenericArrayData;
 import org.apache.flink.table.data.GenericMapData;
+import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.types.logical.ArrayType;
@@ -13,9 +14,11 @@ import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.DateType;
 import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.IntType;
+import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.MapType;
 import org.apache.flink.table.types.logical.MultisetType;
+import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.SmallIntType;
 import org.apache.flink.table.types.logical.TimestampType;
 import org.apache.flink.table.types.logical.VarCharType;
@@ -29,11 +32,14 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -219,6 +225,60 @@ class ClickHouseTypeMapperTest {
     }
 
     @Test
+    void rowWritesToTupleWithPositionalFields() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                rowOf(new IntType(false), new VarCharType(false, VarCharType.MAX_LENGTH)),
+                col("Tuple(Int32, String)"), UTC, "c");
+        Object[] tuple = (Object[]) converter.convert(
+                GenericRowData.of(7, StringData.fromString("x")));
+        assertArrayEquals(new Object[]{7, "x"}, tuple);
+    }
+
+    @Test
+    void rowFieldCountMustMatchTupleElementCount() {
+        TypeMappingException e = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(
+                        rowOf(new IntType(false)), col("Tuple(Int32, String)"), UTC, "c"));
+        assertEquals("ROW has 1 fields but the Tuple has 2 elements", e.getMessage());
+    }
+
+    @Test
+    void nullableTupleElementsAreRejectedOnEitherSide() {
+        TypeMappingException flinkSide = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(
+                        rowOf(new IntType(true)), col("Tuple(Int32)"), UTC, "c"));
+        assertTrue(flinkSide.getMessage().contains("declare the field NOT NULL"),
+                flinkSide.getMessage());
+
+        TypeMappingException clickHouseSide = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(
+                        rowOf(new IntType(false)), col("Tuple(Nullable(Int32))"), UTC, "c"));
+        assertTrue(clickHouseSide.getMessage().contains("Nullable Tuple elements"),
+                clickHouseSide.getMessage());
+    }
+
+    @Test
+    void nullRowFieldFailsNamingTheColumn() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                rowOf(new IntType(false), new VarCharType(false, VarCharType.MAX_LENGTH)),
+                col("Tuple(Int32, String)"), UTC, "c");
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> converter.convert(GenericRowData.of(7, null)));
+        assertTrue(e.getMessage().contains("Column 'c'"), e.getMessage());
+        assertTrue(e.getMessage().contains("null ROW field 2"), e.getMessage());
+    }
+
+    @Test
+    void rowFieldRangeChecksNameTheFieldPath() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                rowOf(new SmallIntType(false)), col("Tuple(UInt8)"), UTC, "c");
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> converter.convert(GenericRowData.of((short) 256)));
+        assertTrue(e.getMessage().contains("Column 'c.f0'"), e.getMessage());
+        assertTrue(e.getMessage().contains("UInt8 range 0..255"), e.getMessage());
+    }
+
+    @Test
     void multisetRejectsNegativeCounts() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
                 multisetOfString(), col("Map(String, UInt64)"), UTC, "c");
@@ -326,5 +386,13 @@ class ClickHouseTypeMapperTest {
 
     private static MultisetType multisetOfString() {
         return new MultisetType(false, new VarCharType(false, VarCharType.MAX_LENGTH));
+    }
+
+    private static RowType rowOf(LogicalType... fieldTypes) {
+        List<RowType.RowField> fields = new ArrayList<>();
+        for (int i = 0; i < fieldTypes.length; i++) {
+            fields.add(new RowType.RowField("f" + i, fieldTypes[i]));
+        }
+        return new RowType(false, fields);
     }
 }

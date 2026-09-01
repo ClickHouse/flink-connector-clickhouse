@@ -322,6 +322,31 @@ public class ClickHouseTableApiIntegrationTests {
     }
 
     @Test
+    void rowWritesIntoTupleAndNullArrayElementsRoundTrip() throws Exception {
+        String table = "table_api_tuple";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` ("
+                        + "id Int64, pair Tuple(Int32, String), nums Array(Nullable(Int32))"
+                        + ") ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_tuple", table,
+                "id BIGINT NOT NULL,"
+                        + "pair ROW<a INT NOT NULL, b STRING NOT NULL> NOT NULL,"
+                        + "nums ARRAY<INT> NOT NULL"));
+        env.executeSql("INSERT INTO ch_tuple VALUES "
+                + "(1, ROW(7, 'x'), ARRAY[1, CAST(NULL AS INT), 3])").await();
+
+        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+                "id, toString(pair) AS pair_s, toString(nums) AS nums_s",
+                ClickHouseServerForTests.getDatabase(), table, "id");
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals("(7,'x')", rows.get(0).getString("pair_s"));
+        Assertions.assertEquals("[1,NULL,3]", rows.get(0).getString("nums_s"));
+    }
+
+    @Test
     void simpleAggregateFunctionColumnAcceptsItsInnerType() throws Exception {
         String table = "table_api_simple_agg";
         ClickHouseServerForTests.executeSql(String.format(
