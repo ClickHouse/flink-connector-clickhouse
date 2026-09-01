@@ -114,7 +114,7 @@ public class ClickHouseClientConfig implements Serializable {
      * Pings up to {@link #DEFAULT_MAX_RETRIES} times, 1s apart — a fixed bound, deliberately
      * not governed by sink.max-retries, which configures runtime batch retries: reusing it
      * here would let a batch-resilience setting block planning for minutes. An interrupt
-     * stops the loop and is re-asserted for the caller.
+     * is re-asserted and fails with its own message, never as a server-availability error.
      */
     private static void pingLoop(Client client) {
         boolean isServerAlive = false;
@@ -128,7 +128,7 @@ public class ClickHouseClientConfig implements Serializable {
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    break;
+                    throw new RuntimeException("Interrupted while checking ClickHouse connectivity.", e);
                 }
             }
         }
