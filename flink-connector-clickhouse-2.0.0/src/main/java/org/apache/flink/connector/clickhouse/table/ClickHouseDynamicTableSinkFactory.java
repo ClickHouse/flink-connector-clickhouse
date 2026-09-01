@@ -97,7 +97,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
     @Override
     public DynamicTableSink createDynamicTableSink(Context context) {
         ReadableConfig options = validatedOptions(context);
-        // Built first so an invalid sink.timezone fails before any network call.
+        // Built first so an invalid sink.timezone or unsupported table name fails before any network call.
         SchemaResolverOptions resolverOptions = buildResolverOptions(options);
         logIgnoredPrimaryKey(context);
 

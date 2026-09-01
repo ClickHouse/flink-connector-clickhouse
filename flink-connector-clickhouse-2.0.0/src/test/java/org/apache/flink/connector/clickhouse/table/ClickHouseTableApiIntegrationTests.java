@@ -1,5 +1,6 @@
 package org.apache.flink.connector.clickhouse.table;
 
+import com.clickhouse.client.api.Client;
 import com.clickhouse.client.api.query.GenericRecord;
 
 import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests;
@@ -213,6 +214,25 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertTrue(exceptionChainContains(e,
                         "Column 'nickname' declared in the Flink schema does not exist in"),
                 "Unexpected failure: " + e);
+    }
+
+    /**
+     * Fails when client-v2 learns to quote table names (clickhouse-java#3089) — then remove
+     * SchemaResolverOptions#requireUnquotedTableName, its unit test, and this canary.
+     */
+    @Test
+    void clientV2StillCannotDescribeTableNamesNeedingQuotes() throws Exception {
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`table-api-canary` (id Int64) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase()));
+        try (Client client = new Client.Builder()
+                .addEndpoint(ClickHouseServerForTests.getURL())
+                .setUsername(ClickHouseServerForTests.getUsername())
+                .setPassword(ClickHouseServerForTests.getPassword())
+                .build()) {
+            Assertions.assertThrows(Exception.class, () -> client.getTableSchema(
+                    "table-api-canary", ClickHouseServerForTests.getDatabase()));
+        }
     }
 
     private static boolean exceptionChainContains(Throwable t, String needle) {

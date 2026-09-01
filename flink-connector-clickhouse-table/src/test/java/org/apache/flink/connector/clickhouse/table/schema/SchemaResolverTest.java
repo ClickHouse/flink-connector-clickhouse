@@ -132,6 +132,16 @@ class SchemaResolverTest {
     }
 
     @Test
+    void tableNamesNeedingQuotesAreRejectedBeforeIntrospection() {
+        ValidationException e = assertThrows(ValidationException.class, () ->
+                new SchemaResolverOptions("analytics", "my-table", UTC, false));
+        assertTrue(e.getMessage().contains("'my-table'"), e.getMessage());
+        assertTrue(e.getMessage().contains("unquoted"), e.getMessage());
+        // Unusual but unquoted-legal names stay accepted.
+        assertEquals("_events_2", new SchemaResolverOptions("analytics", "_events_2", UTC, false).table);
+    }
+
+    @Test
     void unknownFlinkColumnIsDroppedWhenIgnoreIsEnabled() {
         ResolvedSchema schema = ResolvedSchema.of(
                 Column.physical("nickname", DataTypes.STRING().notNull()),
