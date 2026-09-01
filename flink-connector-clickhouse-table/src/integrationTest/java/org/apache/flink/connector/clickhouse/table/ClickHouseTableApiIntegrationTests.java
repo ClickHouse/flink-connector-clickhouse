@@ -216,6 +216,171 @@ public class ClickHouseTableApiIntegrationTests {
                 "Unexpected failure: " + e);
     }
 
+    @Test
+    void nullValuesRoundTripIntoNullableColumns() throws Exception {
+        String table = "table_api_nullable";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` ("
+                        + "id Int64, name Nullable(String), score Nullable(Float64), event_day Nullable(Date)"
+                        + ") ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_nullable", table,
+                "id BIGINT NOT NULL, name STRING, score DOUBLE, event_day DATE"));
+        env.executeSql("INSERT INTO ch_nullable VALUES "
+                + "(1, 'alice', 99.5, DATE '2026-01-02'), "
+                + "(2, CAST(NULL AS STRING), CAST(NULL AS DOUBLE), CAST(NULL AS DATE))").await();
+
+        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+                "id, ifNull(name, '<null>') AS name_s, ifNull(toString(score), '<null>') AS score_s, "
+                        + "ifNull(toString(event_day), '<null>') AS day_s",
+                ClickHouseServerForTests.getDatabase(), table, "id");
+
+        Assertions.assertEquals(2, rows.size());
+        Assertions.assertEquals("alice", rows.get(0).getString("name_s"));
+        Assertions.assertEquals("99.5", rows.get(0).getString("score_s"));
+        Assertions.assertEquals("2026-01-02", rows.get(0).getString("day_s"));
+        Assertions.assertEquals("<null>", rows.get(1).getString("name_s"));
+        Assertions.assertEquals("<null>", rows.get(1).getString("score_s"));
+        Assertions.assertEquals("<null>", rows.get(1).getString("day_s"));
+    }
+
+    @Test
+    void multisetRoundTripsIntoUInt64CountMap() throws Exception {
+        String table = "table_api_multiset";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, tags Map(String, UInt64)) "
+                        + "ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        // Flink SQL has no MULTISET literal; COLLECT in batch mode emits final, insert-only rows.
+        TableEnvironment env = TableEnvironment.create(EnvironmentSettings.inBatchMode());
+        env.executeSql(sinkDdl("ch_multiset", table,
+                "id BIGINT NOT NULL, tags MULTISET<STRING NOT NULL> NOT NULL"));
+        env.executeSql("INSERT INTO ch_multiset "
+                + "SELECT id, COLLECT(tag) FROM ("
+                + "  SELECT CAST(id AS BIGINT) AS id, CAST(tag AS STRING) AS tag "
+                + "  FROM (VALUES (1, 'a'), (1, 'a'), (1, 'b'), (2, 'z')) AS t(id, tag)"
+                + ") GROUP BY id").await();
+
+        // Map entry order is not deterministic, so probe by key instead of comparing strings.
+        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+                "id, toInt64(tags['a']) AS a_cnt, toInt64(tags['b']) AS b_cnt, "
+                        + "toInt64(tags['z']) AS z_cnt, toInt64(length(tags)) AS n_keys",
+                ClickHouseServerForTests.getDatabase(), table, "id");
+
+        Assertions.assertEquals(2, rows.size());
+        Assertions.assertEquals(2L, rows.get(0).getLong("a_cnt"));
+        Assertions.assertEquals(1L, rows.get(0).getLong("b_cnt"));
+        Assertions.assertEquals(2L, rows.get(0).getLong("n_keys"));
+        Assertions.assertEquals(1L, rows.get(1).getLong("z_cnt"));
+        Assertions.assertEquals(1L, rows.get(1).getLong("n_keys"));
+    }
+
+    @Test
+    void simpleAggregateFunctionColumnAcceptsItsInnerType() throws Exception {
+        String table = "table_api_simple_agg";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, total SimpleAggregateFunction(sum, Int64)) "
+                        + "ENGINE = AggregatingMergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_simple_agg", table, "id BIGINT NOT NULL, total BIGINT NOT NULL"));
+        env.executeSql("INSERT INTO ch_simple_agg VALUES (1, 10), (2, 20)").await();
+
+        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+                "id, toInt64(total) AS total_v",
+                ClickHouseServerForTests.getDatabase(), table, "id");
+        Assertions.assertEquals(2, rows.size());
+        Assertions.assertEquals(10L, rows.get(0).getLong("total_v"));
+        Assertions.assertEquals(20L, rows.get(1).getLong("total_v"));
+    }
+
+    @Test
+    void updatingSourceIsRejectedAtPlanningAsInsertOnly() throws Exception {
+        String table = "table_api_insert_only";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (name String, cnt Int64) ENGINE = MergeTree() ORDER BY name",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_insert_only", table, "name STRING NOT NULL, cnt BIGINT NOT NULL"));
+
+        // A streaming GROUP BY emits updates; the insert-only sink must reject the plan (#148).
+        Exception e = Assertions.assertThrows(Exception.class,
+                () -> env.executeSql("INSERT INTO ch_insert_only "
+                        + "SELECT name, COUNT(*) FROM (VALUES ('a'), ('a'), ('b')) AS t(name) "
+                        + "GROUP BY name"));
+        Assertions.assertTrue(exceptionChainContains(e, "doesn't support consuming update changes"),
+                "Unexpected failure: " + e);
+    }
+
+    @Test
+    void omittedClickHouseColumnsWithDefaultsAreBackfilled() throws Exception {
+        String table = "table_api_defaults";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` ("
+                        + "id Int64, note Nullable(String), tag String DEFAULT 'none'"
+                        + ") ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_defaults", table, "id BIGINT NOT NULL"));
+        env.executeSql("INSERT INTO ch_defaults VALUES (5)").await();
+
+        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+                "id, ifNull(note, '<null>') AS note_s, tag",
+                ClickHouseServerForTests.getDatabase(), table, "id");
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals(5L, rows.get(0).getLong("id"));
+        Assertions.assertEquals("<null>", rows.get(0).getString("note_s"));
+        Assertions.assertEquals("none", rows.get(0).getString("tag"));
+    }
+
+    @Test
+    void omittedRequiredClickHouseColumnFailsAtPlanning() throws Exception {
+        String table = "table_api_required";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, req String) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_required", table, "id BIGINT NOT NULL"));
+
+        Exception e = Assertions.assertThrows(Exception.class,
+                () -> env.executeSql("INSERT INTO ch_required VALUES (1)"));
+        Assertions.assertTrue(exceptionChainContains(e, "is neither Nullable nor has a DEFAULT"),
+                "Unexpected failure: " + e);
+    }
+
+    @Test
+    void statementSetInsertsIntoTheSameSinkTwice() throws Exception {
+        String table = "table_api_stmt_set";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, src String) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_stmt_set", table, "id BIGINT NOT NULL, src STRING NOT NULL"));
+
+        // Two INSERTs into one sink table: the planner copies the sink, exercising copy()'s deep copy.
+        env.createStatementSet()
+                .addInsertSql("INSERT INTO ch_stmt_set VALUES (1, 'first'), (2, 'first')")
+                .addInsertSql("INSERT INTO ch_stmt_set VALUES (3, 'second'), (4, 'second')")
+                .execute()
+                .await();
+
+        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+                "id, src", ClickHouseServerForTests.getDatabase(), table, "id");
+        Assertions.assertEquals(4, rows.size());
+        Assertions.assertEquals("first", rows.get(0).getString("src"));
+        Assertions.assertEquals("first", rows.get(1).getString("src"));
+        Assertions.assertEquals("second", rows.get(2).getString("src"));
+        Assertions.assertEquals("second", rows.get(3).getString("src"));
+    }
+
     /**
      * Fails when client-v2 learns to quote table names (clickhouse-java#3089) — then remove
      * SchemaResolverOptions#requireUnquotedTableName, its unit test, and this canary.
