@@ -8,10 +8,13 @@ import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 
 /** End-to-end Flink SQL round trips against a real ClickHouse, plus a planning-time rejection. */
@@ -491,6 +494,76 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals(2, rows.size());
         Assertions.assertEquals("first", rows.get(0).getString("v"));
         Assertions.assertEquals("second", rows.get(1).getString("v"));
+    }
+
+    @Test
+    void sinkTimezoneInterpretsWallClockTimestamps() throws Exception {
+        String table = "table_api_sink_timezone";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, ts DateTime64(3)) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_sink_tz", table,
+                "id BIGINT NOT NULL, ts TIMESTAMP(3) NOT NULL",
+                ", 'sink.timezone' = 'Asia/Tokyo'"));
+        env.executeSql("INSERT INTO ch_sink_tz VALUES (1, TIMESTAMP '2026-01-02 09:00:00')").await();
+
+        // 09:00 Tokyo wall clock is midnight UTC; compare instants, not rendered strings.
+        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+                "id, toUnixTimestamp64Milli(ts) AS ts_ms",
+                ClickHouseServerForTests.getDatabase(), table, "id");
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals(Instant.parse("2026-01-02T00:00:00Z").toEpochMilli(),
+                rows.get(0).getLong("ts_ms"));
+    }
+
+    @Test
+    void timestampLtzWritesTheInstantRegardlessOfZones() throws Exception {
+        String table = "table_api_ltz";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, ts DateTime64(3)) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        // The session zone fixes the instant at CAST time; sink.timezone must not shift it again.
+        env.getConfig().setLocalTimeZone(ZoneId.of("Asia/Tokyo"));
+        env.executeSql(sinkDdl("ch_ltz", table,
+                "id BIGINT NOT NULL, ts TIMESTAMP_LTZ(3) NOT NULL",
+                ", 'sink.timezone' = 'America/New_York'"));
+        env.executeSql("INSERT INTO ch_ltz VALUES "
+                + "(1, CAST(TIMESTAMP '2026-01-02 09:00:00' AS TIMESTAMP_LTZ(3)))").await();
+
+        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+                "id, toUnixTimestamp64Milli(ts) AS ts_ms",
+                ClickHouseServerForTests.getDatabase(), table, "id");
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals(Instant.parse("2026-01-02T00:00:00Z").toEpochMilli(),
+                rows.get(0).getLong("ts_ms"));
+    }
+
+    @Test
+    void jsonColumnAcceptsJsonStrings() throws Exception {
+        String table = "table_api_json";
+        try {
+            ClickHouseServerForTests.executeSql(String.format(
+                    "CREATE TABLE `%s`.`%s` (id Int64, j JSON) ENGINE = MergeTree() ORDER BY id",
+                    ClickHouseServerForTests.getDatabase(), table));
+        } catch (Exception e) {
+            // Probe, don't pin versions: the modern JSON type is GA from 25.3.
+            Assumptions.assumeTrue(false, "Server lacks the JSON type: " + e.getMessage());
+        }
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_json", table, "id BIGINT NOT NULL, j STRING NOT NULL"));
+        env.executeSql("INSERT INTO ch_json VALUES (1, '{\"k\": \"v\", \"n\": 42}')").await();
+
+        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+                "id, toString(getSubcolumn(j, 'k')) AS k_s, toInt64(getSubcolumn(j, 'n')) AS n_v",
+                ClickHouseServerForTests.getDatabase(), table, "id");
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals("v", rows.get(0).getString("k_s"));
+        Assertions.assertEquals(42L, rows.get(0).getLong("n_v"));
     }
 
     /**
