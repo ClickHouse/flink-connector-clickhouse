@@ -116,14 +116,18 @@ sourceSets {
     }
 }
 
-// The Table API factory pair is hand-duplicated across the version modules: it needs this
+// These files are hand-duplicated across the version modules (the Table API pair needs this
 // module's ClickHouseAsyncSink/ClickHouseClientConfig, so it cannot be single-sourced in
-// :flink-connector-clickhouse-table until those are. Fail the build on drift instead.
-val checkTableApiCopiesInSync by tasks.registering {
+// :flink-connector-clickhouse-table until those are; the config and builder predate the split).
+// Fail the build on drift instead. Files that legitimately differ per Flink generation
+// (ClickHouseConvertor, ClickHouseAsyncWriter, ...) must stay out of this list.
+val checkCrossVersionCopiesInSync by tasks.registering {
     val copies = listOf(
         "src/main/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSink.java",
         "src/main/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSinkFactory.java",
         "src/main/resources/META-INF/services/org.apache.flink.table.factories.Factory",
+        "src/main/java/org/apache/flink/connector/clickhouse/sink/ClickHouseClientConfig.java",
+        "src/main/java/org/apache/flink/connector/clickhouse/sink/ClickHouseAsyncSinkBuilder.java",
     ).map { file(it) to project(":flink-connector-clickhouse-1.17").file(it) }
     inputs.files(copies.flatMap { listOf(it.first, it.second) })
     doLast {
@@ -134,7 +138,7 @@ val checkTableApiCopiesInSync by tasks.registering {
         }
     }
 }
-tasks.named("check") { dependsOn(checkTableApiCopiesInSync) }
+tasks.named("check") { dependsOn(checkCrossVersionCopiesInSync) }
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("all")

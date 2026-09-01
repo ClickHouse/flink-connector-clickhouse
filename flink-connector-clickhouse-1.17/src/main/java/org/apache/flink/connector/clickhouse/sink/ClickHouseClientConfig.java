@@ -122,8 +122,8 @@ public class ClickHouseClientConfig implements Serializable {
             isServerAlive = client.ping();
             if (!isServerAlive) {
                 LOG.warn(
-                    "Ping failed; will retry up to {} times in {} seconds.",
-                    DEFAULT_MAX_RETRIES, 1);
+                        "Ping failed; will retry up to {} times in {} seconds.",
+                        DEFAULT_MAX_RETRIES, 1);
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {
@@ -198,7 +198,7 @@ public class ClickHouseClientConfig implements Serializable {
 
     public void setBatchFailureStrategy(BatchFailureStrategy batchFailureStrategy) {
         this.batchFailureStrategy = Objects.requireNonNull(
-            batchFailureStrategy,"batchFailureStrategy must not be null");
+                batchFailureStrategy,"batchFailureStrategy must not be null");
     }
 
     public void setEnableJsonSupportAsString(boolean enableJsonSupportAsString) {
