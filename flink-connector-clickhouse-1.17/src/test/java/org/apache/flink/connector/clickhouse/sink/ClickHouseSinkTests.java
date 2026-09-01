@@ -7,6 +7,7 @@ import com.clickhouse.data.ClickHouseFormat;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.connector.base.sink.writer.ElementConverter;
+import org.apache.flink.connector.base.sink.writer.strategy.RateLimitingStrategy;
 import org.apache.flink.connector.clickhouse.convertor.ClickHouseConvertor;
 import org.apache.flink.connector.clickhouse.convertor.DataMapper;
 import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
@@ -26,6 +27,7 @@ import org.apache.flink.core.fs.Path;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.util.function.SerializableSupplier;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -442,6 +444,79 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
                 getServerURL(), getUsername(), getPassword(), getDatabase(), "dummy");
         Assertions.assertThrows(NullPointerException.class,
                 () -> config.setBatchFailureStrategy(null));
+    }
+
+    @Test
+    void RateLimitingStrategySupplierDefaultIsNull() {
+        ClickHouseClientConfig config = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), "dummy");
+        Assertions.assertNull(config.getRateLimitingStrategySupplier());
+    }
+
+    @Test
+    void RateLimitingStrategySupplierCanBeSet() {
+        ClickHouseClientConfig config = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), "dummy");
+        SerializableSupplier<RateLimitingStrategy> supplier =
+                () -> new TrackingRateLimitingStrategy(10);
+        config.setRateLimitingStrategySupplier(supplier);
+        Assertions.assertSame(supplier, config.getRateLimitingStrategySupplier());
+    }
+
+    /*
+        Proves that a caller-supplied RateLimitingStrategy is actually wired through
+        ClickHouseClientConfig -> ClickHouseAsyncWriter.buildConfiguration into the
+        AsyncSinkWriterConfiguration, rather than the sink silently falling back to its
+        default congestion-control strategy. If the wiring were broken, the job would
+        still succeed (the default strategy would take over) but the tracking counters
+        below would stay at zero.
+    */
+    @Test
+    void CustomRateLimitingStrategyIsAppliedTest() throws Exception {
+        String tableName = "custom_rate_limiting_strategy";
+        ClickHouseServerForTests.executeSql(
+                "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` " +
+                "(date Date, location_key String, value Int32) " +
+                "ENGINE = MergeTree ORDER BY (location_key, date)");
+
+        TrackingRateLimitingStrategy.reset();
+        int batchSize = 50;
+        int totalRows = 500;
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
+                getServerURL(), getUsername(), getPassword(), getDatabase(), tableName);
+        clickHouseClientConfig.setRateLimitingStrategySupplier(
+                () -> new TrackingRateLimitingStrategy(batchSize));
+
+        ClickHouseAsyncSink<String> sink = ClickHouseAsyncSink.<String>builder()
+                .setElementConverter(new ClickHouseConvertor<>(String.class))
+                .setMaxBatchSize(batchSize)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .setClickHouseFormat(ClickHouseFormat.CSV)
+                .build();
+
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+
+        List<String> records = new ArrayList<>();
+        for (int i = 0; i < totalRows; i++) {
+            records.add(String.format("2020-01-01,loc_%03d,100", i));
+        }
+        env.fromElements(records.toArray(new String[0])).sinkTo(sink);
+
+        int rows = executeAsyncJob(env, tableName, 10, totalRows);
+        Assertions.assertEquals(totalRows, rows);
+        Assertions.assertTrue(TrackingRateLimitingStrategy.inFlightRegistrations.get() > 0,
+                "Expected the custom RateLimitingStrategy to have registered in-flight requests — "
+                + "it was likely never wired into the writer");
+        Assertions.assertTrue(TrackingRateLimitingStrategy.completedRegistrations.get() > 0,
+                "Expected the custom RateLimitingStrategy to have registered completed requests — "
+                + "it was likely never wired into the writer");
     }
 
     @Test

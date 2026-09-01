@@ -151,6 +151,18 @@ public class ClickHouseClientConfig implements Serializable {
         return rateLimitingStrategySupplier;
     }
 
+    /**
+     * Overrides the {@link RateLimitingStrategy} that {@code AsyncSinkWriterConfiguration} would
+     * otherwise default to (a congestion-control strategy derived from {@code maxInFlightRequests}
+     * and {@code maxBatchSize}). Supply this to use a strategy tuned for a specific ClickHouse
+     * deployment — e.g. a fixed-rate limiter to protect a small cluster from insert spikes, or a
+     * more aggressive scaling strategy for one that can absorb bursts.
+     *
+     * <p>A supplier (rather than a strategy instance) is required because
+     * {@link RateLimitingStrategy} is not {@link Serializable} — the supplier is what gets
+     * shipped to task managers, and each writer calls {@code get()} locally to construct its own
+     * strategy instance.
+     */
     public void setRateLimitingStrategySupplier(
             SerializableSupplier<RateLimitingStrategy> rateLimitingStrategySupplier) {
         this.rateLimitingStrategySupplier = rateLimitingStrategySupplier;
