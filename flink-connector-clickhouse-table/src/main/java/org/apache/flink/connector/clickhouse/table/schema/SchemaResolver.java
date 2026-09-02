@@ -36,8 +36,11 @@ public final class SchemaResolver {
 
     private static final Logger LOG = LoggerFactory.getLogger(SchemaResolver.class);
 
-    /** Targets whose {@code Nullable} form DataWriter cannot write a null to yet (issue #144). */
-    private static final Set<ClickHouseDataType> NULL_HANDLING_BROKEN_TARGETS = EnumSet.of(
+    /**
+     * Targets whose {@code Nullable} form DataWriter cannot write a null to yet (issue #144);
+     * the canary test pins each entry and triggers its removal once the writer is fixed.
+     */
+    static final Set<ClickHouseDataType> NULL_HANDLING_BROKEN_TARGETS = EnumSet.of(
             ClickHouseDataType.UInt8, ClickHouseDataType.UInt16,
             ClickHouseDataType.UInt32, ClickHouseDataType.UInt64);
 
@@ -52,7 +55,6 @@ public final class SchemaResolver {
         List<RowType.RowField> fields = physicalRowType(flinkSchema).getFields();
         for (int i = 0; i < fields.size(); i++) {
             RowType.RowField field = fields.get(i);
-            checkNotReservedName(field.getName());
             ClickHouseColumn column = clickHouseColumns.get(field.getName());
             if (column == null) {
                 if (options.ignoreUnknownFlinkColumns) {
@@ -60,6 +62,8 @@ public final class SchemaResolver {
                 }
                 throw unknownFlinkColumn(field.getName(), clickHouseColumns, options);
             }
+            // After the unknown-column skip: a dropped column never becomes a payload key.
+            checkNotReservedName(field.getName());
             mappings.add(resolveColumn(i, field, column, options));
         }
 
@@ -86,7 +90,7 @@ public final class SchemaResolver {
         ValueConverter converter = converterFor(field, column, options);
         FieldAccessor accessor = FieldAccessor.of(
                 RowData.createFieldGetter(field.getType(), fieldIndex), converter);
-        return new ResolvedColumnMapping(fieldIndex, column, accessor);
+        return new ResolvedColumnMapping(column, accessor);
     }
 
     private static ValueConverter converterFor(RowType.RowField field, ClickHouseColumn column,

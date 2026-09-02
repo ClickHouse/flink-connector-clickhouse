@@ -1,12 +1,12 @@
 package org.apache.flink.connector.clickhouse.table;
 
+import com.clickhouse.client.api.Client;
 import com.clickhouse.client.api.metadata.TableSchema;
 import com.clickhouse.config.BatchFailureStrategy;
 import com.clickhouse.config.RetryPolicy;
 
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ReadableConfig;
-import org.apache.flink.connector.clickhouse.introspection.TableIntrospector;
 import org.apache.flink.connector.clickhouse.sink.ClickHouseClientConfig;
 import org.apache.flink.connector.clickhouse.table.data.RowDataDataMapper;
 import org.apache.flink.connector.clickhouse.table.schema.ResolvedColumnMapping;
@@ -30,6 +30,7 @@ import java.util.Set;
 
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.CLIENT_OPTIONS_PREFIX;
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.DATABASE;
+import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.MAX_RETRIES_UNLIMITED;
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.PASSWORD;
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.SERVER_SETTINGS_PREFIX;
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.SINK_BATCH_FAILURE_STRATEGY;
@@ -181,14 +182,17 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         return clientConfig;
     }
 
-    /** Reads the table's current column types through a short-lived, pinged client. */
+    /**
+     * Reads the table's current column types through a short-lived, pinged client —
+     * deliberately unmemoized so a long-lived planner sees {@code ALTER TABLE}.
+     */
     private static TableSchema introspect(ReadableConfig options, ClickHouseClientConfig clientConfig) {
         String url = options.get(URL);
         String database = options.get(DATABASE);
         String table = options.get(TABLE);
-        try {
-            return TableIntrospector.introspect(url, database, table,
-                    clientConfig::createPlanningClient);
+        LOG.info("Introspecting ClickHouse table {}.{} at {}", database, table, url);
+        try (Client client = clientConfig.createPlanningClient()) {
+            return client.getTableSchema(table, database);
         } catch (Exception e) {
             throw new ValidationException(String.format(
                     "Could not read the schema of ClickHouse table %s.%s at %s — %s",
@@ -233,7 +237,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
     }
 
     static RetryPolicy toRetryPolicy(int maxRetries) {
-        if (maxRetries == -1) {
+        if (maxRetries == MAX_RETRIES_UNLIMITED) {
             return RetryPolicy.forever();
         }
         if (maxRetries < 0) {

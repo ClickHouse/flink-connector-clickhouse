@@ -1,11 +1,14 @@
 package org.apache.flink.connector.clickhouse.table;
 
+import com.clickhouse.config.BatchFailureStrategy;
+
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ConfigOptions;
 import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.connector.clickhouse.sink.ClickHouseSinkDefaults;
 
 import java.time.Duration;
+import java.util.Locale;
 
 /**
  * The {@code WITH (...)} options of the {@code 'connector' = 'clickhouse'} SQL sink.
@@ -102,16 +105,20 @@ public final class ClickHouseConnectorOptions {
     // Reliability
     // ------------------------------------------------------------------------------------
 
+    /** The one negative {@code sink.max-retries} value: unlimited retries, DataStream's default. */
+    public static final int MAX_RETRIES_UNLIMITED = -1;
+
     public static final ConfigOption<Integer> SINK_MAX_RETRIES = ConfigOptions
             .key("sink.max-retries")
             .intType()
-            .defaultValue(-1)
+            .defaultValue(MAX_RETRIES_UNLIMITED)
             .withDescription("Retries per failed batch; -1 retries forever.");
 
     public static final ConfigOption<String> SINK_BATCH_FAILURE_STRATEGY = ConfigOptions
             .key("sink.batch-failure-strategy")
             .stringType()
-            .defaultValue("stop-flink")
+            // Derived from the DataStream default enum so the documented parity cannot drift.
+            .defaultValue(BatchFailureStrategy.STOP_FLINK.name().toLowerCase(Locale.ROOT).replace('_', '-'))
             .withDescription("What to do when a batch fails non-retriably: 'stop-flink' or 'drop-batch'.");
 
     // ------------------------------------------------------------------------------------

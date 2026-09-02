@@ -77,9 +77,6 @@ class SchemaResolverTest {
         assertEquals(List.of("Int64", "String", "Decimal(18, 4)", "DateTime64(3)", "UUID",
                         "Array(String)", "Map(String, String)"),
                 mappings.stream().map(ResolvedColumnMapping::typeExpression).collect(Collectors.toList()));
-        for (int i = 0; i < mappings.size(); i++) {
-            assertEquals(i, mappings.get(i).flinkFieldIndex);
-        }
     }
 
     @Test
@@ -151,9 +148,29 @@ class SchemaResolverTest {
         assertEquals(1, mappings.size());
         assertEquals("id", mappings.get(0).columnName());
         // The dropped column still occupies its position in the incoming row.
-        assertEquals(1, mappings.get(0).flinkFieldIndex);
         GenericRowData row = GenericRowData.of(StringData.fromString("ignored"), 9L);
         assertEquals(9L, mappings.get(0).accessor.get(row));
+    }
+
+    @Test
+    void reservedColumnNameIsDroppedLikeAnyUnknownColumnWhenIgnoreIsEnabled() {
+        ResolvedSchema schema = ResolvedSchema.of(
+                Column.physical("__clickhouse_raw__", DataTypes.STRING().notNull()),
+                Column.physical("id", DataTypes.BIGINT().notNull()));
+        List<ResolvedColumnMapping> mappings = SchemaResolver.resolve(
+                schema, clickHouseSchema("id Int64"), options(true));
+        assertEquals(List.of("id"),
+                mappings.stream().map(ResolvedColumnMapping::columnName).collect(Collectors.toList()));
+    }
+
+    @Test
+    void reservedColumnNameThatWouldMapIsRejected() {
+        ResolvedSchema schema = ResolvedSchema.of(
+                Column.physical("__clickhouse_raw__", DataTypes.STRING().notNull()));
+        ValidationException e = assertThrows(ValidationException.class, () ->
+                SchemaResolver.resolve(schema,
+                        clickHouseSchema("__clickhouse_raw__ String"), options(true)));
+        assertTrue(e.getMessage().contains("reserved"), e.getMessage());
     }
 
     @Test
@@ -190,7 +207,7 @@ class SchemaResolverTest {
                         options(false)));
         assertTrue(array.getMessage().contains("only writable as a top-level column"),
                 array.getMessage());
-        assertTrue(array.getMessage().contains("Array element"), array.getMessage());
+        assertTrue(array.getMessage().contains("array element"), array.getMessage());
 
         ValidationException map = assertThrows(ValidationException.class, () ->
                 SchemaResolver.resolve(
@@ -199,7 +216,7 @@ class SchemaResolverTest {
                                         DataTypes.BIGINT().notNull()).notNull())),
                         clickHouseSchema("m Map(String, SimpleAggregateFunction(max, Int64))"),
                         options(false)));
-        assertTrue(map.getMessage().contains("Map value"), map.getMessage());
+        assertTrue(map.getMessage().contains("map value"), map.getMessage());
     }
 
     @Test

@@ -58,3 +58,8 @@ sourceSets {
         }
     }
 }
+
+// Compile floor check only — the version modules execute these same tests against their own Flink.
+tasks.test {
+    enabled = false
+}

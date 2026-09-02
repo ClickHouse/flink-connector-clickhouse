@@ -7,21 +7,18 @@ import org.apache.flink.connector.clickhouse.table.data.FieldAccessor;
 import java.util.Objects;
 
 /**
- * One resolved column of the sink: the physical Flink field, the introspected ClickHouse
- * column it writes to (wrappers intact — its {@code getOriginalTypeName()} is the canonical
- * header type expression), and the accessor that converts the field's value.
+ * One resolved column of the sink: the introspected ClickHouse column (wrappers intact — its
+ * {@code getOriginalTypeName()} is the canonical header type expression) and the accessor that
+ * extracts and converts the physical Flink field's value.
  *
  * <p>Planning-time only; {@code RowDataDataMapper} extracts the serializable parts.
  */
 public final class ResolvedColumnMapping {
 
-    public final int flinkFieldIndex;
     public final ClickHouseColumn column;
     public final FieldAccessor accessor;
 
-    public ResolvedColumnMapping(int flinkFieldIndex, ClickHouseColumn column,
-                                 FieldAccessor accessor) {
-        this.flinkFieldIndex = flinkFieldIndex;
+    public ResolvedColumnMapping(ClickHouseColumn column, FieldAccessor accessor) {
         this.column = Objects.requireNonNull(column, "column");
         this.accessor = Objects.requireNonNull(accessor, "accessor");
     }

@@ -166,6 +166,17 @@ class ClickHouseTypeMapperTest {
         assertEquals(41, converter.convert(41));
     }
 
+    /** Nested SAF has no wire encoding — it must be rejected at planning, never unwrapped. */
+    @Test
+    void nestedSimpleAggregateFunctionIsRejectedAtPlanning() {
+        TypeMappingException e = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(
+                        new ArrayType(false, new IntType(false)),
+                        col("Array(SimpleAggregateFunction(max, Int32))"), UTC, "c"));
+        assertEquals(TypeMappingException.Kind.TARGET_UNSUPPORTED, e.getKind());
+        assertTrue(e.getMessage().contains("top-level column"), e.getMessage());
+    }
+
     @Test
     void multisetWritesElementCountsAsLongs() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
