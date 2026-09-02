@@ -250,6 +250,22 @@ class SchemaResolverTest {
                         Column.physical("id", DataTypes.BIGINT().notNull()),
                         Column.physical("mat", DataTypes.STRING().notNull())), schema, options(false)));
         assertTrue(e.getMessage().contains("MATERIALIZED"), e.getMessage());
+        assertTrue(e.getMessage().contains("the server computes it"), e.getMessage());
+    }
+
+    /** EPHEMERAL is insertable SQL-wise, but only via a column list the sink never sends. */
+    @Test
+    void ephemeralColumnsAreRejectedBecauseTheSinkSendsNoColumnList() {
+        TableSchema schema = clickHouseSchema("id Int64, raw String");
+        ClickHouseColumn raw = schema.getColumnByName("raw");
+        raw.setHasDefault(true);
+        raw.setDefaultValue(ClickHouseColumn.DefaultValue.EPHEMERAL);
+        ValidationException e = assertThrows(ValidationException.class, () ->
+                SchemaResolver.resolve(ResolvedSchema.of(
+                        Column.physical("id", DataTypes.BIGINT().notNull()),
+                        Column.physical("raw", DataTypes.STRING().notNull())), schema, options(false)));
+        assertTrue(e.getMessage().contains("is EPHEMERAL"), e.getMessage());
+        assertTrue(e.getMessage().contains("without a column list"), e.getMessage());
     }
 
     @Test

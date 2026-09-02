@@ -227,6 +227,47 @@ class ClickHouseTypeMapperTest {
     }
 
     @Test
+    void zeroScaleDecimalsWriteToEveryIntegerWhoseDigitsCoverThem() {
+        assertEquals((byte) 12, decimalTo(2, "Int8").convert(decimal("12")));
+        assertEquals((short) 1234, decimalTo(4, "Int16").convert(decimal("1234")));
+        assertEquals(123456789, decimalTo(9, "Int32").convert(decimal("123456789")));
+        assertEquals(123456789012345678L, decimalTo(18, "Int64").convert(decimal("123456789012345678")));
+        assertEquals(new BigInteger("-99999999999999999999"),
+                decimalTo(20, "Int128").convert(decimal("-99999999999999999999")));
+        assertEquals(255, decimalTo(3, "UInt8").convert(decimal("255")));
+        assertEquals(65535, decimalTo(5, "UInt16").convert(decimal("65535")));
+        assertEquals(4294967295L, decimalTo(10, "UInt32").convert(decimal("4294967295")));
+    }
+
+    @Test
+    void decimalsWiderThanTheIntegerAreRejectedAtPlanning() {
+        TypeMappingException e = assertThrows(TypeMappingException.class, () -> decimalTo(20, "Int64"));
+        assertTrue(e.getMessage().contains("precision 20 exceeds Int64's 19 digits"), e.getMessage());
+        e = assertThrows(TypeMappingException.class, () -> decimalTo(4, "UInt8"));
+        assertTrue(e.getMessage().contains("precision 4 exceeds UInt8's 3 digits"), e.getMessage());
+        e = assertThrows(TypeMappingException.class, () -> decimalTo(21, "UInt64"));
+        assertTrue(e.getMessage().contains("precision 21 exceeds UInt64's 20 digits"), e.getMessage());
+    }
+
+    /** At the boundary precision the digits admit values past the type's maximum. */
+    @Test
+    void boundaryPrecisionDecimalsAreRangeCheckedPerRecord() {
+        ValueConverter toInt64 = decimalTo(19, "Int64");
+        assertEquals(Long.MAX_VALUE, toInt64.convert(decimal("9223372036854775807")));
+        assertEquals(Long.MIN_VALUE, toInt64.convert(decimal("-9223372036854775808")));
+        assertRangeError(() -> toInt64.convert(decimal("9223372036854775808")),
+                "Int64 range -9223372036854775808..9223372036854775807");
+
+        ValueConverter toInt8 = decimalTo(3, "Int8");
+        assertEquals((byte) -128, toInt8.convert(decimal("-128")));
+        assertRangeError(() -> toInt8.convert(decimal("128")), "Int8 range -128..127");
+
+        ValueConverter toUInt8 = decimalTo(3, "UInt8");
+        assertRangeError(() -> toUInt8.convert(decimal("-1")), "unsigned type UInt8");
+        assertRangeError(() -> toUInt8.convert(decimal("256")), "UInt8 range 0..255");
+    }
+
+    @Test
     void nestedUnsignedValuesAreRangeCheckedToo() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
                 new ArrayType(false, new BigIntType(false)), col("Array(UInt32)"), UTC, "c");
@@ -419,6 +460,10 @@ class ClickHouseTypeMapperTest {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class, call);
         assertTrue(e.getMessage().contains("Column 'c'"), e.getMessage());
         assertTrue(e.getMessage().contains(expectedFragment), e.getMessage());
+    }
+
+    private static ValueConverter decimalTo(int precision, String target) {
+        return ClickHouseTypeMapper.converterFor(new DecimalType(false, precision, 0), col(target), UTC, "c");
     }
 
     private static DecimalData decimal(String unscaled) {

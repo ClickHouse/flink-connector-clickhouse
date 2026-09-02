@@ -136,7 +136,12 @@ public final class TypeTags {
         out.writeInt(b.length); out.write(b);
     }
 
-    public static String readUtf8(DataInputStream in) throws IOException {
+    /** A string or map key: int-length-prefixed UTF-8 from {@link #V3}, {@code writeUTF} before. */
+    public static String readString(DataInputStream in, int entryVersion) throws IOException {
+        return entryVersion >= V3 ? readUtf8(in) : in.readUTF();
+    }
+
+    private static String readUtf8(DataInputStream in) throws IOException {
         int len = in.readInt();
         if (len < 0 || len > MAX_STRING_BYTES) throw new IOException("Implausible string length: " + len);
         byte[] b = new byte[len];
@@ -174,7 +179,7 @@ public final class TypeTags {
                 in.readFully(b);
                 return new BigDecimal(new BigInteger(b), scale);
             }
-            case STRING: return entryVersion >= V3 ? readUtf8(in) : in.readUTF();
+            case STRING: return readString(in, entryVersion);
             case BYTES: {
                 int len = in.readInt();
                 if (len < 0 || len > 256 * 1024 * 1024) throw new IOException("Implausible BYTES length: " + len);
@@ -203,7 +208,7 @@ public final class TypeTags {
                 int n = in.readInt();
                 if (n < 0 || n > 1_000_000) throw new IOException("Implausible MAP size: " + n);
                 Map<String, Object> m = new LinkedHashMap<>(n);
-                for (int i = 0; i < n; i++) m.put(entryVersion >= V3 ? readUtf8(in) : in.readUTF(), read(in, entryVersion));
+                for (int i = 0; i < n; i++) m.put(readString(in, entryVersion), read(in, entryVersion));
                 return m;
             }
             case TUPLE: {

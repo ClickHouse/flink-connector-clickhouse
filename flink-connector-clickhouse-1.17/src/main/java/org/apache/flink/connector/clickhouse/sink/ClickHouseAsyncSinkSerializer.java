@@ -99,7 +99,7 @@ public class ClickHouseAsyncSinkSerializer
         }
         Map<String, Object> data = new LinkedHashMap<>(n);
         for (int i = 0; i < n; i++) {
-            String key = entryVersion >= TypeTags.V3 ? TypeTags.readUtf8(in) : in.readUTF();
+            String key = TypeTags.readString(in, entryVersion);
             data.put(key, TypeTags.read(in, entryVersion));
         }
         return ClickHousePayload.ofData(data);

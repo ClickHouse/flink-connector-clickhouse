@@ -1,11 +1,14 @@
 package org.apache.flink.connector.clickhouse.table;
 
 import com.clickhouse.client.api.Client;
+import com.clickhouse.client.api.ServerException;
 import com.clickhouse.client.api.query.GenericRecord;
 
 import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests;
+import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseTestHelpers;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
+import org.apache.flink.util.ExceptionUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
@@ -599,8 +602,10 @@ public class ClickHouseTableApiIntegrationTests {
                     "CREATE TABLE `%s`.`%s` (id Int64, j JSON) ENGINE = MergeTree() ORDER BY id",
                     ClickHouseServerForTests.getDatabase(), table));
         } catch (Exception e) {
-            // Probe, don't pin versions: the modern JSON type is GA from 25.3.
-            Assumptions.assumeTrue(false, "Server lacks the JSON type: " + e.getMessage());
+            // Probe, don't pin versions: the modern JSON type is GA from 25.3. Only the server's own
+            // "no JSON type" answer may skip; a connection or DDL problem must fail the test.
+            Assumptions.assumeFalse(lacksJsonType(e), "Server lacks the JSON type: " + e.getMessage());
+            throw e;
         }
 
         TableEnvironment env = tableEnvironment();
@@ -624,13 +629,14 @@ public class ClickHouseTableApiIntegrationTests {
         ClickHouseServerForTests.executeSql(String.format(
                 "CREATE TABLE `%s`.`table-api-canary` (id Int64) ENGINE = MergeTree() ORDER BY id",
                 ClickHouseServerForTests.getDatabase()));
-        try (Client client = new Client.Builder()
-                .addEndpoint(ClickHouseServerForTests.getURL())
-                .setUsername(ClickHouseServerForTests.getUsername())
-                .setPassword(ClickHouseServerForTests.getPassword())
-                .build()) {
-            Assertions.assertThrows(Exception.class, () -> client.getTableSchema(
+        try (Client client = fixtureClient()) {
+            Exception e = Assertions.assertThrows(Exception.class, () -> client.getTableSchema(
                     "table-api-canary", ClickHouseServerForTests.getDatabase()));
+            // Unquoted, the name parses as `table - api - canary`: a server SYNTAX_ERROR (62), not
+            // some other DESCRIBE failure such as the 26.8 header-format break.
+            ServerException server = ExceptionUtils.findThrowable(e, ServerException.class)
+                    .orElseThrow(() -> new AssertionError("expected a server-side syntax error, got: " + e, e));
+            Assertions.assertEquals(62, server.getCode(), server.getMessage());
         }
     }
 
@@ -667,6 +673,43 @@ public class ClickHouseTableApiIntegrationTests {
                 "Unexpected failure: " + e);
     }
 
+    @Test
+    void zeroScaleDecimalsWriteIntoTheIntegersTheirDigitsCover() throws Exception {
+        String table = "table_api_decimal_ints";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, small UInt8, big Int64) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_decimal_ints", table,
+                "id BIGINT NOT NULL, small DECIMAL(3, 0) NOT NULL, big DECIMAL(18, 0) NOT NULL"));
+        env.executeSql("INSERT INTO ch_decimal_ints VALUES "
+                + "(1, CAST(255 AS DECIMAL(3, 0)), CAST(123456789012345678 AS DECIMAL(18, 0)))").await();
+
+        List<GenericRecord> rows = readBack("id, small, big", table, "id", 1);
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals(255, rows.get(0).getInteger("small"));
+        Assertions.assertEquals(123456789012345678L, rows.get(0).getLong("big"));
+    }
+
+    @Test
+    void ephemeralColumnsAreRejectedAtPlanning() throws Exception {
+        String table = "table_api_ephemeral";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, payload String EPHEMERAL, norm String DEFAULT lower(payload)) "
+                        + "ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        // The sink's INSERT carries no column list, so a header naming 'payload' would be dropped silently.
+        env.executeSql(sinkDdl("ch_ephemeral", table, "id BIGINT NOT NULL, payload STRING NOT NULL"));
+
+        Exception e = Assertions.assertThrows(Exception.class,
+                () -> env.executeSql("INSERT INTO ch_ephemeral VALUES (1, 'X')"));
+        Assertions.assertTrue(exceptionChainContains(e, "is EPHEMERAL"), "Unexpected failure: " + e);
+        Assertions.assertTrue(exceptionChainContains(e, "without a column list"), "Unexpected failure: " + e);
+    }
+
     /**
      * Read-back after {@code await()}. On Cloud the replica answering the SELECT may not yet see the
      * acknowledged insert, so poll (bounded) until the expected row count shows up; one read elsewhere.
@@ -693,11 +736,7 @@ public class ClickHouseTableApiIntegrationTests {
                         + "WHERE type = 'QueryFinish' AND query_kind = 'Insert' "
                         + "AND has(tables, '%s.%s') AND Settings['%s'] = '%s'",
                 ClickHouseServerForTests.getDatabase(), table, setting, value);
-        try (Client client = new Client.Builder()
-                .addEndpoint(ClickHouseServerForTests.getURL())
-                .setUsername(ClickHouseServerForTests.getUsername())
-                .setPassword(ClickHouseServerForTests.getPassword())
-                .build()) {
+        try (Client client = fixtureClient()) {
             long count = client.queryAll(sql).get(0).getLong(1);
             for (int i = 1; i < (cloud ? 30 : 5) && count < 1; i++) {
                 Thread.sleep(1000);
@@ -707,12 +746,23 @@ public class ClickHouseTableApiIntegrationTests {
         }
     }
 
+    /** The client the fixture itself uses: 60 s connect timeout, TLS exactly when on Cloud. */
+    private static Client fixtureClient() {
+        return ClickHouseTestHelpers.getClient(
+                ClickHouseServerForTests.getHost(), ClickHouseServerForTests.getPort(),
+                ClickHouseServerForTests.isCloud(),
+                ClickHouseServerForTests.getUsername(), ClickHouseServerForTests.getPassword());
+    }
+
+    /** Only the server's own "JSON type unavailable" answers: an experimental gate or an unknown type. */
+    private static boolean lacksJsonType(Throwable t) {
+        return ExceptionUtils.findThrowable(t, ServerException.class)
+                .map(Throwable::getMessage)
+                .filter(m -> m.contains("JSON") && (m.contains("not allowed") || m.contains("Unknown data type")))
+                .isPresent();
+    }
+
     private static boolean exceptionChainContains(Throwable t, String needle) {
-        for (Throwable cause = t; cause != null; cause = cause.getCause()) {
-            if (cause.getMessage() != null && cause.getMessage().contains(needle)) {
-                return true;
-            }
-        }
-        return false;
+        return ExceptionUtils.findThrowableWithMessage(t, needle).isPresent();
     }
 }

@@ -49,9 +49,10 @@ import static com.clickhouse.utils.writer.DataWriter.unwrapTransparentWrappers;
  * <p>Narrowing is rejected, lossless widening is implicit, and a signed Flink integer never
  * targets an unsigned ClickHouse integer — unsigned columns are reached via the canonical
  * pairs {@code SMALLINT}→{@code UInt8}, {@code INT}→{@code UInt16}, {@code BIGINT}→{@code UInt32},
- * {@code DECIMAL(20,0)}→{@code UInt64}, whose values are range-checked per record: the wire
- * format cannot represent a sign, and the client's writer would otherwise fail without the
- * column name or (UInt64 inside composites) wrap the value silently.
+ * or {@code DECIMAL(p,0)} into any integer whose digit count covers {@code p}, with values
+ * range-checked per record: the wire format cannot represent a sign, and the client's writer
+ * would otherwise fail without the column name or (UInt64 inside composites) wrap the value
+ * silently.
  *
  * <p>{@code build*Converter} methods run once per column at planning time; {@code toPayload*}
  * methods run per record on the TaskManager. Wrapper shedding is shared with the write path
@@ -96,9 +97,6 @@ public final class ClickHouseTypeMapper {
             ClickHouseDataType.UInt128, ClickHouseDataType.UInt256);
 
     // Literal because the client's copies live in deprecated BinaryStreamUtils; DataWriterContractTest pins them.
-
-    /** Digits of the largest UInt64 (18446744073709551615) — the DECIMAL(20,0) canonical pair. */
-    private static final int UINT64_MAX_DIGITS = ClickHouseDataType.UInt64.getMaxPrecision();
 
     static final int UINT8_MAX = 0xFF;
     static final int UINT16_MAX = 0xFFFF;
@@ -326,17 +324,23 @@ public final class ClickHouseTypeMapper {
             case Decimal256:
                 checkDecimalFits(precision, scale, target);
                 return value -> ((DecimalData) value).toBigDecimal();
+            case Int8:
+            case Int16:
+            case Int32:
+            case Int64:
             case Int128:
             case Int256:
-                checkDecimalFitsInteger(precision, scale, target);
-                return value -> ((DecimalData) value).toBigDecimal().toBigIntegerExact();
+            case UInt8:
+            case UInt16:
+            case UInt32:
             case UInt64:
             case UInt128:
             case UInt256:
                 checkDecimalFitsInteger(precision, scale, target);
-                return buildRangeCheckedUnsignedDecimalConverter(target.getDataType(), path);
+                return buildIntegerDecimalConverter(target.getDataType(), precision, path);
             default:
-                throw noConversion(flinkType, "Decimal(p,s), Int128, Int256, UInt64, UInt128, UInt256");
+                throw noConversion(flinkType,
+                        "Decimal(p,s); with s = 0 also any Int8..Int256 or UInt8..UInt256 whose digits cover p");
         }
     }
 
@@ -360,32 +364,66 @@ public final class ClickHouseTypeMapper {
                     "scale %d has a fractional part; only DECIMAL(p, 0) can be written to an integer column",
                     scale));
         }
-        if (target.getDataType() == ClickHouseDataType.UInt64 && precision > UINT64_MAX_DIGITS) {
+        int maxDigits = target.getDataType().getMaxPrecision();
+        if (precision > maxDigits) {
             throw TypeMappingException.mismatch(String.format(
-                    "precision %d exceeds UInt64's %d digits", precision, UINT64_MAX_DIGITS));
+                    "precision %d exceeds %s's %d digits", precision, target.getDataType(), maxDigits));
         }
     }
 
     /**
-     * DECIMAL(p, 0) → UInt64/UInt128/UInt256: a sign never fits an unsigned column, and
-     * UInt64's maximum sits below the 20-digit precision the planning check admits.
+     * DECIMAL(p, 0) → integer. The planning gate admits up to the target's digit count, which at
+     * that boundary still lets values overflow (UInt64 ends at 18446744073709551615 within 20
+     * digits), and a sign never fits an unsigned column — so boundary precisions and unsigned
+     * targets are range-checked per record; a narrower signed DECIMAL always fits and is not.
      */
-    private static ValueConverter buildRangeCheckedUnsignedDecimalConverter(ClickHouseDataType targetType,
-                                                                            String path) {
+    private static ValueConverter buildIntegerDecimalConverter(ClickHouseDataType targetType, int precision,
+                                                               String path) {
+        ValueConverter narrow = integerNarrowing(targetType);
+        if (targetType.isSigned() && precision < targetType.getMaxPrecision()) {
+            return value -> narrow.convert(((DecimalData) value).toBigDecimal().toBigIntegerExact());
+        }
+        BigInteger min = integerMin(targetType);
+        BigInteger max = integerMax(targetType);
         return value -> {
             BigInteger integer = ((DecimalData) value).toBigDecimal().toBigIntegerExact();
-            if (integer.signum() < 0) {
+            if (integer.signum() < 0 && !targetType.isSigned()) {
                 throw new IllegalArgumentException(
                         "Column '" + path + "': value " + integer
                         + " is negative and cannot be written to the unsigned type " + targetType);
             }
-            if (targetType == ClickHouseDataType.UInt64 && integer.compareTo(UINT64_MAX) > 0) {
+            if (integer.compareTo(min) < 0 || integer.compareTo(max) > 0) {
                 throw new IllegalArgumentException(
                         "Column '" + path + "': value " + integer
-                        + " is outside the UInt64 range 0.." + UINT64_MAX);
+                        + " is outside the " + targetType + " range " + min + ".." + max);
             }
-            return integer;
+            return narrow.convert(integer);
         };
+    }
+
+    private static BigInteger integerMin(ClickHouseDataType type) {
+        return type.isSigned()
+                ? BigInteger.ONE.shiftLeft(type.getByteLength() * 8 - 1).negate()
+                : BigInteger.ZERO;
+    }
+
+    private static BigInteger integerMax(ClickHouseDataType type) {
+        return BigInteger.ONE.shiftLeft(type.getByteLength() * 8 - (type.isSigned() ? 1 : 0))
+                .subtract(BigInteger.ONE);
+    }
+
+    /** Narrows a BigInteger to the Java type DataWriter's dispatch takes for the target. */
+    private static ValueConverter integerNarrowing(ClickHouseDataType type) {
+        switch (type) {
+            case Int8:   return value -> ((BigInteger) value).byteValueExact();
+            case Int16:  return value -> ((BigInteger) value).shortValueExact();
+            case Int32:
+            case UInt8:
+            case UInt16: return value -> ((BigInteger) value).intValueExact();
+            case Int64:
+            case UInt32: return value -> ((BigInteger) value).longValueExact();
+            default:     return value -> value;
+        }
     }
 
     private static ValueConverter buildFloatConverter(LogicalType flinkType, ClickHouseColumn target,

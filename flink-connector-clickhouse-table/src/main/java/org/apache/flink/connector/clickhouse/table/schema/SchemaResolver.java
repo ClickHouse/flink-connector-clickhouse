@@ -119,19 +119,30 @@ public final class SchemaResolver {
     }
 
     private static void checkInsertable(String name, ClickHouseColumn column) {
-        if (isServerComputed(column)) {
+        if (!isInsertTarget(column)) {
             throw new ValidationException(String.format(
-                    "Column '%s': ClickHouse column '%s %s' is %s and cannot be inserted into. "
+                    "Column '%s': ClickHouse column '%s %s' is %s — %s. "
                     + "Exclude the column from the Flink schema.",
                     name, column.getColumnName(), column.getOriginalTypeName(),
-                    column.getDefaultValue()));
+                    column.getDefaultValue(), notInsertableReason(column.getDefaultValue())));
         }
     }
 
-    /** MATERIALIZED/ALIAS/EPHEMERAL columns are computed by the server, so nothing may be sent. */
-    private static boolean isServerComputed(ClickHouseColumn column) {
-        return column.hasDefault() && column.getDefaultValue() != null
-                && column.getDefaultValue() != ClickHouseColumn.DefaultValue.DEFAULT;
+    /**
+     * MATERIALIZED and ALIAS columns are computed by the server. EPHEMERAL columns may be supplied
+     * by an INSERT, but only through an explicit column list, which the sink's
+     * {@code INSERT INTO t FORMAT RowBinaryWithNamesAndTypes} never sends — a header naming one
+     * is silently dropped, so it is rejected here rather than losing data.
+     */
+    private static boolean isInsertTarget(ClickHouseColumn column) {
+        return !column.hasDefault() || column.getDefaultValue() == null
+                || column.getDefaultValue() == ClickHouseColumn.DefaultValue.DEFAULT;
+    }
+
+    private static String notInsertableReason(ClickHouseColumn.DefaultValue kind) {
+        return kind == ClickHouseColumn.DefaultValue.EPHEMERAL
+                ? "the sink inserts without a column list, so the value would be silently dropped"
+                : "the server computes it, so nothing may be sent";
     }
 
     private static void checkNullability(RowType.RowField field, ClickHouseColumn column,

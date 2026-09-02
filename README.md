@@ -211,7 +211,7 @@ at planning naming the column and both types.
 | `SMALLINT` | `Int16`, `UInt8`, wider signed | |
 | `INT` | `Int32`, `UInt16`, wider signed | |
 | `BIGINT` | `Int64`, `UInt32`, `Int128`, `Int256` | |
-| `DECIMAL(p, s)` | a `Decimal(p', s')` it fits; with `s = 0` also `Int128/256`, `UInt64/128/256` | `DECIMAL(20, 0)` covers the full `UInt64` range |
+| `DECIMAL(p, s)` | a `Decimal(p', s')` it fits; with `s = 0` also any `Int8..Int256` / `UInt8..UInt256` whose digits cover `p` | boundary precisions (`DECIMAL(19, 0)` → `Int64`, `DECIMAL(20, 0)` → `UInt64`) and unsigned targets are range-checked per record |
 | `FLOAT` / `DOUBLE` | `Float32` (`FLOAT` only), `Float64` | |
 | `CHAR` / `VARCHAR` / `STRING` | `String`, `FixedString(n)`, `UUID`, `JSON` | `FixedString` checked in bytes; `UUID` must be canonical text |
 | `DATE` | `Date`, `Date32` | range-checked per record |
