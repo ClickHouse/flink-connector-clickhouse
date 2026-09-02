@@ -22,8 +22,8 @@ import java.util.UUID;
  * the design spec §10c and must remain stable across releases.
  *
  * <p>Strings and map keys are int-length-prefixed UTF-8 (serializer entry marker V3+),
- * so they are not capped at writeUTF's 64 KB; {@link #readV2} decodes the older
- * writeUTF form. Zone IDs are bounded and stay writeUTF in both.
+ * so they are not capped at writeUTF's 64 KB; {@link #read(DataInputStream, int)} with
+ * {@link #V2} decodes the older writeUTF form. Zone IDs are bounded and stay writeUTF in both.
  */
 public final class TypeTags {
 

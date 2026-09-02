@@ -385,6 +385,36 @@ class ClickHouseTypeMapperTest {
                 "DateTime64 range");
     }
 
+    /** Composite nesting: ROW inside ARRAY, MAP and ROW all reach the writer as Object[] tuples. */
+    @Test
+    void rowsNestedInArraysMapsAndRowsWriteTuples() {
+        RowType pair = rowOf(new IntType(false), new VarCharType(false, VarCharType.MAX_LENGTH));
+
+        ValueConverter arrayConverter = ClickHouseTypeMapper.converterFor(
+                new ArrayType(false, pair), col("Array(Tuple(Int32, String))"), UTC, "c");
+        List<?> tuples = (List<?>) arrayConverter.convert(new GenericArrayData(new Object[]{
+                GenericRowData.of(1, StringData.fromString("p")),
+                GenericRowData.of(2, StringData.fromString("q"))}));
+        assertEquals(2, tuples.size());
+        assertArrayEquals(new Object[]{1, "p"}, (Object[]) tuples.get(0));
+        assertArrayEquals(new Object[]{2, "q"}, (Object[]) tuples.get(1));
+
+        ValueConverter mapConverter = ClickHouseTypeMapper.converterFor(
+                new MapType(false, new VarCharType(false, VarCharType.MAX_LENGTH), pair),
+                col("Map(String, Tuple(Int32, String))"), UTC, "c");
+        Map<Object, Object> entries = new LinkedHashMap<>();
+        entries.put(StringData.fromString("k"), GenericRowData.of(1, StringData.fromString("p")));
+        Map<?, ?> payload = (Map<?, ?>) mapConverter.convert(new GenericMapData(entries));
+        assertArrayEquals(new Object[]{1, "p"}, (Object[]) payload.get("k"));
+
+        ValueConverter nestedConverter = ClickHouseTypeMapper.converterFor(
+                rowOf(new IntType(false), pair), col("Tuple(Int32, Tuple(Int32, String))"), UTC, "c");
+        Object[] outer = (Object[]) nestedConverter.convert(
+                GenericRowData.of(5, GenericRowData.of(6, StringData.fromString("z"))));
+        assertEquals(5, outer[0]);
+        assertArrayEquals(new Object[]{6, "z"}, (Object[]) outer[1]);
+    }
+
     private static void assertRangeError(Executable call, String expectedFragment) {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class, call);
         assertTrue(e.getMessage().contains("Column 'c'"), e.getMessage());

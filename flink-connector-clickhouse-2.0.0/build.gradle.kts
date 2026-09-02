@@ -128,6 +128,11 @@ val checkCrossVersionCopiesInSync by tasks.registering {
         "src/main/resources/META-INF/services/org.apache.flink.table.factories.Factory",
         "src/main/java/org/apache/flink/connector/clickhouse/sink/ClickHouseClientConfig.java",
         "src/main/java/org/apache/flink/connector/clickhouse/sink/ClickHouseAsyncSinkBuilder.java",
+        // Flink-version-free, and both generations must keep one checkpoint format.
+        "src/main/java/org/apache/flink/connector/clickhouse/sink/ClickHouseAsyncSinkSerializer.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/sink/ClickHouseClientConfigTest.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSinkFactoryTest.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSinkTest.java",
     ).map { file(it) to project(":flink-connector-clickhouse-1.17").file(it) }
     inputs.files(copies.flatMap { listOf(it.first, it.second) })
     doLast {

@@ -95,11 +95,11 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertFalse(env.explainSql(insert).isEmpty());
         env.executeSql(insert).await();
 
-        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+        List<GenericRecord> rows = readBack(
                 "id, name, amount, toString(created_at) AS created_at_s, toString(uid) AS uid_s, "
                         + "toString(event_day) AS day_s, is_active, score, toString(tags) AS tags_s, "
                         + "toString(props) AS props_s, category, toString(code) AS code_s",
-                ClickHouseServerForTests.getDatabase(), table, "id");
+                table, "id", 2);
 
         Assertions.assertEquals(2, rows.size());
         GenericRecord first = rows.get(0);
@@ -146,8 +146,7 @@ public class ClickHouseTableApiIntegrationTests {
         env.executeSql(sinkDdl("ch_alter_after", table, "id BIGINT NOT NULL, label STRING NOT NULL"));
         env.executeSql("INSERT INTO ch_alter_after VALUES (7, 'post-alter')").await();
 
-        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
-                "id, label", ClickHouseServerForTests.getDatabase(), table, "id");
+        List<GenericRecord> rows = readBack("id, label", table, "id", 1);
         Assertions.assertEquals(1, rows.size());
         Assertions.assertEquals(7L, rows.get(0).getLong("id"));
         Assertions.assertEquals("post-alter", rows.get(0).getString("label"));
@@ -275,10 +274,10 @@ public class ClickHouseTableApiIntegrationTests {
                 + "(1, 'alice', 99.5, DATE '2026-01-02'), "
                 + "(2, CAST(NULL AS STRING), CAST(NULL AS DOUBLE), CAST(NULL AS DATE))").await();
 
-        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+        List<GenericRecord> rows = readBack(
                 "id, ifNull(name, '<null>') AS name_s, ifNull(toString(score), '<null>') AS score_s, "
                         + "ifNull(toString(event_day), '<null>') AS day_s",
-                ClickHouseServerForTests.getDatabase(), table, "id");
+                table, "id", 2);
 
         Assertions.assertEquals(2, rows.size());
         Assertions.assertEquals("alice", rows.get(0).getString("name_s"));
@@ -308,10 +307,10 @@ public class ClickHouseTableApiIntegrationTests {
                 + ") GROUP BY id").await();
 
         // Map entry order is not deterministic, so probe by key instead of comparing strings.
-        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+        List<GenericRecord> rows = readBack(
                 "id, toInt64(tags['a']) AS a_cnt, toInt64(tags['b']) AS b_cnt, "
                         + "toInt64(tags['z']) AS z_cnt, toInt64(length(tags)) AS n_keys",
-                ClickHouseServerForTests.getDatabase(), table, "id");
+                table, "id", 2);
 
         Assertions.assertEquals(2, rows.size());
         Assertions.assertEquals(2L, rows.get(0).getLong("a_cnt"));
@@ -322,11 +321,12 @@ public class ClickHouseTableApiIntegrationTests {
     }
 
     @Test
-    void rowWritesIntoTupleAndNullArrayElementsRoundTrip() throws Exception {
+    void rowsWriteIntoTuplesAtEveryNestingAndNullArrayElementsRoundTrip() throws Exception {
         String table = "table_api_tuple";
         ClickHouseServerForTests.executeSql(String.format(
                 "CREATE TABLE `%s`.`%s` ("
-                        + "id Int64, pair Tuple(Int32, String), nums Array(Nullable(Int32))"
+                        + "id Int64, pair Tuple(Int32, String), nums Array(Nullable(Int32)), "
+                        + "pairs Array(Tuple(Int32, String)), nested Tuple(Int32, Tuple(Int32, String))"
                         + ") ENGINE = MergeTree() ORDER BY id",
                 ClickHouseServerForTests.getDatabase(), table));
 
@@ -334,16 +334,22 @@ public class ClickHouseTableApiIntegrationTests {
         env.executeSql(sinkDdl("ch_tuple", table,
                 "id BIGINT NOT NULL,"
                         + "pair ROW<a INT NOT NULL, b STRING NOT NULL> NOT NULL,"
-                        + "nums ARRAY<INT> NOT NULL"));
+                        + "nums ARRAY<INT> NOT NULL,"
+                        + "pairs ARRAY<ROW<a INT NOT NULL, b STRING NOT NULL> NOT NULL> NOT NULL,"
+                        + "nested ROW<a INT NOT NULL, b ROW<c INT NOT NULL, d STRING NOT NULL> NOT NULL> NOT NULL"));
         env.executeSql("INSERT INTO ch_tuple VALUES "
-                + "(1, ROW(7, 'x'), ARRAY[1, CAST(NULL AS INT), 3])").await();
+                + "(1, ROW(7, 'x'), ARRAY[1, CAST(NULL AS INT), 3], "
+                + "ARRAY[ROW(1, 'p'), ROW(2, 'q')], ROW(5, ROW(6, 'z')))").await();
 
-        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
-                "id, toString(pair) AS pair_s, toString(nums) AS nums_s",
-                ClickHouseServerForTests.getDatabase(), table, "id");
+        List<GenericRecord> rows = readBack(
+                "id, toString(pair) AS pair_s, toString(nums) AS nums_s, "
+                        + "toString(pairs) AS pairs_s, toString(nested) AS nested_s",
+                table, "id", 1);
         Assertions.assertEquals(1, rows.size());
         Assertions.assertEquals("(7,'x')", rows.get(0).getString("pair_s"));
         Assertions.assertEquals("[1,NULL,3]", rows.get(0).getString("nums_s"));
+        Assertions.assertEquals("[(1,'p'),(2,'q')]", rows.get(0).getString("pairs_s"));
+        Assertions.assertEquals("(5,(6,'z'))", rows.get(0).getString("nested_s"));
     }
 
     @Test
@@ -358,9 +364,7 @@ public class ClickHouseTableApiIntegrationTests {
         env.executeSql(sinkDdl("ch_simple_agg", table, "id BIGINT NOT NULL, total BIGINT NOT NULL"));
         env.executeSql("INSERT INTO ch_simple_agg VALUES (1, 10), (2, 20)").await();
 
-        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
-                "id, toInt64(total) AS total_v",
-                ClickHouseServerForTests.getDatabase(), table, "id");
+        List<GenericRecord> rows = readBack("id, toInt64(total) AS total_v", table, "id", 2);
         Assertions.assertEquals(2, rows.size());
         Assertions.assertEquals(10L, rows.get(0).getLong("total_v"));
         Assertions.assertEquals(20L, rows.get(1).getLong("total_v"));
@@ -398,9 +402,7 @@ public class ClickHouseTableApiIntegrationTests {
         env.executeSql(sinkDdl("ch_defaults", table, "id BIGINT NOT NULL"));
         env.executeSql("INSERT INTO ch_defaults VALUES (5)").await();
 
-        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
-                "id, ifNull(note, '<null>') AS note_s, tag",
-                ClickHouseServerForTests.getDatabase(), table, "id");
+        List<GenericRecord> rows = readBack("id, ifNull(note, '<null>') AS note_s, tag", table, "id", 1);
         Assertions.assertEquals(1, rows.size());
         Assertions.assertEquals(5L, rows.get(0).getLong("id"));
         Assertions.assertEquals("<null>", rows.get(0).getString("note_s"));
@@ -419,9 +421,7 @@ public class ClickHouseTableApiIntegrationTests {
         env.executeSql(sinkDdl("ch_no_default", table, "id BIGINT NOT NULL"));
         env.executeSql("INSERT INTO ch_no_default VALUES (1)").await();
 
-        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
-                "id, req, length(tags) AS tags_len",
-                ClickHouseServerForTests.getDatabase(), table, "id");
+        List<GenericRecord> rows = readBack("id, req, length(tags) AS tags_len", table, "id", 1);
         Assertions.assertEquals(1, rows.size());
         Assertions.assertEquals(1L, rows.get(0).getLong("id"));
         Assertions.assertEquals("", rows.get(0).getString("req"));
@@ -445,8 +445,7 @@ public class ClickHouseTableApiIntegrationTests {
                 .execute()
                 .await();
 
-        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
-                "id, src", ClickHouseServerForTests.getDatabase(), table, "id");
+        List<GenericRecord> rows = readBack("id, src", table, "id", 4);
         Assertions.assertEquals(4, rows.size());
         Assertions.assertEquals("first", rows.get(0).getString("src"));
         Assertions.assertEquals("first", rows.get(1).getString("src"));
@@ -467,8 +466,7 @@ public class ClickHouseTableApiIntegrationTests {
                 "c DOUBLE NOT NULL, a BIGINT NOT NULL, b STRING NOT NULL"));
         env.executeSql("INSERT INTO ch_permuted VALUES (1.5, 7, 'x')").await();
 
-        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
-                "a, b, c", ClickHouseServerForTests.getDatabase(), table, "a");
+        List<GenericRecord> rows = readBack("a, b, c", table, "a", 1);
         Assertions.assertEquals(1, rows.size());
         Assertions.assertEquals(7L, rows.get(0).getLong("a"));
         Assertions.assertEquals("x", rows.get(0).getString("b"));
@@ -507,8 +505,7 @@ public class ClickHouseTableApiIntegrationTests {
                 ", 'sink.ignore-unknown-flink-columns' = 'true'"));
         env.executeSql("INSERT INTO ch_ignore_unknown VALUES (3, 'dropped', 'carol')").await();
 
-        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
-                "id, name", ClickHouseServerForTests.getDatabase(), table, "id");
+        List<GenericRecord> rows = readBack("id, name", table, "id", 1);
         Assertions.assertEquals(1, rows.size());
         Assertions.assertEquals(3L, rows.get(0).getLong("id"));
         Assertions.assertEquals("carol", rows.get(0).getString("name"));
@@ -527,8 +524,7 @@ public class ClickHouseTableApiIntegrationTests {
                 "id BIGINT NOT NULL, name STRING NOT NULL, id_plus AS id + 1"));
         env.executeSql("INSERT INTO ch_computed VALUES (1, 'x')").await();
 
-        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
-                "id, name", ClickHouseServerForTests.getDatabase(), table, "id");
+        List<GenericRecord> rows = readBack("id, name", table, "id", 1);
         Assertions.assertEquals(1, rows.size());
         Assertions.assertEquals(1L, rows.get(0).getLong("id"));
         Assertions.assertEquals("x", rows.get(0).getString("name"));
@@ -547,8 +543,7 @@ public class ClickHouseTableApiIntegrationTests {
         // Same key twice: the sink appends both — no silent upsert until #148 makes it a choice.
         env.executeSql("INSERT INTO ch_primary_key VALUES (1, 'first'), (1, 'second')").await();
 
-        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
-                "id, v", ClickHouseServerForTests.getDatabase(), table, "v");
+        List<GenericRecord> rows = readBack("id, v", table, "v", 2);
         Assertions.assertEquals(2, rows.size());
         Assertions.assertEquals("first", rows.get(0).getString("v"));
         Assertions.assertEquals("second", rows.get(1).getString("v"));
@@ -568,9 +563,7 @@ public class ClickHouseTableApiIntegrationTests {
         env.executeSql("INSERT INTO ch_sink_tz VALUES (1, TIMESTAMP '2026-01-02 09:00:00')").await();
 
         // 09:00 Tokyo wall clock is midnight UTC; compare instants, not rendered strings.
-        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
-                "id, toUnixTimestamp64Milli(ts) AS ts_ms",
-                ClickHouseServerForTests.getDatabase(), table, "id");
+        List<GenericRecord> rows = readBack("id, toUnixTimestamp64Milli(ts) AS ts_ms", table, "id", 1);
         Assertions.assertEquals(1, rows.size());
         Assertions.assertEquals(Instant.parse("2026-01-02T00:00:00Z").toEpochMilli(),
                 rows.get(0).getLong("ts_ms"));
@@ -592,9 +585,7 @@ public class ClickHouseTableApiIntegrationTests {
         env.executeSql("INSERT INTO ch_ltz VALUES "
                 + "(1, CAST(TIMESTAMP '2026-01-02 09:00:00' AS TIMESTAMP_LTZ(3)))").await();
 
-        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
-                "id, toUnixTimestamp64Milli(ts) AS ts_ms",
-                ClickHouseServerForTests.getDatabase(), table, "id");
+        List<GenericRecord> rows = readBack("id, toUnixTimestamp64Milli(ts) AS ts_ms", table, "id", 1);
         Assertions.assertEquals(1, rows.size());
         Assertions.assertEquals(Instant.parse("2026-01-02T00:00:00Z").toEpochMilli(),
                 rows.get(0).getLong("ts_ms"));
@@ -616,9 +607,9 @@ public class ClickHouseTableApiIntegrationTests {
         env.executeSql(sinkDdl("ch_json", table, "id BIGINT NOT NULL, j STRING NOT NULL"));
         env.executeSql("INSERT INTO ch_json VALUES (1, '{\"k\": \"v\", \"n\": 42}')").await();
 
-        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+        List<GenericRecord> rows = readBack(
                 "id, toString(getSubcolumn(j, 'k')) AS k_s, toInt64(getSubcolumn(j, 'n')) AS n_v",
-                ClickHouseServerForTests.getDatabase(), table, "id");
+                table, "id", 1);
         Assertions.assertEquals(1, rows.size());
         Assertions.assertEquals("v", rows.get(0).getString("k_s"));
         Assertions.assertEquals(42L, rows.get(0).getLong("n_v"));
@@ -640,6 +631,66 @@ public class ClickHouseTableApiIntegrationTests {
                 .build()) {
             Assertions.assertThrows(Exception.class, () -> client.getTableSchema(
                     "table-api-canary", ClickHouseServerForTests.getDatabase()));
+        }
+    }
+
+    @Test
+    void passthroughOptionsReachTheClientAndTheInsert() throws Exception {
+        String table = "table_api_passthrough";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        // The client option must survive validation and client construction; the server setting is
+        // recorded per query, so the insert's query_log row proves it travelled with the INSERT.
+        env.executeSql(sinkDdl("ch_passthrough", table, "id BIGINT NOT NULL",
+                ", 'clickhouse.client.socket_timeout' = '30000'"
+                        + ", 'clickhouse.server.max_insert_block_size' = '777777'"));
+        env.executeSql("INSERT INTO ch_passthrough VALUES (1)").await();
+
+        Assertions.assertEquals(1, readBack("id", table, "id", 1).size());
+        Assertions.assertTrue(insertsRecordedWithSetting(table, "max_insert_block_size", "777777") >= 1,
+                "no query_log INSERT into " + table + " carries max_insert_block_size=777777");
+    }
+
+    /**
+     * Read-back after {@code await()}. On Cloud the replica answering the SELECT may not yet see the
+     * acknowledged insert, so poll (bounded) until the expected row count shows up; one read elsewhere.
+     */
+    private static List<GenericRecord> readBack(String columns, String table, String orderBy, int expectedRows)
+            throws Exception {
+        int attempts = ClickHouseServerForTests.isCloud() ? 30 : 1;
+        List<GenericRecord> rows = ClickHouseServerForTests.extractData(
+                columns, ClickHouseServerForTests.getDatabase(), table, orderBy);
+        for (int i = 1; i < attempts && rows.size() != expectedRows; i++) {
+            Thread.sleep(1000);
+            rows = ClickHouseServerForTests.extractData(
+                    columns, ClickHouseServerForTests.getDatabase(), table, orderBy);
+        }
+        return rows;
+    }
+
+    /** Finished INSERTs into {@code table} whose query_log row recorded {@code setting = value}. */
+    private static long insertsRecordedWithSetting(String table, String setting, String value) throws Exception {
+        boolean cloud = ClickHouseServerForTests.isCloud();
+        ClickHouseServerForTests.executeSql(cloud ? "SYSTEM FLUSH LOGS ON CLUSTER 'default'" : "SYSTEM FLUSH LOGS");
+        String sql = String.format(
+                "SELECT count() FROM clusterAllReplicas('default', system.query_log) "
+                        + "WHERE type = 'QueryFinish' AND query_kind = 'Insert' "
+                        + "AND has(tables, '%s.%s') AND Settings['%s'] = '%s'",
+                ClickHouseServerForTests.getDatabase(), table, setting, value);
+        try (Client client = new Client.Builder()
+                .addEndpoint(ClickHouseServerForTests.getURL())
+                .setUsername(ClickHouseServerForTests.getUsername())
+                .setPassword(ClickHouseServerForTests.getPassword())
+                .build()) {
+            long count = client.queryAll(sql).get(0).getLong(1);
+            for (int i = 1; i < (cloud ? 30 : 5) && count < 1; i++) {
+                Thread.sleep(1000);
+                count = client.queryAll(sql).get(0).getLong(1);
+            }
+            return count;
         }
     }
 

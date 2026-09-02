@@ -2,6 +2,7 @@ package org.apache.flink.connector.clickhouse.table.schema;
 
 import com.clickhouse.data.ClickHouseColumn;
 import com.clickhouse.data.ClickHouseDataType;
+import com.clickhouse.data.format.BinaryStreamUtils;
 import com.clickhouse.utils.writer.DataWriter;
 
 import org.junit.jupiter.api.Test;
@@ -97,6 +98,22 @@ class DataWriterContractTest {
         assertEquals(EnumSet.of(ClickHouseDataType.UInt8, ClickHouseDataType.UInt16,
                         ClickHouseDataType.UInt32, ClickHouseDataType.UInt64),
                 SchemaResolver.NULL_HANDLING_BROKEN_TARGETS);
+    }
+
+    /** The mapper spells its type ranges out; while the client still ships them, the two must agree. */
+    @Test
+    @SuppressWarnings("deprecation")
+    void rangeBoundsMatchTheClientsConstants() {
+        assertEquals(BinaryStreamUtils.U_INT8_MAX, ClickHouseTypeMapper.UINT8_MAX);
+        assertEquals(BinaryStreamUtils.U_INT16_MAX, ClickHouseTypeMapper.UINT16_MAX);
+        assertEquals(BinaryStreamUtils.U_INT32_MAX, ClickHouseTypeMapper.UINT32_MAX);
+        assertEquals(BinaryStreamUtils.U_INT64_MAX, ClickHouseTypeMapper.UINT64_MAX);
+        assertEquals(BinaryStreamUtils.U_INT16_MAX, ClickHouseTypeMapper.DATE_MAX_EPOCH_DAY);
+        assertEquals(BinaryStreamUtils.DATE32_MIN, ClickHouseTypeMapper.DATE32_MIN_EPOCH_DAY);
+        assertEquals(BinaryStreamUtils.DATE32_MAX, ClickHouseTypeMapper.DATE32_MAX_EPOCH_DAY);
+        assertEquals(BinaryStreamUtils.U_INT32_MAX, ClickHouseTypeMapper.DATETIME_MAX_EPOCH_SECOND);
+        assertEquals(BinaryStreamUtils.DATETIME64_MIN, ClickHouseTypeMapper.DATETIME64_MIN_EPOCH_SECOND);
+        assertEquals(BinaryStreamUtils.DATETIME64_MAX, ClickHouseTypeMapper.DATETIME64_MAX_EPOCH_SECOND);
     }
 
     // ------------------------------------------------------------------------------------

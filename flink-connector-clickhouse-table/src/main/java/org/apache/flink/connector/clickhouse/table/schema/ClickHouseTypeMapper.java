@@ -2,7 +2,6 @@ package org.apache.flink.connector.clickhouse.table.schema;
 
 import com.clickhouse.data.ClickHouseColumn;
 import com.clickhouse.data.ClickHouseDataType;
-import com.clickhouse.data.format.BinaryStreamUtils;
 
 import org.apache.flink.connector.clickhouse.table.data.ValueConverter;
 import org.apache.flink.table.data.ArrayData;
@@ -96,27 +95,33 @@ public final class ClickHouseTypeMapper {
             ClickHouseDataType.UInt8, ClickHouseDataType.UInt16, ClickHouseDataType.UInt32,
             ClickHouseDataType.UInt128, ClickHouseDataType.UInt256);
 
-    // Range bounds derive from the client that owns the wire format, so a client bump moves them too.
+    // Literal because the client's copies live in deprecated BinaryStreamUtils; DataWriterContractTest pins them.
 
     /** Digits of the largest UInt64 (18446744073709551615) — the DECIMAL(20,0) canonical pair. */
     private static final int UINT64_MAX_DIGITS = ClickHouseDataType.UInt64.getMaxPrecision();
 
+    static final int UINT8_MAX = 0xFF;
+    static final int UINT16_MAX = 0xFFFF;
+    static final long UINT32_MAX = 0xFFFFFFFFL;
+
     /** The largest UInt64 itself — 20 digits admit values above it, so writes re-check. */
-    private static final BigInteger UINT64_MAX = BinaryStreamUtils.U_INT64_MAX;
+    static final BigInteger UINT64_MAX = BigInteger.ONE.shiftLeft(64).subtract(BigInteger.ONE);
 
     /** ClickHouse {@code Date} is UInt16 epoch days, so 2149-06-06 is its last day. */
-    private static final int DATE_MAX_EPOCH_DAY = BinaryStreamUtils.U_INT16_MAX;
+    static final int DATE_MAX_EPOCH_DAY = UINT16_MAX;
 
     /** ClickHouse {@code Date32} covers 1900-01-01..2299-12-31, as signed epoch days. */
-    private static final int DATE32_MIN_EPOCH_DAY = BinaryStreamUtils.DATE32_MIN;
-    private static final int DATE32_MAX_EPOCH_DAY = BinaryStreamUtils.DATE32_MAX;
+    static final int DATE32_MIN_EPOCH_DAY = (int) LocalDate.of(1900, 1, 1).toEpochDay();
+    static final int DATE32_MAX_EPOCH_DAY = (int) LocalDate.of(2299, 12, 31).toEpochDay();
 
     /** ClickHouse {@code DateTime} is UInt32 epoch seconds, ending 2106-02-07T06:28:15Z. */
-    private static final long DATETIME_MAX_EPOCH_SECOND = BinaryStreamUtils.U_INT32_MAX;
+    static final long DATETIME_MAX_EPOCH_SECOND = UINT32_MAX;
 
     /** ClickHouse {@code DateTime64} covers 1900-01-01T00:00:00Z..2299-12-31T23:59:59Z. */
-    private static final long DATETIME64_MIN_EPOCH_SECOND = BinaryStreamUtils.DATETIME64_MIN;
-    private static final long DATETIME64_MAX_EPOCH_SECOND = BinaryStreamUtils.DATETIME64_MAX;
+    static final long DATETIME64_MIN_EPOCH_SECOND =
+            LocalDate.of(1900, 1, 1).atStartOfDay().toEpochSecond(ZoneOffset.UTC);
+    static final long DATETIME64_MAX_EPOCH_SECOND =
+            LocalDate.of(2299, 12, 31).atTime(23, 59, 59).toEpochSecond(ZoneOffset.UTC);
 
     private static final Map<LogicalTypeRoot, RootRule> RULES = buildRules();
 
@@ -207,16 +212,16 @@ public final class ClickHouseTypeMapper {
                         ClickHouseDataType.Int128, ClickHouseDataType.Int256),
                 "Int8 (or a wider signed integer)"));
         rules.put(LogicalTypeRoot.SMALLINT, signedIntegerRule(
-                ClickHouseDataType.Int16, ClickHouseDataType.UInt8, BinaryStreamUtils.U_INT8_MAX,
+                ClickHouseDataType.Int16, ClickHouseDataType.UInt8, UINT8_MAX,
                 EnumSet.of(ClickHouseDataType.Int32, ClickHouseDataType.Int64,
                         ClickHouseDataType.Int128, ClickHouseDataType.Int256),
                 "Int16, UInt8 (or a wider signed integer)"));
         rules.put(LogicalTypeRoot.INTEGER, signedIntegerRule(
-                ClickHouseDataType.Int32, ClickHouseDataType.UInt16, BinaryStreamUtils.U_INT16_MAX,
+                ClickHouseDataType.Int32, ClickHouseDataType.UInt16, UINT16_MAX,
                 EnumSet.of(ClickHouseDataType.Int64, ClickHouseDataType.Int128, ClickHouseDataType.Int256),
                 "Int32, UInt16 (or a wider signed integer)"));
         rules.put(LogicalTypeRoot.BIGINT, signedIntegerRule(
-                ClickHouseDataType.Int64, ClickHouseDataType.UInt32, BinaryStreamUtils.U_INT32_MAX,
+                ClickHouseDataType.Int64, ClickHouseDataType.UInt32, UINT32_MAX,
                 EnumSet.of(ClickHouseDataType.Int128, ClickHouseDataType.Int256),
                 "Int64, UInt32, Int128, Int256"));
         rules.put(LogicalTypeRoot.DECIMAL, ClickHouseTypeMapper::buildDecimalConverter);
@@ -290,7 +295,7 @@ public final class ClickHouseTypeMapper {
             }
             if (targetType == unsignedTarget) {
                 // DataWriter takes UInt8/UInt16 as int and UInt32 as long.
-                return unsignedMax <= BinaryStreamUtils.U_INT16_MAX
+                return unsignedMax <= UINT16_MAX
                         ? value -> (int) checkUnsignedRange(((Number) value).longValue(),
                                 unsignedMax, targetType.name(), path)
                         : value -> checkUnsignedRange(((Number) value).longValue(),

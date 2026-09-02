@@ -227,7 +227,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
     // Option parsing
     // ------------------------------------------------------------------------------------
 
-    private static ZoneId parseSinkTimezone(String zone) {
+    static ZoneId parseSinkTimezone(String zone) {
         try {
             return ZoneId.of(zone);
         } catch (DateTimeException e) {
@@ -248,7 +248,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         return RetryPolicy.limited(maxRetries);
     }
 
-    private static BatchFailureStrategy parseBatchFailureStrategy(String value) {
+    static BatchFailureStrategy parseBatchFailureStrategy(String value) {
         try {
             return BatchFailureStrategy.valueOf(
                     value.trim().toUpperCase(Locale.ROOT).replace('-', '_'));
@@ -260,7 +260,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
     }
 
     /** Collects {@code <prefix><key> = value} table options into a {@code key -> value} map. */
-    private static Map<String, String> prefixedOptions(Map<String, String> tableOptions, String prefix) {
+    static Map<String, String> prefixedOptions(Map<String, String> tableOptions, String prefix) {
         Map<String, String> extracted = new HashMap<>();
         tableOptions.forEach((key, value) -> {
             if (key.startsWith(prefix)) {
