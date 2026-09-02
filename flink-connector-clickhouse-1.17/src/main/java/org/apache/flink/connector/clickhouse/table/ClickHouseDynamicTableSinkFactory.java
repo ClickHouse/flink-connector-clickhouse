@@ -232,8 +232,16 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         }
     }
 
-    private static RetryPolicy toRetryPolicy(int maxRetries) {
-        return maxRetries < 0 ? RetryPolicy.forever() : RetryPolicy.limited(maxRetries);
+    static RetryPolicy toRetryPolicy(int maxRetries) {
+        if (maxRetries == -1) {
+            return RetryPolicy.forever();
+        }
+        if (maxRetries < 0) {
+            throw new ValidationException(String.format(
+                    "'%s' must be >= 0, or -1 for unlimited retries, but was %d.",
+                    SINK_MAX_RETRIES.key(), maxRetries));
+        }
+        return RetryPolicy.limited(maxRetries);
     }
 
     private static BatchFailureStrategy parseBatchFailureStrategy(String value) {
