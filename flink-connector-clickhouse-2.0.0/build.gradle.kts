@@ -138,7 +138,11 @@ val checkCrossVersionCopiesInSync by tasks.registering {
         }
     }
 }
-tasks.named("check") { dependsOn(checkCrossVersionCopiesInSync) }
+// check alone never runs in the pipelines: CI invokes test / runScalaTests directly, and
+// the publish workflows invoke shadowJar (publishToMavenLocal / CentralPortal build it).
+listOf("check", "test", "runScalaTests", "shadowJar").forEach {
+    tasks.named(it) { dependsOn(checkCrossVersionCopiesInSync) }
+}
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("all")
