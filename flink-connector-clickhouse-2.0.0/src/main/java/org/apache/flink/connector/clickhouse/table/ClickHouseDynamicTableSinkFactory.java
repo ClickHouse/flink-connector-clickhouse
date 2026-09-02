@@ -259,12 +259,20 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         }
     }
 
-    /** Collects {@code <prefix><key> = value} table options into a {@code key -> value} map. */
+    /**
+     * Collects {@code <prefix><key> = value} table options into a {@code key -> value} map. A bare
+     * prefix is rejected: it would become the empty key, which the client and server silently ignore.
+     */
     static Map<String, String> prefixedOptions(Map<String, String> tableOptions, String prefix) {
         Map<String, String> extracted = new HashMap<>();
         tableOptions.forEach((key, value) -> {
             if (key.startsWith(prefix)) {
-                extracted.put(key.substring(prefix.length()), value);
+                String setting = key.substring(prefix.length());
+                if (setting.trim().isEmpty()) {
+                    throw new ValidationException(String.format(
+                            "Option '%s' has no key after the prefix — expected '%s<key>'.", key, prefix));
+                }
+                extracted.put(setting, value);
             }
         });
         return extracted;

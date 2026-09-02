@@ -7,6 +7,7 @@ import com.clickhouse.config.RetryPolicy;
 import org.junit.jupiter.api.Test;
 
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -70,5 +71,16 @@ class ClickHouseDynamicTableSinkFactoryTest {
         assertEquals(Map.of("async_insert", "1", "wait_for_async_insert", "1"),
                 ClickHouseDynamicTableSinkFactory.prefixedOptions(
                         tableOptions, ClickHouseConnectorOptions.SERVER_SETTINGS_PREFIX));
+    }
+
+    /** A bare prefix would otherwise become the empty key, which client-v2 and ClickHouse silently ignore. */
+    @Test void barePassthroughPrefixIsRejectedNamingTheOption() {
+        for (String prefix : List.of(
+                ClickHouseConnectorOptions.CLIENT_OPTIONS_PREFIX, ClickHouseConnectorOptions.SERVER_SETTINGS_PREFIX)) {
+            ValidationException ex = assertThrows(ValidationException.class,
+                    () -> ClickHouseDynamicTableSinkFactory.prefixedOptions(Map.of(prefix, "1"), prefix));
+            assertTrue(ex.getMessage().contains("'" + prefix + "'"));
+            assertTrue(ex.getMessage().contains(prefix + "<key>"));
+        }
     }
 }

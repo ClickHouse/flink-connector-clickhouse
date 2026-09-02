@@ -654,6 +654,19 @@ public class ClickHouseTableApiIntegrationTests {
                 "no query_log INSERT into " + table + " carries max_insert_block_size=777777");
     }
 
+    @Test
+    void barePassthroughPrefixIsRejectedAtPlanning() {
+        TableEnvironment env = tableEnvironment();
+        // The bare prefix passes FactoryUtil's prefix skip; it must fail here, not reach the server as '?=1'.
+        env.executeSql(sinkDdl("ch_bare_prefix", "does_not_exist", "id BIGINT NOT NULL",
+                ", 'clickhouse.server.' = '1'"));
+
+        Exception e = Assertions.assertThrows(Exception.class,
+                () -> env.executeSql("INSERT INTO ch_bare_prefix VALUES (1)"));
+        Assertions.assertTrue(exceptionChainContains(e, "Option 'clickhouse.server.' has no key after the prefix"),
+                "Unexpected failure: " + e);
+    }
+
     /**
      * Read-back after {@code await()}. On Cloud the replica answering the SELECT may not yet see the
      * acknowledged insert, so poll (bounded) until the expected row count shows up; one read elsewhere.
