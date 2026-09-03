@@ -26,7 +26,12 @@ dependencies {
     api(project(":flink-connector-clickhouse-base"))
 
     // ClickHouseColumn & co. — the base module does not export them.
-    implementation("com.clickhouse:client-v2:${clickhouseVersion}:all")
+    // Exclude the client's external lz4: the ':all' jar embeds it, and from client 0.10 the
+    // at.yawk.lz4 fork capability-clashes with Flink's org.lz4:lz4-java (#160).
+    implementation("com.clickhouse:client-v2:${clickhouseVersion}:all") {
+        exclude(group = "org.lz4", module = "lz4-java")
+        exclude(group = "at.yawk.lz4", module = "lz4-java")
+    }
 
     // Provided by the Flink distribution at runtime — never bundled.
     compileOnly("org.apache.flink:flink-table-common:$flinkTableCommonVersion")

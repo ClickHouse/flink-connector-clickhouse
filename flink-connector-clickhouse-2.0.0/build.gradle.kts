@@ -55,7 +55,12 @@ dependencies {
     implementation("org.apache.logging.log4j:log4j-core:${project.extra["log4jVersion"]}")
 
     // ClickHouse Client Libraries
-    implementation("com.clickhouse:client-v2:${clickhouseVersion}:all")
+    // Exclude the client's external lz4: the ':all' jar embeds it, and from client 0.10 the
+    // at.yawk.lz4 fork capability-clashes with Flink's org.lz4:lz4-java (#160).
+    implementation("com.clickhouse:client-v2:${clickhouseVersion}:all") {
+        exclude(group = "org.lz4", module = "lz4-java")
+        exclude(group = "at.yawk.lz4", module = "lz4-java")
+    }
     // Apache Flink Libraries
     implementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     implementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")

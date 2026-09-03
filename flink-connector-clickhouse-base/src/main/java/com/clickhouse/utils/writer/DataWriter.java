@@ -124,14 +124,14 @@ public class DataWriter {
     // Int128
     public void writeInt128(BigInteger value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
         if (Serialize.writeValuePreamble(out, isNullable, dataType, column, value)) {
-            BinaryStreamUtils.writeInt128(out, SerializerUtils.convertToBigInteger(value));
+            BinaryStreamUtils.writeInt128(out, value);
         }
     }
 
     // Int256
     public void writeInt256(BigInteger value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
         if (Serialize.writeValuePreamble(out, isNullable, dataType, column, value)) {
-            BinaryStreamUtils.writeInt256(out, SerializerUtils.convertToBigInteger(value));
+            BinaryStreamUtils.writeInt256(out, value);
         }
     }
 

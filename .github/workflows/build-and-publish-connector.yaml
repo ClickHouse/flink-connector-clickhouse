@@ -21,18 +21,17 @@ jobs:
           java-version: '17'
           distribution: 'adopt'
           architecture: x64
+      - name: Set up Gradle
+        if: env.SKIP_STEP != 'true'
+        uses: gradle/actions/setup-gradle@v4
       - name: Build shadowJar
         if: env.SKIP_STEP != 'true'
-        uses: gradle/gradle-build-action@v2
-        with:
-          arguments: shadowJar shadowSourcesJar
+        run: ./gradlew shadowJar shadowSourcesJar
       - name: Deploy ClickHouse Flink Connector
         if: env.SKIP_STEP != 'true'
-        uses: gradle/gradle-build-action@v2
         env:
           NMCP_USERNAME: ${{ secrets.NMCP_USERNAME }}
           NMCP_PASSWORD: ${{ secrets.NMCP_PASSWORD }}
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-        with:
-          arguments: publishMavenPublicationToCentralPortal
+        run: ./gradlew publishMavenPublicationToCentralPortal

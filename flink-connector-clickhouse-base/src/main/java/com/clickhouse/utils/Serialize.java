@@ -186,14 +186,14 @@ public class Serialize {
     // Int128
     public static void writeInt128(OutputStream out, BigInteger value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
         if (writeValuePreamble(out, isNullable, dataType, column, value)) {
-            BinaryStreamUtils.writeInt128(out, SerializerUtils.convertToBigInteger(value));
+            BinaryStreamUtils.writeInt128(out, value);
         }
     }
 
     // Int256
     public static void writeInt256(OutputStream out, BigInteger value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
         if (writeValuePreamble(out, isNullable, dataType, column, value)) {
-            BinaryStreamUtils.writeInt256(out, SerializerUtils.convertToBigInteger(value));
+            BinaryStreamUtils.writeInt256(out, value);
         }
     }
 
