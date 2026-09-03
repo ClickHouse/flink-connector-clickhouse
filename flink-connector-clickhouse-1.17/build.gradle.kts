@@ -64,8 +64,14 @@ dependencies {
     // Apache Flink Libraries
     implementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     implementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
+    // Table API glue (factory + sink) — provided by the Flink dist, never bundled.
+    compileOnly("org.apache.flink:flink-table-common:${project.extra["flinkVersion"]}")
 
-
+    testImplementation("org.apache.flink:flink-table-common:${project.extra["flinkVersion"]}")
+    testImplementation("org.apache.flink:flink-table-api-java-bridge:${project.extra["flinkVersion"]}")
+    // planner-loader keeps the planner's Scala 2.12 isolated from this module's Scala 2.13
+    testRuntimeOnly("org.apache.flink:flink-table-planner-loader:${project.extra["flinkVersion"]}")
+    testRuntimeOnly("org.apache.flink:flink-table-runtime:${project.extra["flinkVersion"]}")
     testImplementation("org.apache.flink:flink-connector-files:${project.extra["flinkVersion"]}")
     testImplementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     testImplementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
@@ -93,6 +99,8 @@ sourceSets {
         }
         java {
             srcDirs("src/main/java")
+            // Table API / SQL core, compiled here against this module's Flink rather than consumed as a jar
+            srcDir(project(":flink-connector-clickhouse-table").file("src/main/java"))
             srcDir(project(":flink-connector-clickhouse-base").layout.buildDirectory.file("generated/sources/version/java").get().asFile) // to include ClickHouseSinkVersion in the classpath
         }
     }
@@ -102,15 +110,27 @@ sourceSets {
         }
         java {
             srcDirs("src/test/java")
+            // Table API / SQL unit tests, run here against this module's Flink — the
+            // LogicalTypeRoot exhaustiveness guard can only fire on the generation under test
+            srcDir(project(":flink-connector-clickhouse-table").file("src/test/java"))
+            // Shared integration tests; not in -table's own test sourceSet (they need this
+            // module's Flink and embedded-ClickHouse test deps)
+            srcDir(project(":flink-connector-clickhouse-table").file("src/integrationTest/java"))
         }
     }
 }
+
+// The -table sources compile here too; this keeps their flink-table-common-only floor compile on every CI and publish path.
+tasks.compileJava { dependsOn(":flink-connector-clickhouse-table:compileJava") }
+tasks.compileTestJava { dependsOn(":flink-connector-clickhouse-table:compileTestJava") }
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("all")
     dependencies {
         include(dependency("org.apache.flink.connector.clickhouse:.*"))
         include(project(":flink-connector-clickhouse-base"))
+        // :flink-connector-clickhouse-table is absent by design — this filters the runtimeClasspath,
+        // and its classes are in this module's own output (see sourceSets).
         include(dependency("com.clickhouse:client-v2:${clickhouseVersion}:all"))
     }
     mergeServiceFiles()

@@ -25,8 +25,8 @@ Table of Contents
 
 This is a repo of ClickHouse official Apache Flink Connector supported by the ClickHouse team.
 The connector supports two main Apache Flink APIs: 
-- DataStreamAPI
-- Table API (This feature is not implemented yet and is planned for a future release)
+- DataStream API
+- Table API / Flink SQL (sink only, insert-only changelog)
 
 ## Supported Flink Versions
 
@@ -126,17 +126,132 @@ For more detailed instructions, see the [Example Guide](examples#readme)
 
 ## Table API
 
-Table API is planned for a future release. This section will be updated once available.
+The connector registers itself as the `clickhouse` SQL connector: create a table with
+`'connector' = 'clickhouse'` and `INSERT INTO` it from Flink SQL or the Table API
+(`TableDescriptor.forConnector("clickhouse")`). The sink is insert-only: append queries work,
+update-producing queries (e.g. a plain `GROUP BY` aggregation) are rejected by the planner —
+use `ReplacingMergeTree`/`AggregatingMergeTree` plus `FINAL`/`argMax` for upsert-style needs.
+
+At planning time the connector reads the real column types from the target ClickHouse table
+and validates the Flink schema against them, so typos, type mismatches, narrowing and
+unsupported types fail at job submission with a precise message instead of at the first
+flush. Columns are matched **by name, case-sensitively**; ClickHouse columns you leave out of
+the Flink schema get their server-side `DEFAULT`, or the type's default value (`0`/`''`/empty)
+if they have none — the latter is logged as a warning at planning. A nullable Flink column can only target a
+`Nullable(...)` ClickHouse column — declare columns `NOT NULL` when the target column isn't
+`Nullable` (in Flink SQL, columns and collection elements are nullable unless declared
+otherwise).
 
 ### Snippet
 
-Planned for a future release — this section will provide a usage snippet for configuring the Table API.
+```sql
+CREATE TABLE ch_events (
+    event_id   BIGINT NOT NULL,
+    amount     DECIMAL(18, 4) NOT NULL,
+    created_at TIMESTAMP(3) NOT NULL
+) WITH (
+    'connector' = 'clickhouse',
+    'url'       = 'http://localhost:8123',
+    'username'  = 'default',
+    'password'  = '',
+    'database'  = 'analytics',
+    'table'     = 'events'
+    -- + optional batching/retry options, see below
+);
+
+INSERT INTO ch_events SELECT event_id, amount, created_at FROM kafka_src;
+```
+
+### Connector options
+
+Connection options (required unless noted): `url`, `username`, `password` (defaults to `''`),
+`database`, `table`.
+
+**Batching / backpressure**
+
+| Option | Default | DataStream equivalent |
+|---|---|---|
+| `sink.buffer-flush.max-rows` | `500` | `builder.setMaxBatchSize()` |
+| `sink.buffer-flush.max-bytes` | `5mb` | `builder.setMaxBatchSizeInBytes()` |
+| `sink.buffer-flush.interval` | `5s` | `builder.setMaxTimeInBufferMS()` |
+| `sink.max-in-flight-requests` | `50` | `builder.setMaxInFlightRequests()` |
+| `sink.max-buffered-requests` | `10000` | `builder.setMaxBufferedRequests()` |
+| `sink.record.max-bytes` | `1mb` | `builder.setMaxRecordSizeInBytes()` |
+| `sink.parallelism` | (query parallelism) | `sinkTo(sink).setParallelism(n)` |
+
+**Reliability**
+
+| Option | Default | DataStream equivalent |
+|---|---|---|
+| `sink.max-retries` | `-1` (retry forever) | `config.setRetryPolicy()` |
+| `sink.batch-failure-strategy` | `stop-flink` (`drop-batch`) | `config.setBatchFailureStrategy()` |
+
+**Type / compatibility**
+
+| Option | Default | Effect |
+|---|---|---|
+| `sink.timezone` | `UTC` | zone in which `TIMESTAMP` (no time zone) wall-clock values are interpreted; DST gap wall clocks shift forward, ambiguous fall-back wall clocks take the earlier offset |
+| `sink.ignore-unknown-flink-columns` | `false` | `true` drops Flink columns absent from the ClickHouse table instead of failing |
+
+**Passthrough**: `clickhouse.client.<key>` options are forwarded to the ClickHouse client,
+`clickhouse.server.<key>` become per-query server settings. The connector itself always sends
+`print_pretty_type_names = 0`, so the type names it introspects are canonical (named `Tuple`
+columns are otherwise pretty-printed across lines and rejected in the insert header).
+
+Flink `STRING` into a ClickHouse `JSON` column works out of the box — the connector enables
+the client's JSON-as-string mode automatically exactly when a `JSON` column is mapped.
+
+### Type mapping
+
+Widening is implicit, unsigned targets are range-checked per record, and any other pair fails
+at planning naming the column and both types.
+
+| Flink SQL type | ClickHouse column types | Notes |
+|---|---|---|
+| `BOOLEAN` | `Bool` | |
+| `TINYINT` | `Int8` or wider signed | |
+| `SMALLINT` | `Int16`, `UInt8`, wider signed | |
+| `INT` | `Int32`, `UInt16`, wider signed | |
+| `BIGINT` | `Int64`, `UInt32`, `Int128`, `Int256` | |
+| `DECIMAL(p, s)` | a `Decimal(p', s')` it fits; with `s = 0` also any `Int8..Int256` / `UInt8..UInt256` whose digits cover `p` | boundary precisions (`DECIMAL(19, 0)` → `Int64`, `DECIMAL(20, 0)` → `UInt64`) and unsigned targets are range-checked per record |
+| `FLOAT` / `DOUBLE` | `Float32` (`FLOAT` only), `Float64` | |
+| `CHAR` / `VARCHAR` / `STRING` | `String`, `FixedString(n)`, `UUID`, `JSON` | `FixedString` checked in bytes; `UUID` must be canonical text |
+| `DATE` | `Date`, `Date32` | range-checked per record |
+| `TIMESTAMP(p)` / `TIMESTAMP_LTZ(p)` | `DateTime` (`p = 0`), `DateTime64(s >= p)` | Flink's default `TIMESTAMP` is precision 6 — declare `TIMESTAMP(3)` for `DateTime64(3)`. `TIMESTAMP` is a wall clock in `sink.timezone`; `TIMESTAMP_LTZ` an instant |
+| `ARRAY<t>` | `Array(T)` | only `Array(Nullable(T))` can carry nested NULLs |
+| `MAP<k, v>` | `Map(K, V)` | string/integer/decimal keys except `UInt64`; values not `Nullable` |
+| `MULTISET<t>` | `Map(T, UInt64)` | counts become the values |
+| `ROW<...>` | `Tuple(...)` | positional; fields/elements not nullable |
+
+Unsupported: `BINARY`/`VARBINARY`, `TIME`, `TIMESTAMP WITH TIME ZONE`, `INTERVAL`; ClickHouse
+`Enum` (#43), `Variant` (#60), `Time` (#91), `IPv4/6`, `Dynamic`, geo — exclude such columns
+and let server defaults fill them.
+
+Everywhere: nullable Flink columns need `Nullable(...)` targets — except `Nullable(UInt8/16/32/64)`,
+blocked until issue #144 — and composites must be `NOT NULL`. `LowCardinality` is transparent;
+`SimpleAggregateFunction(f, T)` matches as `T`, top-level only.
+
+Notes for SQL users:
+- Operator names are planner-generated (e.g. `Sink: ch_events[3]`), which affects metric
+  identifiers; `numRecordsSend` counts at flush, so retried batches double-count versus
+  `SELECT count()`.
+- A compiled plan does not freeze the ClickHouse mapping: an `ALTER TABLE` between planning
+  and execution fails at the first flush (same exposure as the DataStream path).
+- The community `itinycheng` connector also registers the `clickhouse` identifier; having
+  both jars on the classpath fails with Flink's "multiple factories" error — keep only one.
+- SQL gateways without ClickHouse network access can deploy in application mode, where
+  planning runs on the JobManager inside the data plane.
 
 ### Example
 
-Planned for a future release — a complete end-to-end example will be added once the Table API becomes available.
+See the round-trip integration test
+[`ClickHouseTableApiIntegrationTests`](flink-connector-clickhouse-table/src/integrationTest/java/org/apache/flink/connector/clickhouse/table/ClickHouseTableApiIntegrationTests.java)
+for a complete DDL + `INSERT INTO` example against a real ClickHouse.
 
 ## Supported ClickHouse Types
+
+This is the DataStream (Java value) view; for the Flink SQL / Table API pairing rules see
+[Type mapping](#type-mapping).
 
 | Java Type       | ClickHouse Type | Supported | Serialize Method            |
 |-----------------|-----------------|-----------|-----------------------------| 

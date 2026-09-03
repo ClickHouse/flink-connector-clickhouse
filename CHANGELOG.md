@@ -1,3 +1,32 @@
+## Unreleased — Table API / Flink SQL sink
+
+### New
+
+- Flink SQL / Table API sink: `'connector' = 'clickhouse'`, insert-only. At planning time the
+  connector reads the target table's columns from ClickHouse and validates the Flink schema
+  against them, so mismatches fail at job submission. Options (`sink.buffer-flush.*`,
+  `sink.max-in-flight-requests`, `sink.max-buffered-requests`, `sink.record.max-bytes`,
+  `sink.parallelism`, `sink.max-retries`, `sink.batch-failure-strategy`, `sink.timezone`,
+  `sink.ignore-unknown-flink-columns`, `clickhouse.client.*` / `clickhouse.server.*`
+  passthrough) and the type mapping are documented in the README's "Table API" section.
+- `ClickHouseClientConfig`: a constructor taking a `RetryPolicy` that does not ping at
+  construction, `copy()`, and `createPlanningClient()`.
+- `ClickHouseSinkDefaults`: the batching defaults shared by the DataStream builder and the SQL options.
+
+### Fixed
+
+- `DataWriter` sized `Nullable(FixedString(n))` values by the column's estimated length (1)
+  instead of `n`.
+
+### Checkpoint migration
+
+- Checkpoint entry format V3: strings and map keys are int-length-prefixed UTF-8, so values
+  above `writeUTF`'s 64 KB limit checkpoint safely. Checkpoints written by 0.2.0 (V2) restore
+  transparently; 0.1.x STRING-mode checkpoints still restore as before.
+- **Rolling back to 0.2.0 from a V3 checkpoint is NOT supported**: 0.2.0 fails on restore with
+  `Unknown entry marker: 3`. Drain the sink before downgrading: stop the source, wait for the
+  buffer to flush, take a checkpoint with zero in-flight entries, then roll back.
+
 ## 0.2.0 — Map-based payload, RowBinaryWithNamesAndTypes
 
 ### Breaking changes

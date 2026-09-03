@@ -236,13 +236,17 @@ public class DataWriter {
      * Generic dispatcher: routes a Map value to the right typed writer based on
      * {@code column.getDataType()}. Per design spec §8a.
      */
-    public void writeValue(Object value, ClickHouseColumn column) throws IOException {
-        // SimpleAggregateFunction(f, T) is wire-encoded identically to its inner type T; recurse on the nested column. See issue #143.
-        if (column.getDataType() == ClickHouseDataType.SimpleAggregateFunction) {
-            // A valid SimpleAggregateFunction has exactly one storage type (ClickHouse rejects more), so nested holds that single inner type.
-            writeValue(value, column.getNestedColumns().get(0));
-            return;
+    /** SimpleAggregateFunction(f, T) is wire-encoded as its inner type T (issue #143); planning unwraps with this too. */
+    public static ClickHouseColumn unwrapTransparentWrappers(ClickHouseColumn column) {
+        ClickHouseColumn c = column;
+        while (c.getDataType() == ClickHouseDataType.SimpleAggregateFunction && c.hasNestedColumn()) {
+            c = c.getNestedColumns().get(0);
         }
+        return c;
+    }
+
+    public void writeValue(Object value, ClickHouseColumn column) throws IOException {
+        column = unwrapTransparentWrappers(column);
 
         ClickHouseDataType type = column.getDataType();
         boolean nullable = column.isNullable();
@@ -276,8 +280,9 @@ public class DataWriter {
                              column.getPrecision(), column.getScale());
                 break;
             case String:      writeString     ((java.lang.String) value, nullable, type, name); break;
+            // getEstimatedLength() is 1 for Nullable(FixedString(n)); only getPrecision() carries n.
             case FixedString: writeFixedString((java.lang.String) value, nullable, type, name,
-                                               column.getEstimatedLength()); break;
+                                               column.getPrecision()); break;
             case JSON:        writeJSON       ((java.lang.String) value, nullable, type, name); break;
             case UUID:        writeUUID       ((UUID) value, nullable, type, name); break;
             case Date:

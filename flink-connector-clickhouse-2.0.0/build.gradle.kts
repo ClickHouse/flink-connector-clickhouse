@@ -24,8 +24,12 @@ repositories {
     mavenCentral()
 }
 
+// Lets CI compile this module against any 2.x. Separate from -1.17's FLINK_VERSION on
+// purpose: a shared var would let a 1.x value break this build.
+val flinkVersion = System.getenv("FLINK_2_VERSION")?.takeIf { it.isNotBlank() } ?: "2.0.0"
+
 extra.apply {
-    set("flinkVersion", "2.0.0") // the default still will be 2.0.0 since it is more popular currently
+    set("flinkVersion", flinkVersion) // the default still will be 2.0.0 since it is more popular currently
     set("log4jVersion","2.17.2")
     set("testContainersVersion", "2.0.2")
     set("testContainersClickHouseVersion", "1.21.3")
@@ -61,7 +65,14 @@ dependencies {
     implementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     implementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
     implementation(project(":flink-connector-clickhouse-base"))
+    // Table API glue (factory + sink) — provided by the Flink dist, never bundled.
+    compileOnly("org.apache.flink:flink-table-common:${project.extra["flinkVersion"]}")
 
+    testImplementation("org.apache.flink:flink-table-common:${project.extra["flinkVersion"]}")
+    testImplementation("org.apache.flink:flink-table-api-java-bridge:${project.extra["flinkVersion"]}")
+    // planner-loader keeps the planner's Scala 2.12 isolated from this module's Scala 2.13
+    testRuntimeOnly("org.apache.flink:flink-table-planner-loader:${project.extra["flinkVersion"]}")
+    testRuntimeOnly("org.apache.flink:flink-table-runtime:${project.extra["flinkVersion"]}")
     testImplementation("org.apache.flink:flink-connector-files:${project.extra["flinkVersion"]}")
     testImplementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     testImplementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
@@ -89,6 +100,8 @@ sourceSets {
         }
         java {
             srcDirs("src/main/java")
+            // Table API / SQL core, compiled here against this module's Flink rather than consumed as a jar
+            srcDir(project(":flink-connector-clickhouse-table").file("src/main/java"))
             srcDir(project(":flink-connector-clickhouse-base").layout.buildDirectory.file("generated/sources/version/java").get().asFile) // to include ClickHouseSinkVersion in the classpath
         }
     }
@@ -98,15 +111,61 @@ sourceSets {
         }
         java {
             srcDirs("src/test/java")
+            // Table API / SQL unit tests, run here against this module's Flink — the
+            // LogicalTypeRoot exhaustiveness guard can only fire on the generation under test
+            srcDir(project(":flink-connector-clickhouse-table").file("src/test/java"))
+            // Shared integration tests; not in -table's own test sourceSet (they need this
+            // module's Flink and embedded-ClickHouse test deps)
+            srcDir(project(":flink-connector-clickhouse-table").file("src/integrationTest/java"))
         }
     }
 }
+
+// These files are hand-duplicated across the version modules (the Table API pair needs this
+// module's ClickHouseAsyncSink/ClickHouseClientConfig, so it cannot be single-sourced in
+// :flink-connector-clickhouse-table until those are; the config and builder predate the split).
+// Fail the build on drift instead. Files that legitimately differ per Flink generation
+// (ClickHouseConvertor, ClickHouseAsyncWriter, ...) must stay out of this list.
+val checkCrossVersionCopiesInSync by tasks.registering {
+    val copies = listOf(
+        "src/main/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSink.java",
+        "src/main/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSinkFactory.java",
+        "src/main/resources/META-INF/services/org.apache.flink.table.factories.Factory",
+        "src/main/java/org/apache/flink/connector/clickhouse/sink/ClickHouseClientConfig.java",
+        "src/main/java/org/apache/flink/connector/clickhouse/sink/ClickHouseAsyncSinkBuilder.java",
+        // Flink-version-free, and both generations must keep one checkpoint format.
+        "src/main/java/org/apache/flink/connector/clickhouse/sink/ClickHouseAsyncSinkSerializer.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/sink/ClickHouseSinkStateTests.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/sink/ClickHouseClientConfigTest.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSinkFactoryTest.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSinkTest.java",
+    ).map { file(it) to project(":flink-connector-clickhouse-1.17").file(it) }
+    inputs.files(copies.flatMap { listOf(it.first, it.second) })
+    doLast {
+        copies.forEach { (ours, theirs) ->
+            check(ours.readBytes().contentEquals(theirs.readBytes())) {
+                "$ours differs from $theirs — these copies must stay identical; apply the change to both."
+            }
+        }
+    }
+}
+// check alone never runs in the pipelines: CI invokes test / runScalaTests directly, and
+// the publish workflows invoke shadowJar (publishToMavenLocal / CentralPortal build it).
+listOf("check", "test", "runScalaTests", "shadowJar").forEach {
+    tasks.named(it) { dependsOn(checkCrossVersionCopiesInSync) }
+}
+
+// The -table sources compile here too; this keeps their flink-table-common-only floor compile on every CI and publish path.
+tasks.compileJava { dependsOn(":flink-connector-clickhouse-table:compileJava") }
+tasks.compileTestJava { dependsOn(":flink-connector-clickhouse-table:compileTestJava") }
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("all")
     dependencies {
         include(dependency("org.apache.flink.connector.clickhouse:.*"))
         include(project(":flink-connector-clickhouse-base"))
+        // :flink-connector-clickhouse-table is absent by design — this filters the runtimeClasspath,
+        // and its classes are in this module's own output (see sourceSets).
         include(dependency("com.clickhouse:client-v2:${clickhouseVersion}:all"))
     }
     mergeServiceFiles()
