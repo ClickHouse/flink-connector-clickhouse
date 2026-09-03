@@ -4,7 +4,9 @@ import com.clickhouse.client.api.Client;
 import com.clickhouse.client.api.ClientConfigProperties;
 import com.clickhouse.config.BatchFailureStrategy;
 import com.clickhouse.config.RetryPolicy;
+import org.apache.flink.connector.base.sink.writer.strategy.RateLimitingStrategy;
 import org.apache.flink.runtime.util.EnvironmentInformation;
+import org.apache.flink.util.function.SerializableSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,6 +35,7 @@ public class ClickHouseClientConfig implements Serializable {
     private transient Client client = null;
     private RetryPolicy retryPolicy = RetryPolicy.forever();
     private BatchFailureStrategy batchFailureStrategy = BatchFailureStrategy.STOP_FLINK;
+    private SerializableSupplier<RateLimitingStrategy> rateLimitingStrategySupplier = null;
 
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, boolean enableJsonSupportAsString) {
         this.url = url;
@@ -143,5 +146,26 @@ public class ClickHouseClientConfig implements Serializable {
     }
 
     public Boolean getEnableJsonSupportAsString() { return  enableJsonSupportAsString; }
+
+    public SerializableSupplier<RateLimitingStrategy> getRateLimitingStrategySupplier() {
+        return rateLimitingStrategySupplier;
+    }
+
+    /**
+     * Overrides the {@link RateLimitingStrategy} that {@code AsyncSinkWriterConfiguration} would
+     * otherwise default to (a congestion-control strategy derived from {@code maxInFlightRequests}
+     * and {@code maxBatchSize}). Supply this to use a strategy tuned for a specific ClickHouse
+     * deployment — e.g. a fixed-rate limiter to protect a small cluster from insert spikes, or a
+     * more aggressive scaling strategy for one that can absorb bursts.
+     *
+     * <p>A supplier (rather than a strategy instance) is required because
+     * {@link RateLimitingStrategy} is not {@link Serializable} — the supplier is what gets
+     * shipped to task managers, and each writer calls {@code get()} locally to construct its own
+     * strategy instance.
+     */
+    public void setRateLimitingStrategySupplier(
+            SerializableSupplier<RateLimitingStrategy> rateLimitingStrategySupplier) {
+        this.rateLimitingStrategySupplier = rateLimitingStrategySupplier;
+    }
 
 }
