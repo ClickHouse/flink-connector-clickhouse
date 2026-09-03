@@ -44,14 +44,12 @@ jobs:
           java-version: '17'
           distribution: 'adopt'
           architecture: x64
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
       - name: Publish locally flink-connector-clickhouse-1.17
-        uses: gradle/gradle-build-action@v2
-        with:
-          arguments: :flink-connector-clickhouse-1.17:publishToMavenLocal
+        run: ./gradlew :flink-connector-clickhouse-1.17:publishToMavenLocal
       - name: Publish locally flink-connector-clickhouse-2.0.0
-        uses: gradle/gradle-build-action@v2
-        with:
-          arguments: :flink-connector-clickhouse-2.0.0:publishToMavenLocal
+        run: ./gradlew :flink-connector-clickhouse-2.0.0:publishToMavenLocal
       - name: Build map-evolution example (Flink 1.17)
         working-directory: ./examples/maven/flink-v1.7/map-evolution
         run: mvn -q clean package
@@ -59,9 +57,7 @@ jobs:
         working-directory: ./examples/maven/flink-v2/map-evolution
         run: mvn -q clean package
       - name: Run testSchemaEvolution
-        uses: gradle/gradle-build-action@v2
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
           FLINK_VERSION: ${{ matrix.flink }}
-        with:
-          arguments: ":flink-connector-clickhouse-integration:test --tests com.clickhouse.flink.integration.FlinkTests.testSchemaEvolution"
+        run: ./gradlew :flink-connector-clickhouse-integration:test --tests com.clickhouse.flink.integration.FlinkTests.testSchemaEvolution

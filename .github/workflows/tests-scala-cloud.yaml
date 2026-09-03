@@ -56,15 +56,15 @@ jobs:
           java-version: '17'
           distribution: 'adopt'
           architecture: x64
-      - name: Setup and execute Gradle 'test' task
-        uses: gradle/gradle-build-action@v2
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Execute Gradle 'test' task
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
           CLICKHOUSE_CLOUD_HOST: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}
           CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}
           FLINK_VERSION: ${{ matrix.flink }}
-        with:
-          arguments: :flink-connector-clickhouse-1.17:runScalaTests
+        run: ./gradlew :flink-connector-clickhouse-1.17:runScalaTests
   test-flink-2:
     needs: gate
     runs-on: ubuntu-latest
@@ -84,14 +84,14 @@ jobs:
           java-version: '17'
           distribution: 'adopt'
           architecture: x64
-      - name: Setup and execute Gradle 'test' task
-        uses: gradle/gradle-build-action@v2
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Execute Gradle 'test' task
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
           CLICKHOUSE_CLOUD_HOST: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}
           CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}
-        with:
-          arguments: :flink-connector-clickhouse-2.0.0:runScalaTests
+        run: ./gradlew :flink-connector-clickhouse-2.0.0:runScalaTests
 
   remove-label:
     needs: [ test-flink-17, test-flink-2 ]
