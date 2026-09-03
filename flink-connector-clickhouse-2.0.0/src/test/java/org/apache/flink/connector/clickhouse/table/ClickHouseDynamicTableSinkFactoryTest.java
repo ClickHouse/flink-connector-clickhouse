@@ -1,5 +1,6 @@
 package org.apache.flink.connector.clickhouse.table;
 
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.table.api.ValidationException;
 
 import com.clickhouse.client.api.ClientException;
@@ -95,6 +96,29 @@ class ClickHouseDynamicTableSinkFactoryTest {
                         ClickHouseConnectorOptions.SERVER_SETTINGS_PREFIX));
     }
 
+    /** Two keys differing only in whitespace would otherwise collapse in HashMap order, not DDL order. */
+    @Test void passthroughKeysCollidingAfterTrimAreRejected() {
+        ValidationException ex = assertThrows(ValidationException.class,
+                () -> ClickHouseDynamicTableSinkFactory.prefixedOptions(
+                        Map.of("clickhouse.server.max_insert_block_size", "1000",
+                                "clickhouse.server.max_insert_block_size ", "777777"),
+                        ClickHouseConnectorOptions.SERVER_SETTINGS_PREFIX));
+        assertTrue(ex.getMessage().contains("clickhouse.server.max_insert_block_size"), ex.getMessage());
+    }
+
+    /** Flink parses micros and nanos; a sub-millisecond interval must be rejected, not floored to 0 or 1 ms. */
+    @Test void flushIntervalMustBeWholeMilliseconds() {
+        for (String bad : List.of("0 ms", "500 micros", "1500 micros")) {
+            Configuration options = Configuration.fromMap(Map.of("sink.buffer-flush.interval", bad));
+            ValidationException ex = assertThrows(ValidationException.class,
+                    () -> ClickHouseDynamicTableSinkFactory.validateBatchingOptions(options));
+            assertTrue(ex.getMessage().contains("'sink.buffer-flush.interval'"), ex.getMessage());
+            assertTrue(ex.getMessage().contains("whole number of milliseconds"), ex.getMessage());
+        }
+        ClickHouseDynamicTableSinkFactory.validateBatchingOptions(
+                Configuration.fromMap(Map.of("sink.buffer-flush.interval", "2000 micros")));
+    }
+
     /** These keys are set from the first-class options; a passthrough copy would override them silently. */
     @Test void clientPassthroughRejectsKeysOwnedByFirstClassOptions() {
         Map<String, String> firstClass = Map.of("database", "database", "user", "username", "password", "password");
@@ -137,5 +161,9 @@ class ClickHouseDynamicTableSinkFactoryTest {
                 new ClientException("Failed to get table schema",
                         new ClientException("Failed to connect", new ConnectException("Connection refused")))));
         assertEquals("plain", ClickHouseDynamicTableSinkFactory.rootMessage(new RuntimeException("plain")));
+        // pingLoop's interrupt wrapper explains what was interrupted; the JDK's "sleep interrupted" does not.
+        assertEquals("Interrupted while checking ClickHouse connectivity.", ClickHouseDynamicTableSinkFactory.rootMessage(
+                new RuntimeException("Interrupted while checking ClickHouse connectivity.",
+                        new InterruptedException("sleep interrupted"))));
     }
 }

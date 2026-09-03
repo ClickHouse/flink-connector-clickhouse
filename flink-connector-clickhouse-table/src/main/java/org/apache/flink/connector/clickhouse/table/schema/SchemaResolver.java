@@ -86,8 +86,8 @@ public final class SchemaResolver {
                                                        SchemaResolverOptions options) {
         checkInsertable(field.getName(), column);
         ClickHouseColumn effective = unwrapTransparentWrappers(column);
-        checkNullability(field, column, effective);
         ValueConverter converter = converterFor(field, column, options);
+        checkNullability(field, column, effective);
         FieldAccessor accessor = FieldAccessor.of(
                 RowData.createFieldGetter(field.getType(), fieldIndex), converter);
         return new ResolvedColumnMapping(column, accessor);

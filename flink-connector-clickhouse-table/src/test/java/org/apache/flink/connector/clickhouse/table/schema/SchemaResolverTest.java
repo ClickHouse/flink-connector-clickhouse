@@ -185,6 +185,16 @@ class SchemaResolverTest {
         assertEquals("Nullable(Int64)", mappings.get(0).typeExpression());
     }
 
+    /** The nullability hint is a dead end when the target type itself is unsupported, so type support is checked first. */
+    @Test
+    void unsupportedTargetIsReportedBeforeNullability() {
+        ResolvedSchema schema = ResolvedSchema.of(Column.physical("status", DataTypes.STRING()));
+        ValidationException e = assertThrows(ValidationException.class, () ->
+                SchemaResolver.resolve(schema, clickHouseSchema("status Enum8('a' = 1)"), options(false)));
+        assertTrue(e.getMessage().contains("not yet supported"), e.getMessage());
+        assertFalse(e.getMessage().contains("is not Nullable"), e.getMessage());
+    }
+
     /** Nullable(Array(...)) is invalid in ClickHouse, so the hint must not suggest it for composite columns. */
     @Test
     void nullableColumnHintIsDroppedForCompositeClickHouseTypes() {

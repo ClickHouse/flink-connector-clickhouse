@@ -18,10 +18,12 @@ import org.apache.flink.table.api.ValidationException;
 import org.apache.flink.table.connector.sink.DynamicTableSink;
 import org.apache.flink.table.factories.DynamicTableSinkFactory;
 import org.apache.flink.table.factories.FactoryUtil;
+import org.apache.flink.util.TimeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.DateTimeException;
+import java.time.Duration;
 import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -135,7 +137,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
     }
 
     /** The AsyncSink writer re-checks these at task start; failing here names the SQL options instead. */
-    private static void validateBatchingOptions(ReadableConfig options) {
+    static void validateBatchingOptions(ReadableConfig options) {
         int maxRows = options.get(SINK_BUFFER_FLUSH_MAX_ROWS);
         long maxBytes = options.get(SINK_BUFFER_FLUSH_MAX_BYTES).getBytes();
         int maxBuffered = options.get(SINK_MAX_BUFFERED_REQUESTS);
@@ -143,7 +145,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
 
         requirePositive(SINK_BUFFER_FLUSH_MAX_ROWS.key(), maxRows);
         requirePositive(SINK_BUFFER_FLUSH_MAX_BYTES.key(), maxBytes);
-        requirePositive(SINK_BUFFER_FLUSH_INTERVAL.key(), options.get(SINK_BUFFER_FLUSH_INTERVAL).toMillis());
+        requireWholeMillis(SINK_BUFFER_FLUSH_INTERVAL.key(), options.get(SINK_BUFFER_FLUSH_INTERVAL));
         requirePositive(SINK_MAX_IN_FLIGHT_REQUESTS.key(), options.get(SINK_MAX_IN_FLIGHT_REQUESTS));
         requirePositive(SINK_MAX_BUFFERED_REQUESTS.key(), maxBuffered);
         requirePositive(SINK_RECORD_MAX_BYTES.key(), recordMaxBytes);
@@ -165,6 +167,15 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         if (value <= 0) {
             throw new ValidationException(
                     String.format("'%s' must be positive, but was %d.", key, value));
+        }
+    }
+
+    /** Flink parses micros and nanos, but the writer's timer is in whole milliseconds; toMillis() would floor silently. */
+    private static void requireWholeMillis(String key, Duration value) {
+        if (value.compareTo(Duration.ofMillis(1)) < 0 || value.getNano() % 1_000_000 != 0) {
+            throw new ValidationException(String.format(
+                    "'%s' must be a whole number of milliseconds, at least 1 ms, but was %s.",
+                    key, TimeUtils.formatWithHighestUnit(value)));
         }
     }
 
@@ -210,10 +221,11 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         }
     }
 
-    /** client-v2 wraps a failed DESCRIBE in the constant "Failed to get table schema"; the server's reason is a cause below it. */
+    /** client-v2 wraps a failed DESCRIBE in the constant "Failed to get table schema"; the server's reason is a cause below it, an interrupt's is the wrapper's own message. */
     static String rootMessage(Throwable e) {
         Throwable cause = e;
-        while (!(cause instanceof ServerException) && cause.getCause() != null) {
+        while (!(cause instanceof ServerException) && cause.getCause() != null
+                && !(cause.getCause() instanceof InterruptedException)) {
             cause = cause.getCause();
         }
         return cause.getMessage() != null ? cause.getMessage() : cause.toString();
@@ -328,7 +340,11 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
                     throw new ValidationException(String.format(
                             "Option '%s' has no key after the prefix — expected '%s<key>'.", key, prefix));
                 }
-                extracted.put(setting, value);
+                if (extracted.put(setting, value) != null) {
+                    throw new ValidationException(String.format(
+                            "Option '%s' duplicates another '%s%s' key once whitespace is trimmed — set it once.",
+                            key, prefix, setting));
+                }
             }
         });
         return extracted;
