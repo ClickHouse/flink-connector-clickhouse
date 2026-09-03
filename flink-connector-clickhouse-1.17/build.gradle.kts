@@ -115,6 +115,10 @@ sourceSets {
     }
 }
 
+// The -table sources compile here too; this keeps their flink-table-common-only floor compile on every CI and publish path.
+tasks.compileJava { dependsOn(":flink-connector-clickhouse-table:compileJava") }
+tasks.compileTestJava { dependsOn(":flink-connector-clickhouse-table:compileTestJava") }
+
 tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("all")
     dependencies {

@@ -3,12 +3,16 @@ package org.apache.flink.connector.clickhouse.table.schema;
 import com.clickhouse.data.ClickHouseColumn;
 
 import org.apache.flink.connector.clickhouse.table.data.ValueConverter;
+import org.apache.flink.core.memory.MemorySegmentFactory;
 import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.data.GenericArrayData;
 import org.apache.flink.table.data.GenericMapData;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
+import org.apache.flink.table.data.binary.BinaryArrayData;
+import org.apache.flink.table.data.binary.BinaryMapData;
+import org.apache.flink.table.data.binary.BinaryRowData;
 import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.DateType;
@@ -33,6 +37,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,6 +46,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -318,6 +324,73 @@ class ClickHouseTypeMapperTest {
                 () -> converter.convert(GenericRowData.of(7, null)));
         assertTrue(e.getMessage().contains("Column 'c'"), e.getMessage());
         assertTrue(e.getMessage().contains("null ROW field 2"), e.getMessage());
+        IllegalArgumentException first = assertThrows(IllegalArgumentException.class,
+                () -> converter.convert(GenericRowData.of(null, StringData.fromString("x"))));
+        assertTrue(first.getMessage().contains("null ROW field 1"), first.getMessage());
+    }
+
+    /** Flink's NOT NULL getters skip isNullAt, so a binary row's null slot would read back as 0. */
+    @Test
+    void nullRowFieldInABinaryRowFailsInsteadOfWritingZero() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                rowOf(new IntType(false), new IntType(false)), col("Tuple(Int32, Int32)"), UTC, "c");
+        int size = BinaryRowData.calculateFixPartSizeInBytes(2);
+        BinaryRowData row = new BinaryRowData(2);
+        row.pointTo(MemorySegmentFactory.wrap(new byte[size]), 0, size);
+        row.setNullAt(0);
+        row.setInt(1, 5);
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> converter.convert(row));
+        assertTrue(e.getMessage().contains("Column 'c'"), e.getMessage());
+        assertTrue(e.getMessage().contains("null ROW field 1"), e.getMessage());
+    }
+
+    @Test
+    void nullArrayElementFailsForNonNullableElementsNamingTheColumn() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                new ArrayType(false, new IntType(false)), col("Array(Int32)"), UTC, "c");
+        BinaryArrayData binary = BinaryArrayData.fromPrimitiveArray(new int[]{1, 2});
+        binary.setNullInt(0);
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> converter.convert(binary));
+        assertTrue(e.getMessage().contains("Column 'c'"), e.getMessage());
+        assertTrue(e.getMessage().contains("null array element 1"), e.getMessage());
+        assertThrows(IllegalArgumentException.class,
+                () -> converter.convert(new GenericArrayData(new Object[]{null, 2})));
+    }
+
+    @Test
+    void nullArrayElementsAreForwardedIntoNullableElements() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                new ArrayType(false, new IntType(true)), col("Array(Nullable(Int32))"), UTC, "c");
+        BinaryArrayData binary = BinaryArrayData.fromPrimitiveArray(new int[]{1, 2});
+        binary.setNullInt(0);
+        assertEquals(Arrays.asList(null, 2), converter.convert(binary));
+    }
+
+    @Test
+    void nullMapValueInABinaryMapFailsNamingTheColumn() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                new MapType(false, new IntType(false), new IntType(false)), col("Map(Int32, Int32)"), UTC, "c");
+        BinaryArrayData values = BinaryArrayData.fromPrimitiveArray(new int[]{9});
+        values.setNullInt(0);
+        BinaryMapData map = BinaryMapData.valueOf(BinaryArrayData.fromPrimitiveArray(new int[]{7}), values);
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> converter.convert(map));
+        assertTrue(e.getMessage().contains("Column 'c'"), e.getMessage());
+        assertTrue(e.getMessage().contains("null map value"), e.getMessage());
+    }
+
+    /** Nullable(Array(...)) is invalid in ClickHouse, so the hint must not suggest it for composite elements. */
+    @Test
+    void nullableElementHintIsDroppedForCompositeElements() {
+        TypeMappingException scalar = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(
+                        new ArrayType(false, new IntType(true)), col("Array(Int32)"), UTC, "c"));
+        assertTrue(scalar.getMessage().contains("or make the element Nullable"), scalar.getMessage());
+        TypeMappingException composite = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(
+                        new ArrayType(false, new ArrayType(true, new IntType(false))),
+                        col("Array(Array(Int32))"), UTC, "c"));
+        assertTrue(composite.getMessage().contains("declare the element NOT NULL"), composite.getMessage());
+        assertFalse(composite.getMessage().contains("make the element Nullable"), composite.getMessage());
     }
 
     @Test

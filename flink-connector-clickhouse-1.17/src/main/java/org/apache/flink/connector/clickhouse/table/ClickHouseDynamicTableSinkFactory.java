@@ -1,6 +1,8 @@
 package org.apache.flink.connector.clickhouse.table;
 
 import com.clickhouse.client.api.Client;
+import com.clickhouse.client.api.ClientConfigProperties;
+import com.clickhouse.client.api.ServerException;
 import com.clickhouse.client.api.metadata.TableSchema;
 import com.clickhouse.config.BatchFailureStrategy;
 import com.clickhouse.config.RetryPolicy;
@@ -21,12 +23,14 @@ import org.slf4j.LoggerFactory;
 
 import java.time.DateTimeException;
 import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.CLIENT_OPTIONS_PREFIX;
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.DATABASE;
@@ -61,6 +65,12 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseDynamicTableSinkFactory.class);
 
     public static final String IDENTIFIER = "clickhouse";
+
+    /** Set from the first-class options; a passthrough copy would override them silently in the client builder. */
+    private static final Map<String, ConfigOption<?>> RESERVED_CLIENT_KEYS = Map.of(
+            ClientConfigProperties.DATABASE.getKey(), DATABASE,
+            ClientConfigProperties.USER.getKey(), USERNAME,
+            ClientConfigProperties.PASSWORD.getKey(), PASSWORD);
 
     @Override
     public String factoryIdentifier() {
@@ -174,7 +184,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
                 options.get(PASSWORD),
                 options.get(DATABASE),
                 options.get(TABLE),
-                prefixedOptions(tableOptions, CLIENT_OPTIONS_PREFIX),
+                clientOptions(tableOptions),
                 prefixedOptions(tableOptions, SERVER_SETTINGS_PREFIX),
                 toRetryPolicy(options.get(SINK_MAX_RETRIES)));
         clientConfig.setBatchFailureStrategy(
@@ -196,8 +206,17 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         } catch (Exception e) {
             throw new ValidationException(String.format(
                     "Could not read the schema of ClickHouse table %s.%s at %s — %s",
-                    database, table, url, e.getMessage() != null ? e.getMessage() : e.toString()), e);
+                    database, table, url, rootMessage(e)), e);
         }
+    }
+
+    /** client-v2 wraps a failed DESCRIBE in the constant "Failed to get table schema"; the server's reason is a cause below it. */
+    static String rootMessage(Throwable e) {
+        Throwable cause = e;
+        while (!(cause instanceof ServerException) && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        return cause.getMessage() != null ? cause.getMessage() : cause.toString();
     }
 
     private static ClickHouseDynamicTableSink buildSink(ClickHouseClientConfig clientConfig,
@@ -259,16 +278,53 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         }
     }
 
+    /** The client-v2 passthrough; the client only WARN-logs unknown keys, so they are rejected here. */
+    static Map<String, String> clientOptions(Map<String, String> tableOptions) {
+        Map<String, String> options = prefixedOptions(tableOptions, CLIENT_OPTIONS_PREFIX);
+        options.keySet().forEach(ClickHouseDynamicTableSinkFactory::checkClientOptionKey);
+        return options;
+    }
+
+    private static void checkClientOptionKey(String key) {
+        ConfigOption<?> firstClass = RESERVED_CLIENT_KEYS.get(key);
+        if (firstClass != null) {
+            throw new ValidationException(String.format(
+                    "Option '%s%s' would override '%s' — set '%s' instead.",
+                    CLIENT_OPTIONS_PREFIX, key, firstClass.key(), firstClass.key()));
+        }
+        if (!isClientOptionKey(key)) {
+            throw new ValidationException(String.format(
+                    "Option '%s%s' is not a ClickHouse client option. Supported keys: %s; "
+                    + "'%s<name>' and '%s<name>' are accepted too.",
+                    CLIENT_OPTIONS_PREFIX, key, supportedClientKeys(),
+                    ClientConfigProperties.HTTP_HEADER_PREFIX, ClientConfigProperties.SERVER_SETTING_PREFIX));
+        }
+    }
+
+    private static boolean isClientOptionKey(String key) {
+        return key.startsWith(ClientConfigProperties.HTTP_HEADER_PREFIX)
+                || key.startsWith(ClientConfigProperties.SERVER_SETTING_PREFIX)
+                || Arrays.stream(ClientConfigProperties.values()).anyMatch(p -> p.getKey().equals(key));
+    }
+
+    private static String supportedClientKeys() {
+        return Arrays.stream(ClientConfigProperties.values())
+                .map(ClientConfigProperties::getKey)
+                .filter(key -> !RESERVED_CLIENT_KEYS.containsKey(key))
+                .sorted()
+                .collect(Collectors.joining(", "));
+    }
+
     /**
-     * Collects {@code <prefix><key> = value} table options into a {@code key -> value} map. A bare
-     * prefix is rejected: it would become the empty key, which the client and server silently ignore.
+     * Collects {@code <prefix><key> = value} table options into a trimmed {@code key -> value} map. A
+     * bare prefix is rejected: it would become the empty key, which the client and server silently ignore.
      */
     static Map<String, String> prefixedOptions(Map<String, String> tableOptions, String prefix) {
         Map<String, String> extracted = new HashMap<>();
         tableOptions.forEach((key, value) -> {
             if (key.startsWith(prefix)) {
-                String setting = key.substring(prefix.length());
-                if (setting.trim().isEmpty()) {
+                String setting = key.substring(prefix.length()).trim();
+                if (setting.isEmpty()) {
                     throw new ValidationException(String.format(
                             "Option '%s' has no key after the prefix — expected '%s<key>'.", key, prefix));
                 }

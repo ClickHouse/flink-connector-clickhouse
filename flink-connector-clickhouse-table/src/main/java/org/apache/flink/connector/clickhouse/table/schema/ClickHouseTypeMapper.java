@@ -620,10 +620,12 @@ public final class ClickHouseTypeMapper {
         ClickHouseColumn elementColumn = target.getNestedColumns().get(0);
         checkArrayElementNullability(elementType, elementColumn);
 
-        ArrayData.ElementGetter elementGetter = ArrayData.createElementGetter(elementType);
+        ArrayData.ElementGetter elementGetter = nullCheckingElementGetter(elementType);
         ValueConverter elementConverter = buildNestedConverter(
                 elementType, elementColumn, zone, path + " element", "array element");
-        return value -> toPayloadList((ArrayData) value, elementGetter, elementConverter);
+        boolean nullableElements = elementColumn.isNullable();
+        return value -> toPayloadList((ArrayData) value, elementGetter, elementConverter,
+                nullableElements, path);
     }
 
     /** {@code Array(Nullable(T))} is the one nested shape that can carry nulls. */
@@ -632,8 +634,9 @@ public final class ClickHouseTypeMapper {
         if (elementType.isNullable() && !elementColumn.isNullable()) {
             throw TypeMappingException.mismatch(String.format(
                     "the Flink array element type %s is nullable but the ClickHouse element type %s "
-                    + "is not Nullable — declare the element NOT NULL or make the element Nullable",
-                    elementType.asSummaryString(), elementColumn.getOriginalTypeName()));
+                    + "is not Nullable — declare the element NOT NULL%s",
+                    elementType.asSummaryString(), elementColumn.getOriginalTypeName(),
+                    nullableWrapperHint(elementColumn, " or make the element Nullable")));
         }
     }
 
@@ -688,8 +691,8 @@ public final class ClickHouseTypeMapper {
     private static ValueConverter buildPayloadMapConverter(LogicalType keyType, ValueConverter keyConverter,
                                                       LogicalType valueType, ValueConverter valueConverter,
                                                       String path) {
-        ArrayData.ElementGetter keyGetter = ArrayData.createElementGetter(keyType);
-        ArrayData.ElementGetter valueGetter = ArrayData.createElementGetter(valueType);
+        ArrayData.ElementGetter keyGetter = nullCheckingElementGetter(keyType);
+        ArrayData.ElementGetter valueGetter = nullCheckingElementGetter(valueType);
         return value -> toPayloadMap((MapData) value, keyGetter, valueGetter,
                 keyConverter, valueConverter, path);
     }
@@ -791,14 +794,27 @@ public final class ClickHouseTypeMapper {
         return result;
     }
 
-    /** Converts every element of an {@code ARRAY} into the plain {@code List} the payload carries. */
+    /**
+     * Converts every element of an {@code ARRAY} into the plain {@code List} the payload carries.
+     * Only {@code Array(Nullable(T))} can take a null element; elsewhere it fails naming the column.
+     */
     private static List<Object> toPayloadList(ArrayData array, ArrayData.ElementGetter getter,
-                                                    ValueConverter elementConverter) {
+                                                    ValueConverter elementConverter,
+                                                    boolean nullableElements, String path) {
         int size = array.size();
         List<Object> result = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
             Object element = getter.getElementOrNull(array, i);
-            result.add(element == null ? null : elementConverter.convert(element));
+            if (element == null) {
+                if (!nullableElements) {
+                    throw new IllegalArgumentException(
+                            "Column '" + path + "': null array element " + (i + 1)
+                            + " cannot be written to a non-Nullable ClickHouse Array element type");
+                }
+                result.add(null);
+            } else {
+                result.add(elementConverter.convert(element));
+            }
         }
         return result;
     }
@@ -815,7 +831,7 @@ public final class ClickHouseTypeMapper {
         ValueConverter[] fieldConverters = new ValueConverter[rowType.getFieldCount()];
         for (int i = 0; i < rowType.getFieldCount(); i++) {
             RowType.RowField field = rowType.getFields().get(i);
-            fieldGetters[i] = RowData.createFieldGetter(field.getType(), i);
+            fieldGetters[i] = nullCheckingFieldGetter(field.getType(), i);
             fieldConverters[i] = buildRowFieldConverter(field, elements.get(i), i, zone, path);
         }
         return value -> toPayloadTuple((RowData) value, fieldGetters, fieldConverters, path);
@@ -872,6 +888,20 @@ public final class ClickHouseTypeMapper {
     // ------------------------------------------------------------------------------------
     // Shared helpers
     // ------------------------------------------------------------------------------------
+
+    /** Flink's getters for NOT NULL types skip {@code isNullAt}; only a nullable copy lets the payload null checks fire. */
+    private static ArrayData.ElementGetter nullCheckingElementGetter(LogicalType type) {
+        return ArrayData.createElementGetter(type.copy(true));
+    }
+
+    private static RowData.FieldGetter nullCheckingFieldGetter(LogicalType type, int position) {
+        return RowData.createFieldGetter(type.copy(true), position);
+    }
+
+    /** ClickHouse cannot wrap Array, Map, Tuple or its other nested types in Nullable, so the hint is dropped for them. */
+    static String nullableWrapperHint(ClickHouseColumn column, String hint) {
+        return column.getDataType().isNested() ? "" : hint;
+    }
 
     /**
      * Unsigned targets reject sign/overflow per record, mirroring the DATE→Date range check:

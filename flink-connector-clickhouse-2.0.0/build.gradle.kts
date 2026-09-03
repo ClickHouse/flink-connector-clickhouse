@@ -26,7 +26,7 @@ repositories {
 
 // Lets CI compile this module against any 2.x. Separate from -1.17's FLINK_VERSION on
 // purpose: a shared var would let a 1.x value break this build.
-val flinkVersion = System.getenv("FLINK_2_VERSION") ?: "2.0.0"
+val flinkVersion = System.getenv("FLINK_2_VERSION")?.takeIf { it.isNotBlank() } ?: "2.0.0"
 
 extra.apply {
     set("flinkVersion", flinkVersion) // the default still will be 2.0.0 since it is more popular currently
@@ -148,6 +148,10 @@ val checkCrossVersionCopiesInSync by tasks.registering {
 listOf("check", "test", "runScalaTests", "shadowJar").forEach {
     tasks.named(it) { dependsOn(checkCrossVersionCopiesInSync) }
 }
+
+// The -table sources compile here too; this keeps their flink-table-common-only floor compile on every CI and publish path.
+tasks.compileJava { dependsOn(":flink-connector-clickhouse-table:compileJava") }
+tasks.compileTestJava { dependsOn(":flink-connector-clickhouse-table:compileTestJava") }
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("all")

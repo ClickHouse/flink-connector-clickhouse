@@ -7,7 +7,8 @@
  *
  * Owns the source but does not ship it: each version module adds src/main/java to its
  * own sourceSet and compiles it against its own Flink. The compile here is the floor
- * check against the oldest supported flink-table-common.
+ * check against the oldest supported flink-table-common; the version modules' compile
+ * tasks depend on it, so every CI and publish path runs it.
  */
 
 // No publishing/signing plugins: this module ships no artifact (see header).
@@ -15,16 +16,7 @@ plugins {
     java
 }
 
-val sinkVersion: String by rootProject.extra
 val clickhouseVersion: String by rootProject.extra
-
-repositories {
-    mavenCentral()
-}
-
-extra.apply {
-    set("log4jVersion", "2.17.2")
-}
 
 // Pinned on purpose: this is the floor of the supported range. The version modules
 // cross-compile the same source against their own Flink.
@@ -40,23 +32,6 @@ dependencies {
     compileOnly("org.apache.flink:flink-table-common:$flinkTableCommonVersion")
 
     testImplementation("org.apache.flink:flink-table-common:$flinkTableCommonVersion")
-    testImplementation("org.apache.logging.log4j:log4j-slf4j-impl:${project.extra["log4jVersion"]}")
-    testImplementation("org.apache.logging.log4j:log4j-api:${project.extra["log4jVersion"]}")
-    testImplementation("org.apache.logging.log4j:log4j-core:${project.extra["log4jVersion"]}")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-}
-
-sourceSets {
-    main {
-        java {
-            srcDirs("src/main/java")
-        }
-    }
-    test {
-        java {
-            srcDirs("src/test/java")
-        }
-    }
 }
 
 // Compile floor check only — the version modules execute these same tests against their own Flink.

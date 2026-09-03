@@ -161,9 +161,11 @@ public final class SchemaResolver {
             throw new ValidationException(String.format(
                     "Column '%s': Flink type %s is nullable but ClickHouse column '%s %s' is not "
                     + "Nullable — a null cannot be written byte-exactly. Declare the Flink column "
-                    + "NOT NULL or make the ClickHouse column Nullable.",
+                    + "NOT NULL%s.",
                     field.getName(), field.getType().asSummaryString(),
-                    column.getColumnName(), column.getOriginalTypeName()));
+                    column.getColumnName(), column.getOriginalTypeName(),
+                    ClickHouseTypeMapper.nullableWrapperHint(
+                            effective, " or make the ClickHouse column Nullable")));
         }
     }
 

@@ -185,6 +185,23 @@ class SchemaResolverTest {
         assertEquals("Nullable(Int64)", mappings.get(0).typeExpression());
     }
 
+    /** Nullable(Array(...)) is invalid in ClickHouse, so the hint must not suggest it for composite columns. */
+    @Test
+    void nullableColumnHintIsDroppedForCompositeClickHouseTypes() {
+        ResolvedSchema scalar = ResolvedSchema.of(Column.physical("id", DataTypes.BIGINT()));
+        ValidationException scalarError = assertThrows(ValidationException.class, () ->
+                SchemaResolver.resolve(scalar, clickHouseSchema("id Int64"), options(false)));
+        assertTrue(scalarError.getMessage().endsWith("NOT NULL or make the ClickHouse column Nullable."),
+                scalarError.getMessage());
+
+        ResolvedSchema composite = ResolvedSchema.of(
+                Column.physical("tags", DataTypes.ARRAY(DataTypes.STRING().notNull())));
+        ValidationException compositeError = assertThrows(ValidationException.class, () ->
+                SchemaResolver.resolve(composite, clickHouseSchema("tags Array(String)"), options(false)));
+        assertTrue(compositeError.getMessage().endsWith("Declare the Flink column NOT NULL."),
+                compositeError.getMessage());
+    }
+
     @Test
     void narrowingFailsWithColumnAndBothTypesNamed() {
         ResolvedSchema schema = ResolvedSchema.of(Column.physical("v", DataTypes.INT().notNull()));

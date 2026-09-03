@@ -2,10 +2,13 @@ package org.apache.flink.connector.clickhouse.table;
 
 import org.apache.flink.table.api.ValidationException;
 
+import com.clickhouse.client.api.ClientException;
+import com.clickhouse.client.api.ServerException;
 import com.clickhouse.config.BatchFailureStrategy;
 import com.clickhouse.config.RetryPolicy;
 import org.junit.jupiter.api.Test;
 
+import java.net.ConnectException;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
@@ -82,5 +85,57 @@ class ClickHouseDynamicTableSinkFactoryTest {
             assertTrue(ex.getMessage().contains("'" + prefix + "'"));
             assertTrue(ex.getMessage().contains(prefix + "<key>"));
         }
+    }
+
+    /** Flink keeps option keys verbatim, so a padded key must not reach the client or server untrimmed. */
+    @Test void passthroughKeysAreTrimmed() {
+        assertEquals(Map.of("max_insert_block_size", "777777"),
+                ClickHouseDynamicTableSinkFactory.prefixedOptions(
+                        Map.of("clickhouse.server.max_insert_block_size ", "777777"),
+                        ClickHouseConnectorOptions.SERVER_SETTINGS_PREFIX));
+    }
+
+    /** These keys are set from the first-class options; a passthrough copy would override them silently. */
+    @Test void clientPassthroughRejectsKeysOwnedByFirstClassOptions() {
+        Map<String, String> firstClass = Map.of("database", "database", "user", "username", "password", "password");
+        firstClass.forEach((key, option) -> {
+            ValidationException ex = assertThrows(ValidationException.class,
+                    () -> ClickHouseDynamicTableSinkFactory.clientOptions(Map.of("clickhouse.client." + key, "x")));
+            assertTrue(ex.getMessage().contains("'clickhouse.client." + key + "'"), ex.getMessage());
+            assertTrue(ex.getMessage().contains("set '" + option + "' instead"), ex.getMessage());
+        });
+    }
+
+    /** client-v2 only WARN-logs unknown keys, so a typo would be accepted at planning and ignored at runtime. */
+    @Test void clientPassthroughRejectsUnknownKeysListingTheSupportedOnes() {
+        ValidationException ex = assertThrows(ValidationException.class,
+                () -> ClickHouseDynamicTableSinkFactory.clientOptions(Map.of("clickhouse.client.connect_timeout", "1000")));
+        assertTrue(ex.getMessage().contains("'clickhouse.client.connect_timeout'"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("connection_timeout"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("http_header_"), ex.getMessage());
+    }
+
+    @Test void clientPassthroughAcceptsClientKeysHeadersAndServerSettings() {
+        Map<String, String> tableOptions = Map.of(
+                "connector", "clickhouse",
+                "clickhouse.client.connection_timeout", "1000",
+                "clickhouse.client.http_header_X-Trace", "abc",
+                "clickhouse.client.clickhouse_setting_max_threads", "2",
+                "clickhouse.server.async_insert", "1");
+        assertEquals(
+                Map.of("connection_timeout", "1000", "http_header_X-Trace", "abc", "clickhouse_setting_max_threads", "2"),
+                ClickHouseDynamicTableSinkFactory.clientOptions(tableOptions));
+    }
+
+    /** client-v2 wraps every failed DESCRIBE in a constant message; the server's reason must surface. */
+    @Test void introspectionErrorsSurfaceTheServerReason() {
+        ServerException server = new ServerException(60,
+                "Code: 60. DB::Exception: Table db.evnts does not exist. (UNKNOWN_TABLE)");
+        assertEquals(server.getMessage(), ClickHouseDynamicTableSinkFactory.rootMessage(
+                new ClientException("Failed to get table schema", server)));
+        assertEquals("Connection refused", ClickHouseDynamicTableSinkFactory.rootMessage(
+                new ClientException("Failed to get table schema",
+                        new ClientException("Failed to connect", new ConnectException("Connection refused")))));
+        assertEquals("plain", ClickHouseDynamicTableSinkFactory.rootMessage(new RuntimeException("plain")));
     }
 }

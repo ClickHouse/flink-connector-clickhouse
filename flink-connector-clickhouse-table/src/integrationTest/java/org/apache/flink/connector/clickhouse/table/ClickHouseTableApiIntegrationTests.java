@@ -355,6 +355,32 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals("(5,(6,'z'))", rows.get(0).getString("nested_s"));
     }
 
+    /** Planning admits a nullable value into a NOT NULL nested field; the write must fail, not store zeros. */
+    @Test
+    void nullNestedValueFailsNamingTheColumnInsteadOfWritingZeros() throws Exception {
+        String table = "table_api_nested_null";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, pair Tuple(Int32, String), nums Array(Int32)) "
+                        + "ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_nested_null", table,
+                "id BIGINT NOT NULL,"
+                        + "pair ROW<a INT NOT NULL, b STRING NOT NULL> NOT NULL,"
+                        + "nums ARRAY<INT NOT NULL> NOT NULL"));
+
+        Exception rowFailure = Assertions.assertThrows(Exception.class, () -> env.executeSql(
+                "INSERT INTO ch_nested_null VALUES (1, ROW(CAST(NULL AS INT), 'x'), ARRAY[1])").await());
+        Assertions.assertTrue(exceptionChainContains(rowFailure, "Column 'pair': null ROW field 1"),
+                "Unexpected failure: " + rowFailure);
+        Exception arrayFailure = Assertions.assertThrows(Exception.class, () -> env.executeSql(
+                "INSERT INTO ch_nested_null VALUES (2, ROW(7, 'x'), ARRAY[1, CAST(NULL AS INT)])").await());
+        Assertions.assertTrue(exceptionChainContains(arrayFailure, "Column 'nums': null array element 2"),
+                "Unexpected failure: " + arrayFailure);
+        Assertions.assertEquals(0, readBack("id", table, "id", 0).size());
+    }
+
     @Test
     void simpleAggregateFunctionColumnAcceptsItsInnerType() throws Exception {
         String table = "table_api_simple_agg";
