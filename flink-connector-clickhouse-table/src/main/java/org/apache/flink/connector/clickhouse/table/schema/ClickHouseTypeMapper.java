@@ -86,15 +86,18 @@ public final class ClickHouseTypeMapper {
     /**
      * Map key types the sink supports: keys are checkpointed as strings (the state format
      * requires string map keys) and only these types parse back from a string in the
-     * client's serializer. UInt64 is absent because client-v2's SerializerUtils hardcodes
-     * Long.parseLong for it, so keys above 2^63-1 fail.
+     * client's serializer (integers via parse*, Decimals via new BigDecimal(String)). UInt64
+     * is absent because client-v2's SerializerUtils hardcodes Long.parseLong for it, so keys
+     * above 2^63-1 fail.
      */
     private static final Set<ClickHouseDataType> STRING_RESTORABLE_MAP_KEY_TARGETS = EnumSet.of(
             ClickHouseDataType.String, ClickHouseDataType.FixedString,
             ClickHouseDataType.Int8, ClickHouseDataType.Int16, ClickHouseDataType.Int32,
             ClickHouseDataType.Int64, ClickHouseDataType.Int128, ClickHouseDataType.Int256,
             ClickHouseDataType.UInt8, ClickHouseDataType.UInt16, ClickHouseDataType.UInt32,
-            ClickHouseDataType.UInt128, ClickHouseDataType.UInt256);
+            ClickHouseDataType.UInt128, ClickHouseDataType.UInt256,
+            ClickHouseDataType.Decimal, ClickHouseDataType.Decimal32, ClickHouseDataType.Decimal64,
+            ClickHouseDataType.Decimal128, ClickHouseDataType.Decimal256);
 
     // Literal because the client's copies live in deprecated BinaryStreamUtils; DataWriterContractTest pins them.
 
@@ -260,7 +263,22 @@ public final class ClickHouseTypeMapper {
         rules.put(LogicalTypeRoot.UNRESOLVED, rejected(
                 "the type is unresolved — this is a planner inconsistency"));
 
+        // Roots newer than the flink-table-common floor this module compiles against (2.1 adds
+        // both): registered by name so the exhaustiveness guard holds on every Flink generation.
+        registerIfPresent(rules, "VARIANT", rejected(
+                "VARIANT is not supported — ClickHouse Variant has no write path yet (see issue #60)"));
+        registerIfPresent(rules, "DESCRIPTOR", rejected(
+                "DESCRIPTOR is a planner artifact of process table functions and cannot be a column"));
+
         return rules;
+    }
+
+    private static void registerIfPresent(Map<LogicalTypeRoot, RootRule> rules, String root, RootRule rule) {
+        try {
+            rules.put(LogicalTypeRoot.valueOf(root), rule);
+        } catch (IllegalArgumentException e) {
+            // This Flink generation predates the root, so nothing can reach it.
+        }
     }
 
     private static RootRule rejected(String reason) {

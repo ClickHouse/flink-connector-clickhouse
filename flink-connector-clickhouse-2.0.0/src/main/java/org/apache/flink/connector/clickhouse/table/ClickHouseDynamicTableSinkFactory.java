@@ -22,6 +22,7 @@ import org.apache.flink.util.TimeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.MalformedURLException;
 import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.ZoneId;
@@ -74,6 +75,9 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
             ClientConfigProperties.USER.getKey(), USERNAME,
             ClientConfigProperties.PASSWORD.getKey(), PASSWORD);
 
+    /** DESCRIBE pretty-prints named Tuples across lines by default; the insert header needs the canonical name. */
+    static final String PRINT_PRETTY_TYPE_NAMES = "print_pretty_type_names";
+
     @Override
     public String factoryIdentifier() {
         return IDENTIFIER;
@@ -111,7 +115,8 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
     public DynamicTableSink createDynamicTableSink(Context context) {
         ReadableConfig options = validatedOptions(context);
         validateBatchingOptions(options);
-        // Built first so an invalid sink.timezone or unsupported table name fails before any network call.
+        // Checked first so an invalid url, sink.timezone or unsupported table name fails before any network call.
+        validateUrl(options.get(URL));
         SchemaResolverOptions resolverOptions = buildResolverOptions(options);
         logIgnoredPrimaryKey(context);
 
@@ -196,7 +201,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
                 options.get(DATABASE),
                 options.get(TABLE),
                 clientOptions(tableOptions),
-                prefixedOptions(tableOptions, SERVER_SETTINGS_PREFIX),
+                serverSettings(tableOptions),
                 toRetryPolicy(options.get(SINK_MAX_RETRIES)));
         clientConfig.setBatchFailureStrategy(
                 parseBatchFailureStrategy(options.get(SINK_BATCH_FAILURE_STRATEGY)));
@@ -221,11 +226,12 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         }
     }
 
-    /** client-v2 wraps a failed DESCRIBE in the constant "Failed to get table schema"; the server's reason is a cause below it, an interrupt's is the wrapper's own message. */
+    /** client-v2 wraps a failed DESCRIBE in the constant "Failed to get table schema"; the server's reason is a cause below it, an interrupt's or a timeout's (a message-less TimeoutException) is the wrapper's own message. */
     static String rootMessage(Throwable e) {
         Throwable cause = e;
         while (!(cause instanceof ServerException) && cause.getCause() != null
-                && !(cause.getCause() instanceof InterruptedException)) {
+                && !(cause.getCause() instanceof InterruptedException)
+                && cause.getCause().getMessage() != null) {
             cause = cause.getCause();
         }
         return cause.getMessage() != null ? cause.getMessage() : cause.toString();
@@ -267,6 +273,29 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         }
     }
 
+    /** client-v2 parses the endpoint (java.net.URL, http/https) only when the client is built, inside the introspection step. */
+    static void validateUrl(String url) {
+        String problem = urlProblem(url);
+        if (problem != null) {
+            throw new ValidationException(String.format(
+                    "Invalid value '%s' for '%s': %s — expected an endpoint like 'http://host:8123'.",
+                    url, URL.key(), problem));
+        }
+    }
+
+    private static String urlProblem(String url) {
+        java.net.URL endpoint;
+        try {
+            endpoint = new java.net.URL(url);
+        } catch (MalformedURLException e) {
+            return e.getMessage();
+        }
+        if (!endpoint.getProtocol().equalsIgnoreCase("http") && !endpoint.getProtocol().equalsIgnoreCase("https")) {
+            return "only http and https are supported";
+        }
+        return endpoint.getHost().isEmpty() ? "the endpoint has no host" : null;
+    }
+
     static RetryPolicy toRetryPolicy(int maxRetries) {
         if (maxRetries == MAX_RETRIES_UNLIMITED) {
             return RetryPolicy.forever();
@@ -295,6 +324,17 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         Map<String, String> options = prefixedOptions(tableOptions, CLIENT_OPTIONS_PREFIX);
         options.keySet().forEach(ClickHouseDynamicTableSinkFactory::checkClientOptionKey);
         return options;
+    }
+
+    /**
+     * The clickhouse.server.* passthrough plus {@code print_pretty_type_names = 0}: the introspected
+     * type text is sent verbatim in every RowBinaryWithNamesAndTypes header, and the server rejects
+     * a pretty-printed {@code Tuple(<newline>    a Int32, …)} there with code 117.
+     */
+    static Map<String, String> serverSettings(Map<String, String> tableOptions) {
+        Map<String, String> settings = prefixedOptions(tableOptions, SERVER_SETTINGS_PREFIX);
+        settings.put(PRINT_PRETTY_TYPE_NAMES, "0");
+        return settings;
     }
 
     private static void checkClientOptionKey(String key) {

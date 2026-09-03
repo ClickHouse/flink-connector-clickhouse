@@ -13,6 +13,7 @@ import java.net.ConnectException;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -165,5 +166,30 @@ class ClickHouseDynamicTableSinkFactoryTest {
         assertEquals("Interrupted while checking ClickHouse connectivity.", ClickHouseDynamicTableSinkFactory.rootMessage(
                 new RuntimeException("Interrupted while checking ClickHouse connectivity.",
                         new InterruptedException("sleep interrupted"))));
+    }
+
+    /** client-v2 reports a DESCRIBE timeout as a message-less TimeoutException under a wrapper that names the limit. */
+    @Test void introspectionTimeoutKeepsTheWrapperMessage() {
+        assertEquals("Operation has likely timed out after 5 seconds.", ClickHouseDynamicTableSinkFactory.rootMessage(
+                new ClientException("Operation has likely timed out after 5 seconds.", new TimeoutException())));
+    }
+
+    /** client-v2 parses the endpoint only when the client is built, which would report a typo as a schema failure. */
+    @Test void urlIsValidatedBeforeAnyNetworkCall() {
+        ClickHouseDynamicTableSinkFactory.validateUrl("http://localhost:8123");
+        ClickHouseDynamicTableSinkFactory.validateUrl("HTTPS://my_host.example:8443/");
+        for (String bad : List.of("localhost:8123", "ftp://host:8123", "http://", "http:/host")) {
+            ValidationException ex = assertThrows(ValidationException.class,
+                    () -> ClickHouseDynamicTableSinkFactory.validateUrl(bad));
+            assertTrue(ex.getMessage().contains("'url'"), ex.getMessage());
+            assertTrue(ex.getMessage().contains("'" + bad + "'"), ex.getMessage());
+        }
+    }
+
+    /** DESCRIBE pretty-prints named Tuples across lines by default; the insert header must carry the canonical name. */
+    @Test void serverSettingsForceCanonicalTypeNames() {
+        assertEquals(Map.of("async_insert", "1", "print_pretty_type_names", "0"),
+                ClickHouseDynamicTableSinkFactory.serverSettings(
+                        Map.of("connector", "clickhouse", "clickhouse.server.async_insert", "1")));
     }
 }

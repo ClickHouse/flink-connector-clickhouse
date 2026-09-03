@@ -194,7 +194,9 @@ Connection options (required unless noted): `url`, `username`, `password` (defau
 | `sink.ignore-unknown-flink-columns` | `false` | `true` drops Flink columns absent from the ClickHouse table instead of failing |
 
 **Passthrough**: `clickhouse.client.<key>` options are forwarded to the ClickHouse client,
-`clickhouse.server.<key>` become per-query server settings.
+`clickhouse.server.<key>` become per-query server settings. The connector itself always sends
+`print_pretty_type_names = 0`, so the type names it introspects are canonical (named `Tuple`
+columns are otherwise pretty-printed across lines and rejected in the insert header).
 
 Flink `STRING` into a ClickHouse `JSON` column works out of the box — the connector enables
 the client's JSON-as-string mode automatically exactly when a `JSON` column is mapped.
@@ -217,7 +219,7 @@ at planning naming the column and both types.
 | `DATE` | `Date`, `Date32` | range-checked per record |
 | `TIMESTAMP(p)` / `TIMESTAMP_LTZ(p)` | `DateTime` (`p = 0`), `DateTime64(s >= p)` | Flink's default `TIMESTAMP` is precision 6 — declare `TIMESTAMP(3)` for `DateTime64(3)`. `TIMESTAMP` is a wall clock in `sink.timezone`; `TIMESTAMP_LTZ` an instant |
 | `ARRAY<t>` | `Array(T)` | only `Array(Nullable(T))` can carry nested NULLs |
-| `MAP<k, v>` | `Map(K, V)` | string/integer keys except `UInt64`; values not `Nullable` |
+| `MAP<k, v>` | `Map(K, V)` | string/integer/decimal keys except `UInt64`; values not `Nullable` |
 | `MULTISET<t>` | `Map(T, UInt64)` | counts become the values |
 | `ROW<...>` | `Tuple(...)` | positional; fields/elements not nullable |
 

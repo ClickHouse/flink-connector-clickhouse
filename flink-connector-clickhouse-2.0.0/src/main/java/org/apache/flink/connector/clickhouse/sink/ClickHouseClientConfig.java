@@ -114,7 +114,9 @@ public class ClickHouseClientConfig implements Serializable {
      * Pings up to {@link #DEFAULT_MAX_RETRIES} times, 1s apart — a fixed bound, deliberately
      * not governed by sink.max-retries, which configures runtime batch retries: reusing it
      * here would let a batch-resilience setting block planning for minutes. An interrupt
-     * is re-asserted and fails with its own message, never as a server-availability error.
+     * during the retry sleep is re-asserted and fails with its own message; one that lands
+     * inside client-v2's {@code ping()} is swallowed there (it returns false with the flag
+     * cleared) and counts as a failed attempt.
      */
     private static void pingLoop(Client client) {
         boolean isServerAlive = false;

@@ -447,6 +447,20 @@ class ClickHouseTypeMapperTest {
     }
 
     @Test
+    void decimalMapKeysAreAccepted() {
+        // client-v2 restores Decimal map keys with new BigDecimal(String), so every width round-trips.
+        MapType mapType = new MapType(false,
+                new DecimalType(false, 9, 2), new VarCharType(false, VarCharType.MAX_LENGTH));
+        for (String key : List.of("Decimal(10, 2)", "Decimal32(2)", "Decimal64(2)", "Decimal128(2)", "Decimal256(2)")) {
+            ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                    mapType, col("Map(" + key + ", String)"), UTC, "c");
+            Map<Object, Object> entries = new LinkedHashMap<>();
+            entries.put(DecimalData.fromBigDecimal(new BigDecimal("12.34"), 9, 2), StringData.fromString("v"));
+            assertEquals(Map.of("12.34", "v"), converter.convert(new GenericMapData(entries)), key);
+        }
+    }
+
+    @Test
     void date32IsRangeCheckedPerRecord() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
                 new DateType(false), col("Date32"), UTC, "c");

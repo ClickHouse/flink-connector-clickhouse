@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -376,6 +377,35 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals("[1,NULL,3]", rows.get(0).getString("nums_s"));
         Assertions.assertEquals("[(1,'p'),(2,'q')]", rows.get(0).getString("pairs_s"));
         Assertions.assertEquals("(5,(6,'z'))", rows.get(0).getString("nested_s"));
+    }
+
+    /** DESCRIBE pretty-prints named Tuples across lines by default; the insert header must carry the canonical type. */
+    @Test
+    void namedTuplesAtEveryNestingRoundTrip() throws Exception {
+        String table = "table_api_named_tuple";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` ("
+                        + "id Int64, pair Tuple(a Int32, b String), pairs Array(Tuple(a Int32, b String)), "
+                        + "by_key Map(String, Tuple(a Int32, b String))"
+                        + ") ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_named_tuple", table,
+                "id BIGINT NOT NULL,"
+                        + "pair ROW<a INT NOT NULL, b STRING NOT NULL> NOT NULL,"
+                        + "pairs ARRAY<ROW<a INT NOT NULL, b STRING NOT NULL> NOT NULL> NOT NULL,"
+                        + "by_key MAP<STRING, ROW<a INT NOT NULL, b STRING NOT NULL> NOT NULL> NOT NULL"));
+        env.executeSql("INSERT INTO ch_named_tuple VALUES "
+                + "(1, ROW(7, 'x'), ARRAY[ROW(1, 'p'), ROW(2, 'q')], MAP['k', ROW(5, 'z')])").await();
+
+        List<GenericRecord> rows = readBack(
+                "id, toString(pair) AS pair_s, toString(pairs) AS pairs_s, toString(by_key['k']) AS k_s",
+                table, "id", 1);
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals("(7,'x')", rows.get(0).getString("pair_s"));
+        Assertions.assertEquals("[(1,'p'),(2,'q')]", rows.get(0).getString("pairs_s"));
+        Assertions.assertEquals("(5,'z')", rows.get(0).getString("k_s"));
     }
 
     /** Planning admits a nullable value into a NOT NULL nested field; the write must fail, not store zeros. */
@@ -987,11 +1017,11 @@ public class ClickHouseTableApiIntegrationTests {
                 ClickHouseServerForTests.getUsername(), ClickHouseServerForTests.getPassword());
     }
 
-    /** Only the server's own "JSON type unavailable" answers: an experimental gate or an unknown type. */
+    /** Only the server's own "JSON type unavailable" answers: an experimental gate (24.x spells it Object('json')) or an unknown type. */
     private static boolean lacksJsonType(Throwable t) {
         return ExceptionUtils.findThrowable(t, ServerException.class)
-                .map(Throwable::getMessage)
-                .filter(m -> m.contains("JSON") && (m.contains("not allowed") || m.contains("Unknown data type")))
+                .map(e -> e.getMessage().toLowerCase(Locale.ROOT))
+                .filter(m -> m.contains("json") && (m.contains("not allowed") || m.contains("unknown data type")))
                 .isPresent();
     }
 

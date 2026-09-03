@@ -21,6 +21,9 @@ import java.util.UUID;
  * inside {@link ClickHousePayload#getData()}. Tag values are documented in
  * the design spec §10c and must remain stable across releases.
  *
+ * <p>Internal to the connector's checkpoint state serializer — public only so the version
+ * modules can reach it; not a supported API and free to change between releases.
+ *
  * <p>Strings and map keys are int-length-prefixed UTF-8 (serializer entry marker V3+),
  * so they are not capped at writeUTF's 64 KB; {@link #read(DataInputStream, int)} with
  * {@link #V2} decodes the older writeUTF form. Zone IDs are bounded and stay writeUTF in both.
