@@ -37,7 +37,7 @@ Run the `Build and Publish to Maven Central` Github action by providing the targ
 ## Testing
 
 ### Tooling
-We use [TestNG](https://testng.org/) as testing framework and for running ClickHouse Local instance [testcontainers](https://www.testcontainers.org/modules/databases/clickhouse/).
+We use [JUnit 5](https://junit.org/) as testing framework ([ScalaTest](https://www.scalatest.org/) for the Scala suites) and [testcontainers](https://www.testcontainers.org/modules/databases/clickhouse/) for running a local ClickHouse instance.
 
 ### Running tests
 
