@@ -6,6 +6,7 @@ import com.clickhouse.client.api.query.GenericRecord;
 
 import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests;
 import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseTestHelpers;
+import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.util.ExceptionUtils;
@@ -19,6 +20,9 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /** End-to-end Flink SQL round trips against a real ClickHouse, plus a planning-time rejection. */
 public class ClickHouseTableApiIntegrationTests {
@@ -35,6 +39,25 @@ public class ClickHouseTableApiIntegrationTests {
 
     private static TableEnvironment tableEnvironment() {
         return TableEnvironment.create(EnvironmentSettings.inStreamingMode());
+    }
+
+    /** One subtask everywhere the DDL does not say otherwise, so INSERT counts are deterministic. */
+    private static TableEnvironment singleParallelismEnvironment() {
+        TableEnvironment env = tableEnvironment();
+        env.getConfig().set("table.exec.resource.default-parallelism", "1");
+        return env;
+    }
+
+    private static String valuesList(int rows) {
+        return IntStream.rangeClosed(1, rows).mapToObj(i -> "(" + i + ")").collect(Collectors.joining(", "));
+    }
+
+    /** {@code parsed} is omitted by the Flink schema, so the server evaluates its DEFAULT per row. */
+    private static void createTableWithParsedDefault(String table) throws Exception {
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, src String, parsed Int32 DEFAULT toInt32(src)) "
+                        + "ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
     }
 
     private static String sinkDdl(String flinkTable, String clickHouseTable, String columns) {
@@ -719,6 +742,167 @@ public class ClickHouseTableApiIntegrationTests {
     }
 
     @Test
+    void sinkParallelismSplitsTheInsertAcrossThatManyWriters() throws Exception {
+        String table = "table_api_parallelism";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = singleParallelismEnvironment();
+        // Each writer subtask flushes its share once at end of input, so the INSERT count is the
+        // writer count; the interval is pinned high so a slow run cannot add a timer flush.
+        env.executeSql(sinkDdl("ch_parallel", table, "id BIGINT NOT NULL",
+                ", 'sink.parallelism' = '2', 'sink.buffer-flush.interval' = '10 min'"));
+        env.executeSql("INSERT INTO ch_parallel VALUES " + valuesList(10)).await();
+
+        Assertions.assertEquals(10, readBack("id", table, "id", 10).size());
+        Assertions.assertEquals(2, finishedInserts(table, "", 2),
+                "expected exactly one INSERT per writer subtask");
+    }
+
+    @Test
+    void bufferFlushIntervalFlushesAnUnboundedStreamOnTime() throws Exception {
+        String table = "table_api_interval";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = singleParallelismEnvironment();
+        env.executeSql("CREATE TABLE gen (id BIGINT NOT NULL) WITH ("
+                + "'connector' = 'datagen', 'rows-per-second' = '10')");
+        // Rows and bytes can never trigger a flush here, so only the 1 s timer moves data.
+        env.executeSql(sinkDdl("ch_interval", table, "id BIGINT NOT NULL",
+                ", 'sink.buffer-flush.interval' = '1s', 'sink.buffer-flush.max-rows' = '5000'"));
+
+        JobClient job = env.executeSql("INSERT INTO ch_interval SELECT id FROM gen")
+                .getJobClient().orElseThrow(() -> new AssertionError("no job client"));
+        try {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);
+            int rows = ClickHouseServerForTests.countRows(table);
+            while (rows < 40 && System.nanoTime() < deadline) {
+                Thread.sleep(250);
+                rows = ClickHouseServerForTests.countRows(table);
+            }
+            Assertions.assertTrue(rows >= 40, "only " + rows + " rows landed within 90 s");
+        } finally {
+            job.cancel().get(60, TimeUnit.SECONDS);
+        }
+        // At 10 rows/s a 1 s timer lands ~10 rows per INSERT; the 5 s default would have put the
+        // first ~50 rows into a single INSERT.
+        long inserts = finishedInserts(table, "", 2);
+        Assertions.assertTrue(inserts >= 2, "40 rows arrived in " + inserts + " INSERT(s)");
+    }
+
+    @Test
+    void singleInFlightRequestSerialisesTheInserts() throws Exception {
+        String table = "table_api_in_flight";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = singleParallelismEnvironment();
+        // One row per batch gives 20 INSERTs; the default of 50 in flight would overlap them.
+        env.executeSql(sinkDdl("ch_in_flight", table, "id BIGINT NOT NULL",
+                ", 'sink.buffer-flush.max-rows' = '1', 'sink.max-in-flight-requests' = '1'"));
+        env.executeSql("INSERT INTO ch_in_flight VALUES " + valuesList(20)).await();
+
+        Assertions.assertEquals(20, readBack("id", table, "id", 20).size());
+        Assertions.assertEquals(20, finishedInserts(table, "", 20));
+        if (!ClickHouseServerForTests.isCloud()) {
+            // Replicas keep separate clocks, so only a single server can time-order the INSERTs.
+            Assertions.assertEquals(0, overlappingInserts(table), "INSERTs overlapped on the server");
+        }
+    }
+
+    @Test
+    void maxBufferedRequestsNotAboveBatchRowsIsRejectedAtPlanning() {
+        TableEnvironment env = tableEnvironment();
+        // Below the 500-row sink.buffer-flush.max-rows default.
+        env.executeSql(sinkDdl("ch_small_buffer", "does_not_exist", "id BIGINT NOT NULL",
+                ", 'sink.max-buffered-requests' = '400'"));
+
+        Exception e = Assertions.assertThrows(Exception.class,
+                () -> env.executeSql("INSERT INTO ch_small_buffer VALUES (1)"));
+        Assertions.assertTrue(exceptionChainContains(e,
+                        "'sink.max-buffered-requests' (400) must be strictly greater than "
+                                + "'sink.buffer-flush.max-rows' (500)"),
+                "Unexpected failure: " + e);
+    }
+
+    @Test
+    void twoEntryBufferBackpressuresWithoutLosingRows() throws Exception {
+        String table = "table_api_tiny_buffer";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = singleParallelismEnvironment();
+        // With one row per batch and one request in flight, the third row must block until the
+        // first INSERT is acknowledged; the job has to drain instead of hanging or dropping rows.
+        env.executeSql(sinkDdl("ch_tiny_buffer", table, "id BIGINT NOT NULL",
+                ", 'sink.buffer-flush.max-rows' = '1', 'sink.max-in-flight-requests' = '1'"
+                        + ", 'sink.max-buffered-requests' = '2'"));
+        env.executeSql("INSERT INTO ch_tiny_buffer VALUES " + valuesList(20)).await();
+
+        List<GenericRecord> rows = readBack("id", table, "id", 20);
+        Assertions.assertEquals(20, rows.size());
+        Assertions.assertEquals(20L, rows.get(19).getLong("id"));
+    }
+
+    @Test
+    void oversizedRecordFailsNamingTheRecordLimit() throws Exception {
+        String table = "table_api_record_bytes";
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, payload String) ENGINE = MergeTree() ORDER BY id",
+                ClickHouseServerForTests.getDatabase(), table));
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_record_bytes", table, "id BIGINT NOT NULL, payload STRING NOT NULL",
+                ", 'sink.record.max-bytes' = '64b'"));
+        // A 13-byte RowBinary row fits; a 200-char payload is rejected by the AsyncSink writer.
+        env.executeSql("INSERT INTO ch_record_bytes VALUES (1, 'tiny')").await();
+        Assertions.assertEquals(1, readBack("id", table, "id", 1).size());
+
+        Exception e = Assertions.assertThrows(Exception.class,
+                () -> env.executeSql("INSERT INTO ch_record_bytes VALUES (2, REPEAT('x', 200))").await());
+        Assertions.assertTrue(exceptionChainContains(e, "maxRecordSizeInBytes was set to [64]"),
+                "Unexpected failure: " + e);
+    }
+
+    @Test
+    void dropBatchStrategyKeepsGoodBatchesAndDropsTheRejectedOne() throws Exception {
+        String table = "table_api_drop_batch";
+        createTableWithParsedDefault(table);
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_drop_batch", table, "id BIGINT NOT NULL, src STRING NOT NULL",
+                ", 'sink.batch-failure-strategy' = 'drop-batch', 'sink.buffer-flush.max-rows' = '1'"));
+        // The server's parse failure (code 6) is data corruption, so the middle batch is dropped.
+        env.executeSql("INSERT INTO ch_drop_batch VALUES (1, '10'), (2, 'not-a-number'), (3, '30')").await();
+
+        List<GenericRecord> rows = readBack("id, parsed", table, "id", 2);
+        Assertions.assertEquals(2, rows.size());
+        Assertions.assertEquals(1L, rows.get(0).getLong("id"));
+        Assertions.assertEquals(10, rows.get(0).getInteger("parsed"));
+        Assertions.assertEquals(3L, rows.get(1).getLong("id"));
+        Assertions.assertEquals(30, rows.get(1).getInteger("parsed"));
+    }
+
+    @Test
+    void stopFlinkStrategyFailsTheJobOnARejectedBatch() throws Exception {
+        String table = "table_api_stop_flink";
+        createTableWithParsedDefault(table);
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_stop_flink", table, "id BIGINT NOT NULL, src STRING NOT NULL",
+                ", 'sink.batch-failure-strategy' = 'stop-flink', 'sink.buffer-flush.max-rows' = '1'"));
+
+        Exception e = Assertions.assertThrows(Exception.class,
+                () -> env.executeSql("INSERT INTO ch_stop_flink VALUES (1, '10'), (2, 'not-a-number')").await());
+        Assertions.assertTrue(exceptionChainContains(e, "not-a-number"), "Unexpected failure: " + e);
+    }
+
+    @Test
     void ephemeralColumnsAreRejectedAtPlanning() throws Exception {
         String table = "table_api_ephemeral";
         ClickHouseServerForTests.executeSql(String.format(
@@ -755,21 +939,44 @@ public class ClickHouseTableApiIntegrationTests {
 
     /** Finished INSERTs into {@code table} whose query_log row recorded {@code setting = value}. */
     private static long insertsRecordedWithSetting(String table, String setting, String value) throws Exception {
+        return finishedInserts(table, String.format(" AND Settings['%s'] = '%s'", setting, value), 1);
+    }
+
+    /**
+     * Finished INSERTs into {@code table} matching {@code extraWhere}, polled (bounded) until at
+     * least {@code atLeast} are visible — query_log lands asynchronously, and later on Cloud.
+     */
+    private static long finishedInserts(String table, String extraWhere, long atLeast) throws Exception {
         boolean cloud = ClickHouseServerForTests.isCloud();
         ClickHouseServerForTests.executeSql(cloud ? "SYSTEM FLUSH LOGS ON CLUSTER 'default'" : "SYSTEM FLUSH LOGS");
-        String sql = String.format(
-                "SELECT count() FROM clusterAllReplicas('default', system.query_log) "
-                        + "WHERE type = 'QueryFinish' AND query_kind = 'Insert' "
-                        + "AND has(tables, '%s.%s') AND Settings['%s'] = '%s'",
-                ClickHouseServerForTests.getDatabase(), table, setting, value);
+        String sql = "SELECT count() FROM " + finishedInsertsInto(table) + extraWhere;
         try (Client client = fixtureClient()) {
             long count = client.queryAll(sql).get(0).getLong(1);
-            for (int i = 1; i < (cloud ? 30 : 5) && count < 1; i++) {
+            for (int i = 1; i < (cloud ? 30 : 5) && count < atLeast; i++) {
                 Thread.sleep(1000);
                 count = client.queryAll(sql).get(0).getLong(1);
             }
             return count;
         }
+    }
+
+    /** Pairs of finished INSERTs into {@code table} where the later one started before the earlier one finished. */
+    private static long overlappingInserts(String table) throws Exception {
+        String sql = String.format(
+                "SELECT count() FROM (SELECT query_start_time_microseconds AS s, event_time_microseconds AS e "
+                        + "FROM %1$s) AS a, (SELECT query_start_time_microseconds AS s FROM %1$s) AS b "
+                        + "WHERE a.s < b.s AND b.s < a.e",
+                finishedInsertsInto(table));
+        try (Client client = fixtureClient()) {
+            return client.queryAll(sql).get(0).getLong(1);
+        }
+    }
+
+    private static String finishedInsertsInto(String table) {
+        return String.format(
+                "clusterAllReplicas('default', system.query_log) WHERE type = 'QueryFinish' "
+                        + "AND query_kind = 'Insert' AND has(tables, '%s.%s')",
+                ClickHouseServerForTests.getDatabase(), table);
     }
 
     /** The client the fixture itself uses: 60 s connect timeout, TLS exactly when on Cloud. */
