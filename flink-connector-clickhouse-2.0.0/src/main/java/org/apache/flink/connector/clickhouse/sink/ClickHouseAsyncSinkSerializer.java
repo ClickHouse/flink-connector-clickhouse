@@ -1,20 +1,24 @@
 package org.apache.flink.connector.clickhouse.sink;
 
 import org.apache.flink.connector.base.sink.writer.AsyncSinkWriterStateSerializer;
+import org.apache.flink.connector.base.sink.writer.BufferedRequestState;
+import org.apache.flink.connector.base.sink.writer.RequestEntryWrapper;
 import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
 import org.apache.flink.connector.clickhouse.data.TypeTags;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
  * State serializer for {@link ClickHousePayload}.
  *
- * <p>Per design spec §15. Parent {@link AsyncSinkWriterStateSerializer} owns the
- * per-blob framing; we override only the per-entry stream methods.
+ * <p>Per design spec §15. The parent owns the per-blob framing. Restored
+ * entries with negative sizes are repaired after the parent deserializes them.
  *
  * <p>Two entry markers exist in the read path; only {@code ENTRY_MAP} is written:
  * <ul>
@@ -40,6 +44,34 @@ public class ClickHouseAsyncSinkSerializer
 
     @Override
     public int getVersion() { return V2; }
+
+    @Override
+    public BufferedRequestState<ClickHousePayload> deserialize(int version, byte[] serialized)
+            throws IOException {
+        BufferedRequestState<ClickHousePayload> state = super.deserialize(version, serialized);
+        List<RequestEntryWrapper<ClickHousePayload>> fixed = new ArrayList<>();
+        for (RequestEntryWrapper<ClickHousePayload> wrapper : state.getBufferedRequestEntries()) {
+            if (wrapper.getSize() < 0L) {
+                fixed.add(new RequestEntryWrapper<>(
+                        wrapper.getRequestEntry(), recomputeRequestSize(wrapper.getRequestEntry())));
+            } else {
+                fixed.add(wrapper);
+            }
+        }
+        return new BufferedRequestState<>(fixed);
+    }
+
+    private long recomputeRequestSize(ClickHousePayload request) {
+        if (request.isRaw()) {
+            Object raw = request.getData().get(ClickHousePayload.RAW_KEY);
+            if (raw instanceof byte[]) {
+                return ((byte[]) raw).length;
+            }
+        }
+        // Typed entries are rehydrated by the writer before submission. A zero
+        // size lets those entries be restored without retaining an invalid size.
+        return 0L;
+    }
 
     @Override
     protected void serializeRequestToStream(ClickHousePayload entry, DataOutputStream out)
