@@ -11,6 +11,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -73,11 +74,13 @@ class DataWriterContractTest {
         }
     }
 
-    /** Whitelist drift, direction two: fails when DataWriter learns these (issue #43). */
+    /** Whitelist drift, direction two: fails when DataWriter learns a type unsupportedTargetReason still cites. */
     @Test
     void knownUnwritableTargetsStayUndispatched() {
-        assertFalse(dispatches("Enum8('a' = 1)"), "Enum8 became writable — update WRITABLE_TARGETS");
-        assertFalse(dispatches("Enum16('a' = 1)"), "Enum16 became writable — update WRITABLE_TARGETS");
+        for (String expression : List.of("Enum8('a' = 1)", "Enum16('a' = 1)", "Variant(String, Int32)", "Time", "Time64(3)")) {
+            assertFalse(dispatches(expression),
+                    expression + " became writable — update WRITABLE_TARGETS and unsupportedTargetReason");
+        }
     }
 
     /**

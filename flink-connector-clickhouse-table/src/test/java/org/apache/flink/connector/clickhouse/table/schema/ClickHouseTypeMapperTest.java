@@ -17,6 +17,7 @@ import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.DateType;
 import org.apache.flink.table.types.logical.DecimalType;
+import org.apache.flink.table.types.logical.DoubleType;
 import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
@@ -305,14 +306,49 @@ class ClickHouseTypeMapperTest {
         TypeMappingException flinkSide = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
                         rowOf(new IntType(true)), col("Tuple(Int32)"), UTC, "c"));
-        assertTrue(flinkSide.getMessage().contains("declare the field NOT NULL"),
+        assertTrue(flinkSide.getMessage().contains("the Flink ROW field 'f0' is nullable"),
                 flinkSide.getMessage());
+        assertTrue(flinkSide.getMessage().contains("declare it NOT NULL"), flinkSide.getMessage());
 
         TypeMappingException clickHouseSide = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
                         rowOf(new IntType(false)), col("Tuple(Nullable(Int32))"), UTC, "c"));
-        assertTrue(clickHouseSide.getMessage().contains("Nullable Tuple elements"),
+        assertTrue(clickHouseSide.getMessage().contains("Nullable Tuple elements (Nullable(Int32) at position 1)"),
                 clickHouseSide.getMessage());
+    }
+
+    @Test
+    void nullableMapValuesAreRejectedOnEitherSide() {
+        VarCharType key = new VarCharType(false, VarCharType.MAX_LENGTH);
+        TypeMappingException flinkSide = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(
+                        new MapType(false, key, new IntType(true)), col("Map(String, Int32)"), UTC, "c"));
+        assertTrue(flinkSide.getMessage().contains("the Flink map value type INT is nullable"),
+                flinkSide.getMessage());
+        assertTrue(flinkSide.getMessage().contains("declare it NOT NULL"), flinkSide.getMessage());
+
+        TypeMappingException clickHouseSide = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(
+                        new MapType(false, key, new IntType(false)), col("Map(String, Nullable(Int32))"), UTC, "c"));
+        assertTrue(clickHouseSide.getMessage().contains("Nullable Map values (Nullable(Int32))"),
+                clickHouseSide.getMessage());
+    }
+
+    /** Binding is positional; the same names in another order is almost certainly a mistake. */
+    @Test
+    void rowFieldNamesMatchingANamedTupleInAnotherOrderAreRejected() {
+        RowType swapped = new RowType(false, List.of(
+                new RowType.RowField("lon", new DoubleType(false)),
+                new RowType.RowField("lat", new DoubleType(false))));
+        TypeMappingException e = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(swapped, col("Tuple(lat Float64, lon Float64)"), UTC, "c"));
+        assertTrue(e.getMessage().contains("[lon, lat]"), e.getMessage());
+        assertTrue(e.getMessage().contains("[lat, lon]"), e.getMessage());
+
+        // The same order, different names, or unnamed elements keep the positional contract.
+        ClickHouseTypeMapper.converterFor(swapped, col("Tuple(lon Float64, lat Float64)"), UTC, "c");
+        ClickHouseTypeMapper.converterFor(swapped, col("Tuple(x Float64, y Float64)"), UTC, "c");
+        ClickHouseTypeMapper.converterFor(swapped, col("Tuple(Float64, Float64)"), UTC, "c");
     }
 
     @Test

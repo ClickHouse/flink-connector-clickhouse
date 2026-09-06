@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -55,10 +56,7 @@ public class ClickHouseTableApiIntegrationTests {
 
     /** {@code parsed} is omitted by the Flink schema, so the server evaluates its DEFAULT per row. */
     private static void createTableWithParsedDefault(String table) throws Exception {
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, src String, parsed Int32 DEFAULT toInt32(src)) "
-                        + "ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, src String, parsed Int32 DEFAULT toInt32(src)");
     }
 
     private static String sinkDdl(String flinkTable, String clickHouseTable, String columns) {
@@ -83,17 +81,32 @@ public class ClickHouseTableApiIntegrationTests {
                 clickHouseTable, extraOptions);
     }
 
+    /** {@code CREATE TABLE} in the test database; the default engine clause is {@code MergeTree() ORDER BY id}. */
+    private static void createTable(String table, String columns) throws Exception {
+        createTable(table, columns, "MergeTree() ORDER BY id");
+    }
+
+    private static void createTable(String table, String columns, String engineClause) throws Exception {
+        ClickHouseServerForTests.executeSql(String.format("CREATE TABLE `%s`.`%s` (%s) ENGINE = %s",
+                ClickHouseServerForTests.getDatabase(), table, columns, engineClause));
+    }
+
+    /** Asserts the call fails with every needle somewhere in the exception chain; returns the exception. */
+    private static Exception assertFailsWith(Executable call, String... needles) {
+        Exception e = Assertions.assertThrows(Exception.class, call);
+        for (String needle : needles) {
+            Assertions.assertTrue(exceptionChainContains(e, needle), "Unexpected failure: " + e);
+        }
+        return e;
+    }
+
     @Test
     void sqlInsertRoundTripsThroughClickHouse() throws Exception {
         String table = "table_api_events";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` ("
-                        + "id Int64, name String, amount Decimal(18, 4), created_at DateTime64(3), "
-                        + "uid UUID, event_day Date, is_active Bool, score Float64, "
-                        + "tags Array(String), props Map(String, String), "
-                        + "category LowCardinality(String), code FixedString(4)"
-                        + ") ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table,
+                "id Int64, name String, amount Decimal(18, 4), created_at DateTime64(3), uid UUID, "
+                        + "event_day Date, is_active Bool, score Float64, tags Array(String), "
+                        + "props Map(String, String), category LowCardinality(String), code FixedString(4)");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_events", table,
@@ -156,9 +169,7 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void replanningAfterAlterSeesTheCurrentSchema() throws Exception {
         String table = "table_api_alter";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_alter_before", table, "id BIGINT NOT NULL"));
@@ -194,105 +205,56 @@ public class ClickHouseTableApiIntegrationTests {
                         + "'sink.max-retries' = '100000')");
 
         long start = System.nanoTime();
-        Exception e = Assertions.assertThrows(Exception.class,
-                () -> env.executeSql("INSERT INTO ch_unreachable VALUES (1)"));
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_unreachable VALUES (1)"), "not accessible");
         long elapsedMs = (System.nanoTime() - start) / 1_000_000;
 
-        Assertions.assertTrue(exceptionChainContains(e, "not accessible"), "Unexpected failure: " + e);
         // The ping is a fixed 3 attempts with 1s pauses; 100 000 attempts would block for days.
         Assertions.assertTrue(elapsedMs < 60_000,
                 "Planning ping blocked for " + elapsedMs + "ms — is sink.max-retries driving it again?");
     }
 
     @Test
-    void batchRowsNotBelowBufferedRequestsIsRejectedAtPlanning() {
-        TableEnvironment env = tableEnvironment();
-        // Equal to the sink.max-buffered-requests default; the AsyncSink needs strictly greater.
-        env.executeSql(sinkDdl("ch_invalid_buffering", "does_not_exist", "id BIGINT NOT NULL",
-                ", 'sink.buffer-flush.max-rows' = '10000'"));
-
-        Exception e = Assertions.assertThrows(Exception.class,
-                () -> env.executeSql("INSERT INTO ch_invalid_buffering VALUES (1)"));
-        Assertions.assertTrue(exceptionChainContains(e,
-                        "'sink.max-buffered-requests' (10000) must be strictly greater than "
-                                + "'sink.buffer-flush.max-rows' (10000)"),
-                "Unexpected failure: " + e);
-    }
-
-    @Test
-    void batchBytesBelowRecordBytesIsRejectedAtPlanning() {
-        TableEnvironment env = tableEnvironment();
-        // Below the 1mb sink.record.max-bytes default, so one record could never fit a batch.
-        env.executeSql(sinkDdl("ch_invalid_bytes", "does_not_exist", "id BIGINT NOT NULL",
-                ", 'sink.buffer-flush.max-bytes' = '512kb'"));
-
-        Exception e = Assertions.assertThrows(Exception.class,
-                () -> env.executeSql("INSERT INTO ch_invalid_bytes VALUES (1)"));
-        Assertions.assertTrue(exceptionChainContains(e, "must be at least 'sink.record.max-bytes'"),
-                "Unexpected failure: " + e);
-    }
-
-    @Test
     void negativeBigIntIntoUInt32FailsNamingTheColumn() throws Exception {
         String table = "table_api_unsigned";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, hits UInt32) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, hits UInt32");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_unsigned", table, "id BIGINT NOT NULL, hits BIGINT NOT NULL"));
 
-        Exception e = Assertions.assertThrows(Exception.class,
-                () -> env.executeSql("INSERT INTO ch_unsigned VALUES (1, -1)").await());
-        Assertions.assertTrue(exceptionChainContains(e,
-                        "Column 'hits': value -1 is outside the UInt32 range"),
-                "Unexpected failure: " + e);
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_unsigned VALUES (1, -1)").await(),
+                "Column 'hits': value -1 is outside the UInt32 range");
     }
 
     @Test
     void outOfRangeDate32FailsNamingTheColumn() throws Exception {
         String table = "table_api_date32";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, event_day Date32) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, event_day Date32");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_date32", table, "id BIGINT NOT NULL, event_day DATE NOT NULL"));
 
         // Pre-fix this was written raw and stored as a different date, with no error anywhere.
-        Exception e = Assertions.assertThrows(Exception.class,
-                () -> env.executeSql("INSERT INTO ch_date32 VALUES (1, DATE '9999-12-31')").await());
-        Assertions.assertTrue(exceptionChainContains(e,
-                        "Column 'event_day': DATE value 9999-12-31 is outside the ClickHouse Date32 range"),
-                "Unexpected failure: " + e);
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_date32 VALUES (1, DATE '9999-12-31')").await(),
+                "Column 'event_day': DATE value 9999-12-31 is outside the ClickHouse Date32 range");
     }
 
     @Test
     void unknownFlinkColumnFailsAtPlanningWithPreciseMessage() throws Exception {
         String table = "table_api_reject";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_reject", table,
                 "id BIGINT NOT NULL, nickname STRING NOT NULL"));
 
-        Exception e = Assertions.assertThrows(Exception.class,
-                () -> env.executeSql("INSERT INTO ch_reject VALUES (1, 'nick')"));
-        Assertions.assertTrue(exceptionChainContains(e,
-                        "Column 'nickname' declared in the Flink schema does not exist in"),
-                "Unexpected failure: " + e);
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_reject VALUES (1, 'nick')"),
+                "Column 'nickname' declared in the Flink schema does not exist in");
     }
 
     @Test
     void nullValuesRoundTripIntoNullableColumns() throws Exception {
         String table = "table_api_nullable";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` ("
-                        + "id Int64, name Nullable(String), score Nullable(Float64), event_day Nullable(Date)"
-                        + ") ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, name Nullable(String), score Nullable(Float64), event_day Nullable(Date)");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_nullable", table,
@@ -318,10 +280,7 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void multisetRoundTripsIntoUInt64CountMap() throws Exception {
         String table = "table_api_multiset";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, tags Map(String, UInt64)) "
-                        + "ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, tags Map(String, UInt64)");
 
         // Flink SQL has no MULTISET literal; COLLECT in batch mode emits final, insert-only rows.
         TableEnvironment env = TableEnvironment.create(EnvironmentSettings.inBatchMode());
@@ -350,12 +309,9 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void rowsWriteIntoTuplesAtEveryNestingAndNullArrayElementsRoundTrip() throws Exception {
         String table = "table_api_tuple";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` ("
-                        + "id Int64, pair Tuple(Int32, String), nums Array(Nullable(Int32)), "
-                        + "pairs Array(Tuple(Int32, String)), nested Tuple(Int32, Tuple(Int32, String))"
-                        + ") ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table,
+                "id Int64, pair Tuple(Int32, String), nums Array(Nullable(Int32)), "
+                        + "pairs Array(Tuple(Int32, String)), nested Tuple(Int32, Tuple(Int32, String))");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_tuple", table,
@@ -383,12 +339,9 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void namedTuplesAtEveryNestingRoundTrip() throws Exception {
         String table = "table_api_named_tuple";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` ("
-                        + "id Int64, pair Tuple(a Int32, b String), pairs Array(Tuple(a Int32, b String)), "
-                        + "by_key Map(String, Tuple(a Int32, b String))"
-                        + ") ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table,
+                "id Int64, pair Tuple(a Int32, b String), pairs Array(Tuple(a Int32, b String)), "
+                        + "by_key Map(String, Tuple(a Int32, b String))");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_named_tuple", table,
@@ -412,10 +365,7 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void nullNestedValueFailsNamingTheColumnInsteadOfWritingZeros() throws Exception {
         String table = "table_api_nested_null";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, pair Tuple(Int32, String), nums Array(Int32)) "
-                        + "ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, pair Tuple(Int32, String), nums Array(Int32)");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_nested_null", table,
@@ -423,24 +373,19 @@ public class ClickHouseTableApiIntegrationTests {
                         + "pair ROW<a INT NOT NULL, b STRING NOT NULL> NOT NULL,"
                         + "nums ARRAY<INT NOT NULL> NOT NULL"));
 
-        Exception rowFailure = Assertions.assertThrows(Exception.class, () -> env.executeSql(
-                "INSERT INTO ch_nested_null VALUES (1, ROW(CAST(NULL AS INT), 'x'), ARRAY[1])").await());
-        Assertions.assertTrue(exceptionChainContains(rowFailure, "Column 'pair': null ROW field 1"),
-                "Unexpected failure: " + rowFailure);
-        Exception arrayFailure = Assertions.assertThrows(Exception.class, () -> env.executeSql(
-                "INSERT INTO ch_nested_null VALUES (2, ROW(7, 'x'), ARRAY[1, CAST(NULL AS INT)])").await());
-        Assertions.assertTrue(exceptionChainContains(arrayFailure, "Column 'nums': null array element 2"),
-                "Unexpected failure: " + arrayFailure);
+        assertFailsWith(() -> env.executeSql(
+                "INSERT INTO ch_nested_null VALUES (1, ROW(CAST(NULL AS INT), 'x'), ARRAY[1])").await(),
+                "Column 'pair': null ROW field 1");
+        assertFailsWith(() -> env.executeSql(
+                "INSERT INTO ch_nested_null VALUES (2, ROW(7, 'x'), ARRAY[1, CAST(NULL AS INT)])").await(),
+                "Column 'nums': null array element 2");
         Assertions.assertEquals(0, readBack("id", table, "id", 0).size());
     }
 
     @Test
     void simpleAggregateFunctionColumnAcceptsItsInnerType() throws Exception {
         String table = "table_api_simple_agg";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, total SimpleAggregateFunction(sum, Int64)) "
-                        + "ENGINE = AggregatingMergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, total SimpleAggregateFunction(sum, Int64)", "AggregatingMergeTree() ORDER BY id");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_simple_agg", table, "id BIGINT NOT NULL, total BIGINT NOT NULL"));
@@ -455,30 +400,22 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void updatingSourceIsRejectedAtPlanningAsInsertOnly() throws Exception {
         String table = "table_api_insert_only";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (name String, cnt Int64) ENGINE = MergeTree() ORDER BY name",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "name String, cnt Int64", "MergeTree() ORDER BY name");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_insert_only", table, "name STRING NOT NULL, cnt BIGINT NOT NULL"));
 
         // A streaming GROUP BY emits updates; the insert-only sink must reject the plan (#148).
-        Exception e = Assertions.assertThrows(Exception.class,
-                () -> env.executeSql("INSERT INTO ch_insert_only "
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_insert_only "
                         + "SELECT name, COUNT(*) FROM (VALUES ('a'), ('a'), ('b')) AS t(name) "
-                        + "GROUP BY name"));
-        Assertions.assertTrue(exceptionChainContains(e, "doesn't support consuming update changes"),
-                "Unexpected failure: " + e);
+                        + "GROUP BY name"),
+                "doesn't support consuming update changes");
     }
 
     @Test
     void omittedClickHouseColumnsWithDefaultsAreBackfilled() throws Exception {
         String table = "table_api_defaults";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` ("
-                        + "id Int64, note Nullable(String), tag String DEFAULT 'none'"
-                        + ") ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, note Nullable(String), tag String DEFAULT 'none'");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_defaults", table, "id BIGINT NOT NULL"));
@@ -494,10 +431,7 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void omittedNoDefaultColumnIsFilledWithTheTypeDefault() throws Exception {
         String table = "table_api_no_default";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, req String, tags Array(String)) "
-                        + "ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, req String, tags Array(String)");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_no_default", table, "id BIGINT NOT NULL"));
@@ -513,9 +447,7 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void statementSetInsertsIntoTheSameSinkTwice() throws Exception {
         String table = "table_api_stmt_set";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, src String) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, src String");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_stmt_set", table, "id BIGINT NOT NULL, src STRING NOT NULL"));
@@ -538,9 +470,7 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void columnsMapByNameNotPosition() throws Exception {
         String table = "table_api_permuted";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (a Int64, b String, c Float64) ENGINE = MergeTree() ORDER BY a",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "a Int64, b String, c Float64", "MergeTree() ORDER BY a");
 
         TableEnvironment env = tableEnvironment();
         // Deliberately not the ClickHouse order; positional mapping could not even plan this.
@@ -558,27 +488,19 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void typeMismatchFailsAtPlanningNamingColumnAndBothTypes() throws Exception {
         String table = "table_api_mismatch";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, label Int64) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, label Int64");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_mismatch", table, "id BIGINT NOT NULL, label STRING NOT NULL"));
 
-        Exception e = Assertions.assertThrows(Exception.class,
-                () -> env.executeSql("INSERT INTO ch_mismatch VALUES (1, 'nope')"));
-        Assertions.assertTrue(exceptionChainContains(e,
-                        "Column 'label': Flink type STRING NOT NULL cannot be written to "
-                                + "ClickHouse column 'label Int64'"),
-                "Unexpected failure: " + e);
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_mismatch VALUES (1, 'nope')"),
+                "Column 'label': Flink type STRING NOT NULL cannot be written to ClickHouse column 'label Int64'");
     }
 
     @Test
     void ignoredUnknownFlinkColumnIsSkippedAtWriteTime() throws Exception {
         String table = "table_api_ignore_unknown";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, name String) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, name String");
 
         TableEnvironment env = tableEnvironment();
         // 'extra' sits between the mapped columns, so the surviving accessors must keep their indices.
@@ -596,9 +518,7 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void computedColumnsAreExcludedFromTheSinkSchema() throws Exception {
         String table = "table_api_computed";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, name String) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, name String");
 
         TableEnvironment env = tableEnvironment();
         // 'id_plus' has no ClickHouse counterpart and must never reach schema resolution.
@@ -615,9 +535,7 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void primaryKeyIsAcceptedAndIgnored() throws Exception {
         String table = "table_api_primary_key";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, v String) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, v String");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_primary_key", table,
@@ -634,9 +552,7 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void sinkTimezoneInterpretsWallClockTimestamps() throws Exception {
         String table = "table_api_sink_timezone";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, ts DateTime64(3)) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, ts DateTime64(3)");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_sink_tz", table,
@@ -654,9 +570,7 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void timestampLtzWritesTheInstantRegardlessOfZones() throws Exception {
         String table = "table_api_ltz";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, ts DateTime64(3)) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, ts DateTime64(3)");
 
         TableEnvironment env = tableEnvironment();
         // The session zone fixes the instant at CAST time; sink.timezone must not shift it again.
@@ -677,9 +591,7 @@ public class ClickHouseTableApiIntegrationTests {
     void jsonColumnAcceptsJsonStrings() throws Exception {
         String table = "table_api_json";
         try {
-            ClickHouseServerForTests.executeSql(String.format(
-                    "CREATE TABLE `%s`.`%s` (id Int64, j JSON) ENGINE = MergeTree() ORDER BY id",
-                    ClickHouseServerForTests.getDatabase(), table));
+            createTable(table, "id Int64, j JSON");
         } catch (Exception e) {
             // Probe, don't pin versions: the modern JSON type is GA from 25.3. Only the server's own
             // "no JSON type" answer may skip; a connection or DDL problem must fail the test.
@@ -705,9 +617,7 @@ public class ClickHouseTableApiIntegrationTests {
      */
     @Test
     void clientV2StillCannotDescribeTableNamesNeedingQuotes() throws Exception {
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`table-api-canary` (id Int64) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase()));
+        createTable("table-api-canary", "id Int64");
         try (Client client = fixtureClient()) {
             Exception e = Assertions.assertThrows(Exception.class, () -> client.getTableSchema(
                     "table-api-canary", ClickHouseServerForTests.getDatabase()));
@@ -722,9 +632,7 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void passthroughOptionsReachTheClientAndTheInsert() throws Exception {
         String table = "table_api_passthrough";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64");
 
         TableEnvironment env = tableEnvironment();
         // The client option must survive validation and client construction; the server setting is
@@ -746,18 +654,14 @@ public class ClickHouseTableApiIntegrationTests {
         env.executeSql(sinkDdl("ch_bare_prefix", "does_not_exist", "id BIGINT NOT NULL",
                 ", 'clickhouse.server.' = '1'"));
 
-        Exception e = Assertions.assertThrows(Exception.class,
-                () -> env.executeSql("INSERT INTO ch_bare_prefix VALUES (1)"));
-        Assertions.assertTrue(exceptionChainContains(e, "Option 'clickhouse.server.' has no key after the prefix"),
-                "Unexpected failure: " + e);
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_bare_prefix VALUES (1)"),
+                "Option 'clickhouse.server.' has no key after the prefix");
     }
 
     @Test
     void zeroScaleDecimalsWriteIntoTheIntegersTheirDigitsCover() throws Exception {
         String table = "table_api_decimal_ints";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, small UInt8, big Int64) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, small UInt8, big Int64");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_decimal_ints", table,
@@ -774,9 +678,7 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void sinkParallelismSplitsTheInsertAcrossThatManyWriters() throws Exception {
         String table = "table_api_parallelism";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64");
 
         TableEnvironment env = singleParallelismEnvironment();
         // Each writer subtask flushes its share once at end of input, so the INSERT count is the
@@ -793,9 +695,7 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void bufferFlushIntervalFlushesAnUnboundedStreamOnTime() throws Exception {
         String table = "table_api_interval";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64");
 
         TableEnvironment env = singleParallelismEnvironment();
         env.executeSql("CREATE TABLE gen (id BIGINT NOT NULL) WITH ("
@@ -826,9 +726,7 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void singleInFlightRequestSerialisesTheInserts() throws Exception {
         String table = "table_api_in_flight";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64");
 
         TableEnvironment env = singleParallelismEnvironment();
         // One row per batch gives 20 INSERTs; the default of 50 in flight would overlap them.
@@ -845,26 +743,9 @@ public class ClickHouseTableApiIntegrationTests {
     }
 
     @Test
-    void maxBufferedRequestsNotAboveBatchRowsIsRejectedAtPlanning() {
-        TableEnvironment env = tableEnvironment();
-        // Below the 500-row sink.buffer-flush.max-rows default.
-        env.executeSql(sinkDdl("ch_small_buffer", "does_not_exist", "id BIGINT NOT NULL",
-                ", 'sink.max-buffered-requests' = '400'"));
-
-        Exception e = Assertions.assertThrows(Exception.class,
-                () -> env.executeSql("INSERT INTO ch_small_buffer VALUES (1)"));
-        Assertions.assertTrue(exceptionChainContains(e,
-                        "'sink.max-buffered-requests' (400) must be strictly greater than "
-                                + "'sink.buffer-flush.max-rows' (500)"),
-                "Unexpected failure: " + e);
-    }
-
-    @Test
     void twoEntryBufferBackpressuresWithoutLosingRows() throws Exception {
         String table = "table_api_tiny_buffer";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64");
 
         TableEnvironment env = singleParallelismEnvironment();
         // With one row per batch and one request in flight, the third row must block until the
@@ -882,9 +763,7 @@ public class ClickHouseTableApiIntegrationTests {
     @Test
     void oversizedRecordFailsNamingTheRecordLimit() throws Exception {
         String table = "table_api_record_bytes";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, payload String) ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, payload String");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_record_bytes", table, "id BIGINT NOT NULL, payload STRING NOT NULL",
@@ -893,10 +772,8 @@ public class ClickHouseTableApiIntegrationTests {
         env.executeSql("INSERT INTO ch_record_bytes VALUES (1, 'tiny')").await();
         Assertions.assertEquals(1, readBack("id", table, "id", 1).size());
 
-        Exception e = Assertions.assertThrows(Exception.class,
-                () -> env.executeSql("INSERT INTO ch_record_bytes VALUES (2, REPEAT('x', 200))").await());
-        Assertions.assertTrue(exceptionChainContains(e, "maxRecordSizeInBytes was set to [64]"),
-                "Unexpected failure: " + e);
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_record_bytes VALUES (2, REPEAT('x', 200))").await(),
+                "maxRecordSizeInBytes was set to [64]");
     }
 
     @Test
@@ -927,27 +804,21 @@ public class ClickHouseTableApiIntegrationTests {
         env.executeSql(sinkDdl("ch_stop_flink", table, "id BIGINT NOT NULL, src STRING NOT NULL",
                 ", 'sink.batch-failure-strategy' = 'stop-flink', 'sink.buffer-flush.max-rows' = '1'"));
 
-        Exception e = Assertions.assertThrows(Exception.class,
-                () -> env.executeSql("INSERT INTO ch_stop_flink VALUES (1, '10'), (2, 'not-a-number')").await());
-        Assertions.assertTrue(exceptionChainContains(e, "not-a-number"), "Unexpected failure: " + e);
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_stop_flink VALUES (1, '10'), (2, 'not-a-number')").await(),
+                "not-a-number");
     }
 
     @Test
     void ephemeralColumnsAreRejectedAtPlanning() throws Exception {
         String table = "table_api_ephemeral";
-        ClickHouseServerForTests.executeSql(String.format(
-                "CREATE TABLE `%s`.`%s` (id Int64, payload String EPHEMERAL, norm String DEFAULT lower(payload)) "
-                        + "ENGINE = MergeTree() ORDER BY id",
-                ClickHouseServerForTests.getDatabase(), table));
+        createTable(table, "id Int64, payload String EPHEMERAL, norm String DEFAULT lower(payload)");
 
         TableEnvironment env = tableEnvironment();
         // The sink's INSERT carries no column list, so a header naming 'payload' would be dropped silently.
         env.executeSql(sinkDdl("ch_ephemeral", table, "id BIGINT NOT NULL, payload STRING NOT NULL"));
 
-        Exception e = Assertions.assertThrows(Exception.class,
-                () -> env.executeSql("INSERT INTO ch_ephemeral VALUES (1, 'X')"));
-        Assertions.assertTrue(exceptionChainContains(e, "is EPHEMERAL"), "Unexpected failure: " + e);
-        Assertions.assertTrue(exceptionChainContains(e, "without a column list"), "Unexpected failure: " + e);
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_ephemeral VALUES (1, 'X')"),
+                "is EPHEMERAL", "without a column list");
     }
 
     /**

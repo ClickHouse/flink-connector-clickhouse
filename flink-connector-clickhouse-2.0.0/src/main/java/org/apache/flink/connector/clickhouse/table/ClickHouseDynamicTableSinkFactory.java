@@ -2,7 +2,10 @@ package org.apache.flink.connector.clickhouse.table;
 
 import com.clickhouse.client.api.Client;
 import com.clickhouse.client.api.ClientConfigProperties;
+import com.clickhouse.client.api.ClientMisconfigurationException;
 import com.clickhouse.client.api.ServerException;
+import com.clickhouse.client.api.http.ClickHouseHttpProto;
+import com.clickhouse.client.api.internal.ServerSettings;
 import com.clickhouse.client.api.metadata.TableSchema;
 import com.clickhouse.config.BatchFailureStrategy;
 import com.clickhouse.config.RetryPolicy;
@@ -22,7 +25,6 @@ import org.apache.flink.util.TimeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.MalformedURLException;
 import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.ZoneId;
@@ -69,14 +71,31 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
 
     public static final String IDENTIFIER = "clickhouse";
 
-    /** Set from the first-class options; a passthrough copy would override them silently in the client builder. */
+    /** Set from the first-class options; a passthrough copy — client option, server setting or request header — would shadow or break them without naming the option. */
     private static final Map<String, ConfigOption<?>> RESERVED_CLIENT_KEYS = Map.of(
             ClientConfigProperties.DATABASE.getKey(), DATABASE,
             ClientConfigProperties.USER.getKey(), USERNAME,
             ClientConfigProperties.PASSWORD.getKey(), PASSWORD);
 
-    /** DESCRIBE pretty-prints named Tuples across lines by default; the insert header needs the canonical name. */
+    /** The identity headers the client derives from those options: a user copy either replaces the connector's (database) or is dropped by the client's auth-header cleanup (user, key); header names are case-insensitive. */
+    private static final Map<String, ConfigOption<?>> RESERVED_CLIENT_HEADERS = Map.of(
+            ClickHouseHttpProto.HEADER_DATABASE.toLowerCase(Locale.ROOT), DATABASE,
+            ClickHouseHttpProto.HEADER_DB_USER.toLowerCase(Locale.ROOT), USERNAME,
+            ClickHouseHttpProto.HEADER_DB_PASSWORD.toLowerCase(Locale.ROOT), PASSWORD);
+
+    /**
+     * Sent with the planning DESCRIBE only: the introspected type text goes verbatim into every
+     * RowBinaryWithNamesAndTypes header, and the server rejects a pretty-printed
+     * {@code Tuple(<newline>    a Int32, …)} there with code 117.
+     */
     static final String PRINT_PRETTY_TYPE_NAMES = "print_pretty_type_names";
+    private static final Map<String, String> PLANNING_SERVER_SETTINGS = Map.of(PRINT_PRETTY_TYPE_NAMES, "0");
+
+    /** Pinned per insert by ClickHouseAsyncWriter; client-v2 lets operation settings win, so a user copy would be discarded silently. */
+    static final Set<String> INSERT_SERVER_SETTINGS = Set.of(
+            "input_format_null_as_default",
+            "input_format_defaults_for_omitted_fields",
+            ServerSettings.INPUT_FORMAT_BINARY_READ_JSON_AS_STRING);
 
     @Override
     public String factoryIdentifier() {
@@ -194,14 +213,17 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
 
     private static ClickHouseClientConfig buildClientConfig(Context context, ReadableConfig options) {
         Map<String, String> tableOptions = context.getCatalogTable().getOptions();
+        Map<String, String> clientOptions = clientOptions(tableOptions);
+        Map<String, String> serverSettings = serverSettings(tableOptions);
+        checkServerSettingDefinedOnce(clientOptions, serverSettings);
         ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(
                 options.get(URL),
                 options.get(USERNAME),
                 options.get(PASSWORD),
                 options.get(DATABASE),
                 options.get(TABLE),
-                clientOptions(tableOptions),
-                serverSettings(tableOptions),
+                clientOptions,
+                serverSettings,
                 toRetryPolicy(options.get(SINK_MAX_RETRIES)));
         clientConfig.setBatchFailureStrategy(
                 parseBatchFailureStrategy(options.get(SINK_BATCH_FAILURE_STRATEGY)));
@@ -212,13 +234,18 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
      * Reads the table's current column types through a short-lived, pinged client —
      * deliberately unmemoized so a long-lived planner sees {@code ALTER TABLE}.
      */
-    private static TableSchema introspect(ReadableConfig options, ClickHouseClientConfig clientConfig) {
+    static TableSchema introspect(ReadableConfig options, ClickHouseClientConfig clientConfig) {
         String url = options.get(URL);
         String database = options.get(DATABASE);
         String table = options.get(TABLE);
         LOG.info("Introspecting ClickHouse table {}.{} at {}", database, table, url);
-        try (Client client = clientConfig.createPlanningClient()) {
+        try (Client client = clientConfig.createPlanningClient(PLANNING_SERVER_SETTINGS)) {
             return client.getTableSchema(table, database);
+        } catch (IllegalArgumentException | ClientMisconfigurationException e) {
+            // Only Client.Builder.build() throws these here: option values and combinations parseConfigMap cannot see (the time-zone pair, SSL authentication, key store and certificate files).
+            throw new ValidationException(String.format(
+                    "Invalid '%s*' option or option combination — the ClickHouse client rejected it: %s",
+                    CLIENT_OPTIONS_PREFIX, withCause(e)), e);
         } catch (Exception e) {
             throw new ValidationException(String.format(
                     "Could not read the schema of ClickHouse table %s.%s at %s — %s",
@@ -235,6 +262,11 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
             cause = cause.getCause();
         }
         return cause.getMessage() != null ? cause.getMessage() : cause.toString();
+    }
+
+    /** build()'s SSL failures name the unreadable file or bad password only in a cause. */
+    private static String withCause(Throwable e) {
+        return e.getCause() == null ? e.getMessage() : e.getMessage() + " (" + rootMessage(e.getCause()) + ")";
     }
 
     private static ClickHouseDynamicTableSink buildSink(ClickHouseClientConfig clientConfig,
@@ -266,7 +298,8 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
 
     static ZoneId parseSinkTimezone(String zone) {
         try {
-            return ZoneId.of(zone);
+            // Fixed-offset ids (UTC, GMT, Etc/UTC) become ZoneOffsets: 'Z' in state, no rule lookup per value.
+            return ZoneId.of(zone).normalized();
         } catch (DateTimeException e) {
             throw new ValidationException(String.format(
                     "Invalid value '%s' for '%s': %s", zone, SINK_TIMEZONE.key(), e.getMessage()), e);
@@ -283,17 +316,14 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         }
     }
 
+    /** The client's own endpoint checks (URL syntax, http/https, host, port range) on a throwaway builder; no I/O. */
     private static String urlProblem(String url) {
-        java.net.URL endpoint;
         try {
-            endpoint = new java.net.URL(url);
-        } catch (MalformedURLException e) {
+            new Client.Builder().addEndpoint(url);
+            return null;
+        } catch (IllegalArgumentException e) {
             return e.getMessage();
         }
-        if (!endpoint.getProtocol().equalsIgnoreCase("http") && !endpoint.getProtocol().equalsIgnoreCase("https")) {
-            return "only http and https are supported";
-        }
-        return endpoint.getHost().isEmpty() ? "the endpoint has no host" : null;
     }
 
     static RetryPolicy toRetryPolicy(int maxRetries) {
@@ -323,26 +353,45 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
     static Map<String, String> clientOptions(Map<String, String> tableOptions) {
         Map<String, String> options = prefixedOptions(tableOptions, CLIENT_OPTIONS_PREFIX);
         options.keySet().forEach(ClickHouseDynamicTableSinkFactory::checkClientOptionKey);
+        options.forEach(ClickHouseDynamicTableSinkFactory::checkClientOptionValue);
         return options;
     }
 
-    /**
-     * The clickhouse.server.* passthrough plus {@code print_pretty_type_names = 0}: the introspected
-     * type text is sent verbatim in every RowBinaryWithNamesAndTypes header, and the server rejects
-     * a pretty-printed {@code Tuple(<newline>    a Int32, …)} there with code 117.
-     */
+    /** The clickhouse.server.* passthrough; the connector's own settings are rejected rather than fought over. */
     static Map<String, String> serverSettings(Map<String, String> tableOptions) {
         Map<String, String> settings = prefixedOptions(tableOptions, SERVER_SETTINGS_PREFIX);
-        settings.put(PRINT_PRETTY_TYPE_NAMES, "0");
+        settings.keySet().forEach(setting ->
+                checkServerSettingNotConnectorOwned(SERVER_SETTINGS_PREFIX + setting, setting));
         return settings;
     }
 
+    /** Both key forms land on one client-builder key, the server one last, so the pair would collapse silently. */
+    static void checkServerSettingDefinedOnce(Map<String, String> clientOptions, Map<String, String> serverSettings) {
+        String prefix = ClientConfigProperties.SERVER_SETTING_PREFIX;
+        for (String key : clientOptions.keySet()) {
+            if (key.startsWith(prefix) && serverSettings.containsKey(key.substring(prefix.length()))) {
+                throw new ValidationException(String.format(
+                        "Option '%s%s' duplicates '%s%s' — set the server setting once.",
+                        CLIENT_OPTIONS_PREFIX, key, SERVER_SETTINGS_PREFIX, key.substring(prefix.length())));
+            }
+        }
+    }
+
     private static void checkClientOptionKey(String key) {
-        ConfigOption<?> firstClass = RESERVED_CLIENT_KEYS.get(key);
-        if (firstClass != null) {
+        checkNotConnectionOption(CLIENT_OPTIONS_PREFIX + key, RESERVED_CLIENT_KEYS.get(key));
+        // client-v2 strips the prefix and sends the rest verbatim, so a bare one becomes an empty setting or header name.
+        if (key.equals(ClientConfigProperties.HTTP_HEADER_PREFIX) || key.equals(ClientConfigProperties.SERVER_SETTING_PREFIX)) {
             throw new ValidationException(String.format(
-                    "Option '%s%s' would override '%s' — set '%s' instead.",
-                    CLIENT_OPTIONS_PREFIX, key, firstClass.key(), firstClass.key()));
+                    "Option '%s%s' has no name after the prefix — expected '%s%s<name>'.",
+                    CLIENT_OPTIONS_PREFIX, key, CLIENT_OPTIONS_PREFIX, key));
+        }
+        if (key.startsWith(ClientConfigProperties.SERVER_SETTING_PREFIX)) {
+            checkServerSettingNotConnectorOwned(CLIENT_OPTIONS_PREFIX + key,
+                    key.substring(ClientConfigProperties.SERVER_SETTING_PREFIX.length()));
+        }
+        if (key.startsWith(ClientConfigProperties.HTTP_HEADER_PREFIX)) {
+            checkNotConnectionOption(CLIENT_OPTIONS_PREFIX + key, RESERVED_CLIENT_HEADERS.get(
+                    key.substring(ClientConfigProperties.HTTP_HEADER_PREFIX.length()).toLowerCase(Locale.ROOT)));
         }
         if (!isClientOptionKey(key)) {
             throw new ValidationException(String.format(
@@ -351,6 +400,42 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
                     CLIENT_OPTIONS_PREFIX, key, supportedClientKeys(),
                     ClientConfigProperties.HTTP_HEADER_PREFIX, ClientConfigProperties.SERVER_SETTING_PREFIX));
         }
+    }
+
+    /** Client.Builder.build() parses option values eagerly, which would report a typo as a schema failure. */
+    private static void checkClientOptionValue(String key, String value) {
+        try {
+            ClientConfigProperties.parseConfigMap(Map.of(key, value));
+        } catch (RuntimeException e) {
+            throw new ValidationException(String.format(
+                    "Invalid value '%s' for '%s%s': %s", value, CLIENT_OPTIONS_PREFIX, key, e.getMessage()), e);
+        }
+    }
+
+    /** The client sends these as its own headers; as a server setting the server ignores (database) or rejects (user, password) the copy without naming the option. */
+    private static void checkNotConnectionOption(String optionKey, ConfigOption<?> firstClass) {
+        if (firstClass != null) {
+            throw new ValidationException(String.format(
+                    "Option '%s' duplicates the connection option '%s' — set '%s' instead.",
+                    optionKey, firstClass.key(), firstClass.key()));
+        }
+    }
+
+    /** Whichever request carries the connector's copy, the client keeps exactly one value per setting, so the user's would lose silently. */
+    private static void checkServerSettingNotConnectorOwned(String optionKey, String setting) {
+        checkNotConnectionOption(optionKey, RESERVED_CLIENT_KEYS.get(setting));
+        if (PRINT_PRETTY_TYPE_NAMES.equals(setting)) {
+            throw connectorOwnedSetting(optionKey, "with its schema introspection");
+        }
+        if (INSERT_SERVER_SETTINGS.contains(setting)) {
+            throw connectorOwnedSetting(optionKey, "with every insert");
+        }
+    }
+
+    private static ValidationException connectorOwnedSetting(String optionKey, String sentWith) {
+        return new ValidationException(String.format(
+                "Option '%s' collides with the setting the connector itself sends %s — remove it.",
+                optionKey, sentWith));
     }
 
     private static boolean isClientOptionKey(String key) {

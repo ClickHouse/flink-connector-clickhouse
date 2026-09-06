@@ -194,9 +194,12 @@ Connection options (required unless noted): `url`, `username`, `password` (defau
 | `sink.ignore-unknown-flink-columns` | `false` | `true` drops Flink columns absent from the ClickHouse table instead of failing |
 
 **Passthrough**: `clickhouse.client.<key>` options are forwarded to the ClickHouse client,
-`clickhouse.server.<key>` become per-query server settings. The connector itself always sends
-`print_pretty_type_names = 0`, so the type names it introspects are canonical (named `Tuple`
-columns are otherwise pretty-printed across lines and rejected in the insert header).
+`clickhouse.server.<key>` become per-query server settings. The connector sends
+`print_pretty_type_names = 0` with its schema introspection only, so the type names it reads are
+canonical (named `Tuple` columns are otherwise pretty-printed across lines and rejected in the
+insert header), and pins `input_format_null_as_default`, `input_format_defaults_for_omitted_fields`
+and (for `JSON` columns) `input_format_binary_read_json_as_string` on every insert; a user copy of
+any of these settings, in either spelling, is rejected.
 
 Flink `STRING` into a ClickHouse `JSON` column works out of the box — the connector enables
 the client's JSON-as-string mode automatically exactly when a `JSON` column is mapped.
@@ -221,7 +224,7 @@ at planning naming the column and both types.
 | `ARRAY<t>` | `Array(T)` | only `Array(Nullable(T))` can carry nested NULLs |
 | `MAP<k, v>` | `Map(K, V)` | string/integer/decimal keys except `UInt64`; values not `Nullable` |
 | `MULTISET<t>` | `Map(T, UInt64)` | counts become the values |
-| `ROW<...>` | `Tuple(...)` | positional; fields/elements not nullable |
+| `ROW<...>` | `Tuple(...)` | positional — a ROW whose field names are a named Tuple's element names in another order is rejected at planning; fields/elements not nullable |
 
 Unsupported: `BINARY`/`VARBINARY`, `TIME`, `TIMESTAMP WITH TIME ZONE`, `INTERVAL`; ClickHouse
 `Enum` (#43), `Variant` (#60), `Time` (#91), `IPv4/6`, `Dynamic`, geo — exclude such columns

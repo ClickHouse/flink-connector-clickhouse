@@ -232,10 +232,6 @@ public class DataWriter {
         }
     }
 
-    /**
-     * Generic dispatcher: routes a Map value to the right typed writer based on
-     * {@code column.getDataType()}. Per design spec §8a.
-     */
     /** SimpleAggregateFunction(f, T) is wire-encoded as its inner type T (issue #143); planning unwraps with this too. */
     public static ClickHouseColumn unwrapTransparentWrappers(ClickHouseColumn column) {
         ClickHouseColumn c = column;
@@ -245,6 +241,10 @@ public class DataWriter {
         return c;
     }
 
+    /**
+     * Generic dispatcher: routes a Map value to the right typed writer based on
+     * {@code column.getDataType()}. Per design spec §8a.
+     */
     public void writeValue(Object value, ClickHouseColumn column) throws IOException {
         column = unwrapTransparentWrappers(column);
 

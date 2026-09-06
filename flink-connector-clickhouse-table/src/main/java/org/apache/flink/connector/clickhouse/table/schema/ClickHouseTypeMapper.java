@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -757,26 +758,27 @@ public final class ClickHouseTypeMapper {
 
     private static ValueConverter buildMapValueConverter(LogicalType valueType, ClickHouseColumn valueColumn,
                                                          ZoneId zone, String path) {
-        checkMapValueNullability(valueType, valueColumn);
+        checkNestedNullability(valueType, valueColumn,
+                "Map values (" + valueColumn.getOriginalTypeName() + ")",
+                "the Flink map value type " + valueType.asSummaryString());
         return buildNestedConverter(valueType, valueColumn, zone, path + " value", "map value");
     }
 
     /**
-     * Neither side may be nullable: the client's serializer never writes a Map value's
-     * non-null marker, so a Nullable value type cannot be written byte-exactly.
+     * Neither side may be nullable: the client's serializer never writes a nested value's
+     * non-null marker, so a Nullable Map value or Tuple element cannot be written byte-exactly.
      */
-    private static void checkMapValueNullability(LogicalType valueType, ClickHouseColumn valueColumn) {
-        if (valueColumn.isNullable()) {
+    private static void checkNestedNullability(LogicalType flinkType, ClickHouseColumn target,
+                                               String targetElements, String flinkElement) {
+        if (target.isNullable()) {
             throw TypeMappingException.mismatch(String.format(
-                    "Nullable Map values (%s) are not supported by the sink's serializer — "
-                    + "use a non-Nullable value type",
-                    valueColumn.getOriginalTypeName()));
+                    "Nullable %s are not supported by the sink's serializer — use a non-Nullable type",
+                    targetElements));
         }
-        if (valueType.isNullable()) {
+        if (flinkType.isNullable()) {
             throw TypeMappingException.mismatch(String.format(
-                    "the Flink map value type %s is nullable but the ClickHouse value type %s "
-                    + "is not Nullable — declare the value NOT NULL",
-                    valueType.asSummaryString(), valueColumn.getOriginalTypeName()));
+                    "%s is nullable but the ClickHouse type %s is not Nullable — declare it NOT NULL",
+                    flinkElement, target.getOriginalTypeName()));
         }
     }
 
@@ -844,6 +846,7 @@ public final class ClickHouseTypeMapper {
         RowType rowType = (RowType) flinkType;
         List<ClickHouseColumn> elements = target.getNestedColumns();
         checkRowFieldCountMatchesTuple(rowType, elements);
+        checkNamedTupleOrder(rowType, elements);
 
         RowData.FieldGetter[] fieldGetters = new RowData.FieldGetter[rowType.getFieldCount()];
         ValueConverter[] fieldConverters = new ValueConverter[rowType.getFieldCount()];
@@ -863,28 +866,31 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    private static ValueConverter buildRowFieldConverter(RowType.RowField field, ClickHouseColumn element,
-                                                         int position, ZoneId zone, String path) {
-        checkRowFieldNullability(field, element, position);
-        return buildNestedConverter(field.getType(), element, zone,
-                path + "." + field.getName(), "ROW field '" + field.getName() + "'");
+    /** Binding is positional; the same names as a named Tuple in another order is almost certainly a mistake. */
+    private static void checkNamedTupleOrder(RowType rowType, List<ClickHouseColumn> elements) {
+        List<String> elementNames = new ArrayList<>(elements.size());
+        for (ClickHouseColumn element : elements) {
+            if (element.getColumnName() == null || element.getColumnName().isEmpty()) {
+                return;
+            }
+            elementNames.add(element.getColumnName());
+        }
+        List<String> fieldNames = rowType.getFieldNames();
+        if (!fieldNames.equals(elementNames) && new HashSet<>(fieldNames).equals(new HashSet<>(elementNames))) {
+            throw TypeMappingException.mismatch(String.format(
+                    "ROW fields %s bind to Tuple elements by position, but the Tuple names them %s — "
+                    + "reorder the ROW fields to match",
+                    fieldNames, elementNames));
+        }
     }
 
-    /** Neither side may be nullable, for the same serializer gap as {@link #checkMapValueNullability}. */
-    private static void checkRowFieldNullability(RowType.RowField field, ClickHouseColumn element,
-                                                 int position) {
-        if (element.isNullable()) {
-            throw TypeMappingException.mismatch(String.format(
-                    "Nullable Tuple elements (%s at position %d) are not supported by the "
-                    + "sink's serializer — use a non-Nullable element type",
-                    element.getOriginalTypeName(), position + 1));
-        }
-        if (field.getType().isNullable()) {
-            throw TypeMappingException.mismatch(String.format(
-                    "the Flink ROW field '%s' is nullable but the ClickHouse Tuple element %s "
-                    + "is not Nullable — declare the field NOT NULL",
-                    field.getName(), element.getOriginalTypeName()));
-        }
+    private static ValueConverter buildRowFieldConverter(RowType.RowField field, ClickHouseColumn element,
+                                                         int position, ZoneId zone, String path) {
+        checkNestedNullability(field.getType(), element,
+                String.format("Tuple elements (%s at position %d)", element.getOriginalTypeName(), position + 1),
+                "the Flink ROW field '" + field.getName() + "'");
+        return buildNestedConverter(field.getType(), element, zone,
+                path + "." + field.getName(), "ROW field '" + field.getName() + "'");
     }
 
     /** Converts every field of a {@code ROW} into the {@code Object[]} tuple the payload carries. */

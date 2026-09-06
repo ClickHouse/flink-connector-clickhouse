@@ -10,7 +10,7 @@
   `sink.ignore-unknown-flink-columns`, `clickhouse.client.*` / `clickhouse.server.*`
   passthrough) and the type mapping are documented in the README's "Table API" section.
 - `ClickHouseClientConfig`: a constructor taking a `RetryPolicy` that does not ping at
-  construction, `copy()`, and `createPlanningClient()`.
+  construction, `copy()`, and `createPlanningClient(Map)` (planning-only server settings).
 - `ClickHouseSinkDefaults`: the batching defaults shared by the DataStream builder and the SQL options.
 
 ### Fixed
