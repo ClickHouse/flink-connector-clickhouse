@@ -79,6 +79,8 @@ public class ClickHouseDynamicTableSink implements DynamicTableSink {
                 .setMaxBufferedRequests(maxBufferedRequests)
                 .setMaxRecordSizeInBytes(maxRecordSizeInBytes)
                 .setClickHouseClientConfig(clientConfig)
+                // The factory pinged at planning; a planner hook must not go back to the network.
+                .setVerifyConnectivity(false)
                 .build();
     }
 

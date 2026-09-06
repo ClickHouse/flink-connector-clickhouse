@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 
 class ClickHouseDynamicTableSinkTest {
 
-    /** Built the way the factory builds it, minus the network: the no-ping config constructor. */
+    /** Built the way the factory builds it, minus the network. */
     private static ClickHouseDynamicTableSink sink() {
         ClickHouseClientConfig config = new ClickHouseClientConfig("http://localhost:1", "u", "", "db", "t",
                 Map.of(), Map.of(), RetryPolicy.forever());

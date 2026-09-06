@@ -233,10 +233,9 @@ class ClickHouseDynamicTableSinkFactoryTest {
                 new ClientException("Failed to get table schema",
                         new ClientException("Failed to connect", new ConnectException("Connection refused")))));
         assertEquals("plain", ClickHouseDynamicTableSinkFactory.rootMessage(new RuntimeException("plain")));
-        // pingLoop's interrupt wrapper explains what was interrupted; the JDK's "sleep interrupted" does not.
-        assertEquals("Interrupted while checking ClickHouse connectivity.", ClickHouseDynamicTableSinkFactory.rootMessage(
-                new RuntimeException("Interrupted while checking ClickHouse connectivity.",
-                        new InterruptedException("sleep interrupted"))));
+        // The wrapper says what was interrupted; the JDK's "sleep interrupted" does not.
+        assertEquals("Failed to get table schema", ClickHouseDynamicTableSinkFactory.rootMessage(
+                new ClientException("Failed to get table schema", new InterruptedException("sleep interrupted"))));
     }
 
     /** client-v2 reports a DESCRIBE timeout as a message-less TimeoutException under a wrapper that names the limit. */
@@ -327,7 +326,7 @@ class ClickHouseDynamicTableSinkFactoryTest {
         return Configuration.fromMap(Map.of("url", url, "database", "db", "table", "t"));
     }
 
-    /** The no-ping constructor with port 1: nothing here reaches the network. */
+    /** Port 1: nothing here reaches the network. */
     private static ClickHouseClientConfig planningConfig(String url, Map<String, String> clientOptions) {
         return new ClickHouseClientConfig(url, "u", "", "db", "t", clientOptions, Map.of(), RetryPolicy.forever());
     }

@@ -137,6 +137,7 @@ val checkCrossVersionCopiesInSync by tasks.registering {
         "src/main/java/org/apache/flink/connector/clickhouse/sink/ClickHouseAsyncSinkSerializer.java",
         "src/test/java/org/apache/flink/connector/clickhouse/sink/ClickHouseSinkStateTests.java",
         "src/test/java/org/apache/flink/connector/clickhouse/sink/ClickHouseClientConfigTest.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/sink/ClickHouseAsyncSinkBuilderTest.java",
         "src/test/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSinkFactoryTest.java",
         "src/test/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSinkTest.java",
     ).map { file(it) to project(":flink-connector-clickhouse-1.17").file(it) }

@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ClickHouseClientConfigTest {
 
-    /** The no-ping constructor the Table API factory uses: nothing here touches the network. */
+    /** The constructor the Table API factory uses; no constructor touches the network. */
     private static ClickHouseClientConfig config() {
         return new ClickHouseClientConfig("http://localhost:1", "u", "secret", "db", "t",
                 Map.of("socket_timeout", "1000"), Map.of("async_insert", "1"), RetryPolicy.limited(2));

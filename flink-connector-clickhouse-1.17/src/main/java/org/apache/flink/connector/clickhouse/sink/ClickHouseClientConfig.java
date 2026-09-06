@@ -14,6 +14,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+/**
+ * Connection settings for the sink, serialized to the task managers. Constructing one never
+ * touches the network: {@link ClickHouseAsyncSinkBuilder#build()} verifies connectivity on the
+ * job driver via {@link #verifyConnectivity()}, while the Table API factory relies on its
+ * planning-time DESCRIBE through {@link #createPlanningClient(Map)} failing instead.
+ */
 public class ClickHouseClientConfig implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseClientConfig.class);
     private static final long serialVersionUID = 1L;
@@ -37,13 +43,11 @@ public class ClickHouseClientConfig implements Serializable {
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, boolean enableJsonSupportAsString) {
         this(url, username, password, database, tableName, options, serverSettings, RetryPolicy.forever());
         this.enableJsonSupportAsString = enableJsonSupportAsString;
-        pingLoop(initClient(database));
     }
 
     /**
-     * No-ping constructor for the Table API factory: connectivity is checked separately via
-     * {@link #createPlanningClient(Map)} on a short-lived client the factory closes after
-     * introspection. The retry policy governs runtime batch retries only, never the ping.
+     * Constructor used by the Table API factory. The retry policy governs runtime batch retries
+     * only, never the connectivity ping.
      *
      * <p>JSON-as-string stays disabled here; the factory enables it via
      * {@link #setEnableJsonSupportAsString} once schema resolution maps a JSON column.
@@ -80,59 +84,42 @@ public class ClickHouseClientConfig implements Serializable {
     }
 
     /**
-     * Builds a fresh client for planning-time use and verifies connectivity with a short
-     * fixed ping. Bypasses the cached runtime client so nothing long-lived is left open
-     * planner-side; the caller owns the returned client and must close it. The extra server
-     * settings reach this client only, never the serialized runtime config.
+     * Pings up to {@link #DEFAULT_MAX_RETRIES} times, 1s apart, on a probe client closed either
+     * way — a fixed bound, independent of the retry policy, which governs batch retries. An
+     * interrupt during the retry sleep is re-asserted and fails with its own message; one that
+     * lands inside client-v2's {@code ping()} is swallowed there (it returns false with the flag
+     * cleared) and counts as a failed attempt.
      */
-    public Client createPlanningClient(Map<String, String> planningServerSettings) {
-        ClickHouseClientConfig planning = copy();
-        planning.setServerSettings(planningServerSettings);
-        Client planningClient = planning.initClient(database);
-        try {
-            pingLoop(planningClient);
-        } catch (RuntimeException e) {
-            try {
-                planningClient.close();
-            } catch (RuntimeException closeFailure) {
-                // A failing close must not replace the ping error the user needs to see.
-                e.addSuppressed(closeFailure);
+    public void verifyConnectivity() {
+        try (Client probe = initClient(database, Map.of())) {
+            boolean isServerAlive = false;
+            for (int i = 0; i < DEFAULT_MAX_RETRIES && !isServerAlive; i++) {
+                isServerAlive = probe.ping();
+                if (!isServerAlive) {
+                    LOG.warn("Ping failed; will retry up to {} times in {} seconds.", DEFAULT_MAX_RETRIES, 1);
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException("Interrupted while checking ClickHouse connectivity.", e);
+                    }
+                }
             }
-            throw e;
+            if (!isServerAlive) {
+                throw new RuntimeException("ClickHouse server is not accessible. Please check your configuration or ClickHouse server.");
+            }
         }
-        return planningClient;
     }
 
     /**
-     * Pings up to {@link #DEFAULT_MAX_RETRIES} times, 1s apart — a fixed bound, deliberately
-     * not governed by sink.max-retries, which configures runtime batch retries: reusing it
-     * here would let a batch-resilience setting block planning for minutes. An interrupt
-     * during the retry sleep is re-asserted and fails with its own message; one that lands
-     * inside client-v2's {@code ping()} is swallowed there (it returns false with the flag
-     * cleared) and counts as a failed attempt.
+     * A fresh, uncached client for planning; the caller closes it. The extra server settings
+     * reach this client only, never the serialized runtime config.
      */
-    private static void pingLoop(Client client) {
-        boolean isServerAlive = false;
-        for (int i = 0; i < DEFAULT_MAX_RETRIES && !isServerAlive; i++) {
-            isServerAlive = client.ping();
-            if (!isServerAlive) {
-                LOG.warn(
-                        "Ping failed; will retry up to {} times in {} seconds.",
-                        DEFAULT_MAX_RETRIES, 1);
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException("Interrupted while checking ClickHouse connectivity.", e);
-                }
-            }
-        }
-        if (!isServerAlive) {
-            throw new RuntimeException("ClickHouse server is not accessible. Please check your configuration or ClickHouse server.");
-        }
+    public Client createPlanningClient(Map<String, String> planningServerSettings) {
+        return initClient(database, planningServerSettings);
     }
 
-    private Client initClient(String database) {
+    private Client initClient(String database, Map<String, String> extraServerSettings) {
         Client.Builder clientBuilder = new Client.Builder()
                 .addEndpoint(url)
                 .setUsername(username)
@@ -145,12 +132,15 @@ public class ClickHouseClientConfig implements Serializable {
         for (Map.Entry<String, String> entry : serverSettings.entrySet()) {
             clientBuilder.serverSetting(entry.getKey(), entry.getValue());
         }
+        for (Map.Entry<String, String> entry : extraServerSettings.entrySet()) {
+            clientBuilder.serverSetting(entry.getKey(), entry.getValue());
+        }
         return clientBuilder.build();
     }
 
     public Client createClient(String database) {
         if (this.client == null) {
-            this.client = initClient(database);
+            this.client = initClient(database, Map.of());
         }
         return client;
     }

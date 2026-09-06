@@ -57,12 +57,12 @@ import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOpt
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.USERNAME;
 
 /**
- * Flink SQL factory for {@code 'connector' = 'clickhouse'}: validate options → ping →
- * introspect the target table → resolve the schema → build the sink. All option, schema
+ * Flink SQL factory for {@code 'connector' = 'clickhouse'}: validate options → introspect
+ * the target table → resolve the schema → build the sink. All option, schema
  * and connectivity errors surface here, at planning time.
  *
  * <p>Re-invoked by {@code EXPLAIN}, statement sets and {@code EXECUTE PLAN} — each
- * invocation pings and introspects anew through a short-lived client, so planning always
+ * invocation introspects anew through a short-lived client, so planning always
  * validates against the table's current schema, even after {@code ALTER TABLE} in a
  * long-lived planner JVM (SQL gateway, session cluster).
  */
@@ -231,7 +231,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
     }
 
     /**
-     * Reads the table's current column types through a short-lived, pinged client —
+     * Reads the table's current column types through a short-lived client —
      * deliberately unmemoized so a long-lived planner sees {@code ALTER TABLE}.
      */
     static TableSchema introspect(ReadableConfig options, ClickHouseClientConfig clientConfig) {

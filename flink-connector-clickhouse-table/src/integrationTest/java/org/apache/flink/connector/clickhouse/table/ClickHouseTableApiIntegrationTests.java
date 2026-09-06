@@ -191,9 +191,9 @@ public class ClickHouseTableApiIntegrationTests {
     }
 
     @Test
-    void planningPingIsNotGovernedBySinkMaxRetries() {
+    void unreachableServerFailsPlanningFastWhateverSinkMaxRetries() {
         TableEnvironment env = tableEnvironment();
-        // Port 1 never listens, so every ping fails immediately with connection refused.
+        // Port 1 never listens, so the planning DESCRIBE fails at once with connection refused.
         env.executeSql(
                 "CREATE TABLE ch_unreachable (id BIGINT NOT NULL) WITH ("
                         + "'connector' = 'clickhouse',"
@@ -205,12 +205,13 @@ public class ClickHouseTableApiIntegrationTests {
                         + "'sink.max-retries' = '100000')");
 
         long start = System.nanoTime();
-        assertFailsWith(() -> env.executeSql("INSERT INTO ch_unreachable VALUES (1)"), "not accessible");
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_unreachable VALUES (1)"),
+                "Could not read the schema", "Connection refused");
         long elapsedMs = (System.nanoTime() - start) / 1_000_000;
 
-        // The ping is a fixed 3 attempts with 1s pauses; 100 000 attempts would block for days.
+        // sink.max-retries governs batch retries only; 100 000 attempts here would block for days.
         Assertions.assertTrue(elapsedMs < 60_000,
-                "Planning ping blocked for " + elapsedMs + "ms — is sink.max-retries driving it again?");
+                "Planning blocked for " + elapsedMs + "ms — is sink.max-retries driving it?");
     }
 
     @Test
