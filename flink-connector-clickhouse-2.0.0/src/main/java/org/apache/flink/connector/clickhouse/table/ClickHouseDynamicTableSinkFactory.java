@@ -147,7 +147,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         // Servers too old to know input_format_binary_read_json_as_string never see it.
         clientConfig.setEnableJsonSupportAsString(SchemaResolver.targetsJsonColumn(mappings));
 
-        return buildSink(clientConfig, RowDataDataMapper.of(mappings), options);
+        return new ClickHouseDynamicTableSink(clientConfig, RowDataDataMapper.of(mappings), options);
     }
 
     // ------------------------------------------------------------------------------------
@@ -268,22 +268,6 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
     /** build()'s SSL failures name the unreadable file or bad password only in a cause. */
     private static String withCause(Throwable e) {
         return e.getCause() == null ? e.getMessage() : e.getMessage() + " (" + rootMessage(e.getCause()) + ")";
-    }
-
-    private static ClickHouseDynamicTableSink buildSink(ClickHouseClientConfig clientConfig,
-                                                       RowDataDataMapper mapper,
-                                                       ReadableConfig options) {
-        return new ClickHouseDynamicTableSink(
-                clientConfig,
-                mapper,
-                options.get(SINK_BUFFER_FLUSH_MAX_ROWS),
-                options.get(SINK_BUFFER_FLUSH_MAX_BYTES).getBytes(),
-                options.get(SINK_BUFFER_FLUSH_INTERVAL).toMillis(),
-                options.get(SINK_MAX_IN_FLIGHT_REQUESTS),
-                options.get(SINK_MAX_BUFFERED_REQUESTS),
-                options.get(SINK_RECORD_MAX_BYTES).getBytes(),
-                options.getOptional(FactoryUtil.SINK_PARALLELISM).orElse(null),
-                options.get(DATABASE) + "." + options.get(TABLE));
     }
 
     private static void logIgnoredPrimaryKey(Context context) {

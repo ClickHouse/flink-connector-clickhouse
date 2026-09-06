@@ -3,6 +3,7 @@ package org.apache.flink.connector.clickhouse.table;
 import com.clickhouse.client.api.metadata.TableSchema;
 import com.clickhouse.data.ClickHouseColumn;
 
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.clickhouse.sink.ClickHouseClientConfig;
 import org.apache.flink.connector.clickhouse.table.data.RowDataDataMapper;
 import org.apache.flink.connector.clickhouse.table.schema.SchemaResolver;
@@ -32,8 +33,7 @@ class ClickHouseDynamicTableSinkTest {
                 ResolvedSchema.of(Column.physical("id", DataTypes.BIGINT().notNull())),
                 new TableSchema(ClickHouseColumn.parse("id Int64")),
                 new SchemaResolverOptions("db", "t", ZoneId.of("UTC"), false)));
-        return new ClickHouseDynamicTableSink(config, mapper, 500, 5L * 1024 * 1024, 5_000L, 50, 10_000,
-                1L * 1024 * 1024, null, "db.t");
+        return new ClickHouseDynamicTableSink(config, mapper, Configuration.fromMap(Map.of("database", "db", "table", "t")));
     }
 
     /** The planner copies the sink per INSERT of a statement set; the copies must not share the config. */
@@ -45,6 +45,10 @@ class ClickHouseDynamicTableSinkTest {
         assertEquals(original.asSummaryString(), copy.asSummaryString());
         configOf(copy).setEnableJsonSupportAsString(true);
         assertFalse(configOf(original).getEnableJsonSupportAsString());
+    }
+
+    @Test void summaryNamesTheTargetTable() {
+        assertEquals("ClickHouse[db.t]", sink().asSummaryString());
     }
 
     @Test void changelogModeIsInsertOnlyWhateverThePlannerRequests() {
