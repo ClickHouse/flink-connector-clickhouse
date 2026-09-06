@@ -41,18 +41,6 @@ public class ClickHouseClientConfig implements Serializable {
     private BatchFailureStrategy batchFailureStrategy = BatchFailureStrategy.STOP_FLINK;
 
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, boolean enableJsonSupportAsString) {
-        this(url, username, password, database, tableName, options, serverSettings, RetryPolicy.forever());
-        this.enableJsonSupportAsString = enableJsonSupportAsString;
-    }
-
-    /**
-     * Constructor used by the Table API factory. The retry policy governs runtime batch retries
-     * only, never the connectivity ping.
-     *
-     * <p>JSON-as-string stays disabled here; the factory enables it via
-     * {@link #setEnableJsonSupportAsString} once schema resolution maps a JSON column.
-     */
-    public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, RetryPolicy retryPolicy) {
         this.url = url;
         this.username = username;
         this.password = password;
@@ -61,7 +49,7 @@ public class ClickHouseClientConfig implements Serializable {
         this.fullProductName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s)", ClickHouseSinkVersion.getVersion(), EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion());
         this.options = new HashMap<>(Optional.ofNullable(options).orElseGet(HashMap::new));
         this.serverSettings = new HashMap<>(Optional.ofNullable(serverSettings).orElseGet(HashMap::new));
-        this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy must not be null");
+        this.enableJsonSupportAsString = enableJsonSupportAsString;
         LOG.info("ClickHouseClientConfig: url={}, user={}, password=******, database={}", url, username, database);
     }
 
@@ -76,10 +64,10 @@ public class ClickHouseClientConfig implements Serializable {
     /** Deep copy for DynamicTableSink#copy(); the cached client is not shared. */
     public ClickHouseClientConfig copy() {
         ClickHouseClientConfig copy = new ClickHouseClientConfig(
-                url, username, password, database, tableName, options, serverSettings, retryPolicy);
+                url, username, password, database, tableName, options, serverSettings, enableJsonSupportAsString);
         copy.setSupportDefault(supportDefault);
+        copy.setRetryPolicy(retryPolicy);
         copy.setBatchFailureStrategy(batchFailureStrategy);
-        copy.setEnableJsonSupportAsString(enableJsonSupportAsString);
         return copy;
     }
 

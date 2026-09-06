@@ -224,7 +224,8 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
                 options.get(TABLE),
                 clientOptions,
                 serverSettings,
-                toRetryPolicy(options.get(SINK_MAX_RETRIES)));
+                false); // JSON-as-string is decided once schema resolution has mapped the columns
+        clientConfig.setRetryPolicy(toRetryPolicy(options.get(SINK_MAX_RETRIES)));
         clientConfig.setBatchFailureStrategy(
                 parseBatchFailureStrategy(options.get(SINK_BATCH_FAILURE_STRATEGY)));
         return clientConfig;

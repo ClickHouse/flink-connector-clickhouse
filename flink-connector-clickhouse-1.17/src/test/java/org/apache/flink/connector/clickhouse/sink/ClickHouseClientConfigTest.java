@@ -12,10 +12,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ClickHouseClientConfigTest {
 
-    /** The constructor the Table API factory uses; no constructor touches the network. */
+    /** No constructor touches the network, so port 1 is safe here. */
     private static ClickHouseClientConfig config() {
-        return new ClickHouseClientConfig("http://localhost:1", "u", "secret", "db", "t",
-                Map.of("socket_timeout", "1000"), Map.of("async_insert", "1"), RetryPolicy.limited(2));
+        ClickHouseClientConfig config = new ClickHouseClientConfig("http://localhost:1", "u", "secret", "db", "t",
+                Map.of("socket_timeout", "1000"), Map.of("async_insert", "1"), false);
+        config.setRetryPolicy(RetryPolicy.limited(2));
+        return config;
     }
 
     @Test void copyCarriesEveryFieldAndSharesNoMutableState() {

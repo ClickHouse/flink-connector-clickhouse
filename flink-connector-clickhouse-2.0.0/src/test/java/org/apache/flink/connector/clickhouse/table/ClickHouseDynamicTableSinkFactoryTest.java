@@ -328,7 +328,7 @@ class ClickHouseDynamicTableSinkFactoryTest {
 
     /** Port 1: nothing here reaches the network. */
     private static ClickHouseClientConfig planningConfig(String url, Map<String, String> clientOptions) {
-        return new ClickHouseClientConfig(url, "u", "", "db", "t", clientOptions, Map.of(), RetryPolicy.forever());
+        return new ClickHouseClientConfig(url, "u", "", "db", "t", clientOptions, Map.of(), false);
     }
 
     /** clickhouse.server.<k> and clickhouse.client.clickhouse_setting_<k> land on one builder key; the pair must not collapse silently. */

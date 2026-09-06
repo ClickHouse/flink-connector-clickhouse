@@ -9,8 +9,8 @@
   `sink.parallelism`, `sink.max-retries`, `sink.batch-failure-strategy`, `sink.timezone`,
   `sink.ignore-unknown-flink-columns`, `clickhouse.client.*` / `clickhouse.server.*`
   passthrough) and the type mapping are documented in the README's "Table API" section.
-- `ClickHouseClientConfig`: a constructor taking a `RetryPolicy`, `copy()`,
-  `verifyConnectivity()`, and `createPlanningClient(Map)` (planning-only server settings).
+- `ClickHouseClientConfig`: `copy()`, `verifyConnectivity()`, and `createPlanningClient(Map)`
+  (planning-only server settings).
 - `ClickHouseAsyncSinkBuilder.setVerifyConnectivity(boolean)`: opt out of the connectivity
   check that `build()` performs.
 - `ClickHouseSinkDefaults`: the batching defaults shared by the DataStream builder and the SQL options.
