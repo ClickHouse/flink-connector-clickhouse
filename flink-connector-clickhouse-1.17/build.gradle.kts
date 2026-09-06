@@ -29,7 +29,7 @@ val flinkVersion = System.getenv("FLINK_VERSION") ?: "1.17.2"
 
 extra.apply {
     set("flinkVersion", flinkVersion)
-    set("log4jVersion","2.17.2")
+    set("log4jVersion","2.25.4")
     set("testContainersVersion", "2.0.2")
     set("testContainersClickHouseVersion", "1.21.3")
     set("byteBuddyVersion", "1.17.5")

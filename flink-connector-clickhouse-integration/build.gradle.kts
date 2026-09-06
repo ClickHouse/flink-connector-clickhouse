@@ -20,7 +20,7 @@ repositories {
 }
 
 extra.apply {
-    set("log4jVersion","2.17.2")
+    set("log4jVersion","2.25.4")
     set("testContainersVersion", "2.0.2")
     set("byteBuddyVersion", "1.17.5")
 }

@@ -26,7 +26,7 @@ repositories {
 
 extra.apply {
     set("flinkVersion", "2.0.0") // the default still will be 2.0.0 since it is more popular currently
-    set("log4jVersion","2.17.2")
+    set("log4jVersion","2.25.4")
     set("testContainersVersion", "2.0.2")
     set("testContainersClickHouseVersion", "1.21.3")
     set("byteBuddyVersion", "1.17.5")
