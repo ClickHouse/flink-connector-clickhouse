@@ -166,6 +166,73 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals("ZZ99", second.getString("code_s"));
     }
 
+    /**
+     * One column per writable scalar type, two rows holding each column's bounds: the converter,
+     * the writer's wire encoding and the server must agree at the extremes. Values are read back
+     * as ClickHouse prints them, so the expectations are the server's own rendering.
+     */
+    @Test
+    void everyScalarColumnTypeRoundTripsAtItsBounds() throws Exception {
+        String[][] columns = {
+                // ClickHouse type   Flink type         low (Flink SQL)                                                       printed                                    high (Flink SQL)                                                     printed
+                {"Bool",             "BOOLEAN",         "false",                                                              "false",                                   "true",                                                              "true"},
+                {"Int8",             "TINYINT",         "CAST(-128 AS TINYINT)",                                              "-128",                                    "CAST(127 AS TINYINT)",                                              "127"},
+                {"Int16",            "SMALLINT",        "CAST(-32768 AS SMALLINT)",                                           "-32768",                                  "CAST(32767 AS SMALLINT)",                                           "32767"},
+                {"Int32",            "INT",             "CAST(-2147483648 AS INT)",                                           "-2147483648",                             "CAST(2147483647 AS INT)",                                           "2147483647"},
+                {"Int64",            "BIGINT",          "CAST('-9223372036854775808' AS BIGINT)",                             "-9223372036854775808",                    "CAST('9223372036854775807' AS BIGINT)",                             "9223372036854775807"},
+                {"Int128",           "DECIMAL(38, 0)",  "CAST('-99999999999999999999999999999999999999' AS DECIMAL(38, 0))", "-99999999999999999999999999999999999999", "CAST('99999999999999999999999999999999999999' AS DECIMAL(38, 0))", "99999999999999999999999999999999999999"},
+                {"Int256",           "DECIMAL(38, 0)",  "CAST('-99999999999999999999999999999999999999' AS DECIMAL(38, 0))", "-99999999999999999999999999999999999999", "CAST('99999999999999999999999999999999999999' AS DECIMAL(38, 0))", "99999999999999999999999999999999999999"},
+                {"UInt8",            "SMALLINT",        "CAST(0 AS SMALLINT)",                                                "0",                                       "CAST(255 AS SMALLINT)",                                             "255"},
+                {"UInt16",           "INT",             "0",                                                                  "0",                                       "65535",                                                             "65535"},
+                {"UInt32",           "BIGINT",          "CAST(0 AS BIGINT)",                                                  "0",                                       "CAST(4294967295 AS BIGINT)",                                        "4294967295"},
+                {"UInt64",           "DECIMAL(20, 0)",  "CAST(0 AS DECIMAL(20, 0))",                                          "0",                                       "CAST('18446744073709551615' AS DECIMAL(20, 0))",                    "18446744073709551615"},
+                {"UInt128",          "DECIMAL(38, 0)",  "CAST(0 AS DECIMAL(38, 0))",                                          "0",                                       "CAST('99999999999999999999999999999999999999' AS DECIMAL(38, 0))",  "99999999999999999999999999999999999999"},
+                {"UInt256",          "DECIMAL(38, 0)",  "CAST(0 AS DECIMAL(38, 0))",                                          "0",                                       "CAST('99999999999999999999999999999999999999' AS DECIMAL(38, 0))",  "99999999999999999999999999999999999999"},
+                // Flink folds FLOAT literals to 7 significant digits, so the bound is stated that way (two ULPs below
+                // Float32's max); read back widened to Float64, since toString(Float32) rounds to 7 digits as well
+                {"Float32",          "FLOAT",           "CAST('-3.402823E38' AS FLOAT)",                                      "-3.4028230607370965e38",                  "CAST('3.402823E38' AS FLOAT)",                                      "3.4028230607370965e38"},
+                {"Float64",          "DOUBLE",          "CAST('-1.7976931348623157E308' AS DOUBLE)",                          "-1.7976931348623157e308",                 "CAST('1.7976931348623157E308' AS DOUBLE)",                          "1.7976931348623157e308"},
+                {"Decimal(9, 2)",    "DECIMAL(9, 2)",   "CAST('-9999999.99' AS DECIMAL(9, 2))",                               "-9999999.99",                             "CAST('9999999.99' AS DECIMAL(9, 2))",                               "9999999.99"},
+                {"Decimal(18, 4)",   "DECIMAL(18, 4)",  "CAST('-99999999999999.9999' AS DECIMAL(18, 4))",                     "-99999999999999.9999",                    "CAST('99999999999999.9999' AS DECIMAL(18, 4))",                     "99999999999999.9999"},
+                {"Decimal(38, 10)",  "DECIMAL(38, 10)", "CAST('-9999999999999999999999999999.9999999999' AS DECIMAL(38, 10))", "-9999999999999999999999999999.9999999999", "CAST('9999999999999999999999999999.9999999999' AS DECIMAL(38, 10))", "9999999999999999999999999999.9999999999"},
+                {"String",           "STRING",          "''",                                                                 "",                                        "'héllo wörld 日本'",                                                 "héllo wörld 日本"},
+                {"FixedString(8)",   "STRING",          "'abcdefgh'",                                                         "abcdefgh",                                "'日本ab'",                                                           "日本ab"},
+                {"UUID",             "STRING",          "'00000000-0000-0000-0000-000000000000'",                             "00000000-0000-0000-0000-000000000000",    "'ffffffff-ffff-ffff-ffff-ffffffffffff'",                            "ffffffff-ffff-ffff-ffff-ffffffffffff"},
+                {"Date",             "DATE",            "DATE '1970-01-01'",                                                  "1970-01-01",                              "DATE '2149-06-06'",                                                 "2149-06-06"},
+                {"Date32",           "DATE",            "DATE '1900-01-01'",                                                  "1900-01-01",                              "DATE '2299-12-31'",                                                 "2299-12-31"},
+                {"DateTime",         "TIMESTAMP(0)",    "TIMESTAMP '1970-01-01 00:00:00'",                                    "1970-01-01 00:00:00",                     "TIMESTAMP '2106-02-07 06:28:15'",                                   "2106-02-07 06:28:15"},
+                {"DateTime64(3)",    "TIMESTAMP(3)",    "TIMESTAMP '1900-01-01 00:00:00.000'",                                "1900-01-01 00:00:00.000",                 "TIMESTAMP '2299-12-31 23:59:59.999'",                               "2299-12-31 23:59:59.999"},
+                // the connector caps DateTime64(9) where the last whole second's ticks still fit Int64
+                {"DateTime64(9)",    "TIMESTAMP(9)",    "TIMESTAMP '1900-01-01 00:00:00.000000000'",                          "1900-01-01 00:00:00.000000000",           "TIMESTAMP '2262-04-11 23:47:15.999999999'",                         "2262-04-11 23:47:15.999999999"},
+        };
+        StringBuilder clickHouseColumns = new StringBuilder("id Int64");
+        StringBuilder flinkColumns = new StringBuilder("id BIGINT NOT NULL");
+        StringBuilder lows = new StringBuilder("(1");
+        StringBuilder highs = new StringBuilder("(2");
+        StringBuilder readColumns = new StringBuilder("id");
+        for (int i = 0; i < columns.length; i++) {
+            clickHouseColumns.append(", c").append(i).append(' ').append(columns[i][0]);
+            flinkColumns.append(", c").append(i).append(' ').append(columns[i][1]).append(" NOT NULL");
+            lows.append(", ").append(columns[i][2]);
+            highs.append(", ").append(columns[i][4]);
+            String read = columns[i][0].equals("Float32") ? "toFloat64(c" + i + ")" : "c" + i;
+            readColumns.append(", toString(").append(read).append(") AS s").append(i);
+        }
+        String table = "table_api_bounds";
+        createTable(table, clickHouseColumns.toString());
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_bounds", table, flinkColumns.toString()));
+        env.executeSql("INSERT INTO ch_bounds VALUES " + lows + "), " + highs + ")").await();
+
+        List<GenericRecord> rows = readBack(readColumns.toString(), table, "id", 2);
+        Assertions.assertEquals(2, rows.size());
+        for (int i = 0; i < columns.length; i++) {
+            Assertions.assertEquals(columns[i][3], rows.get(0).getString("s" + i), columns[i][0] + " low");
+            Assertions.assertEquals(columns[i][5], rows.get(1).getString("s" + i), columns[i][0] + " high");
+        }
+    }
+
     @Test
     void replanningAfterAlterSeesTheCurrentSchema() throws Exception {
         String table = "table_api_alter";
