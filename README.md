@@ -212,10 +212,10 @@ at planning naming the column and both types.
 | Flink SQL type | ClickHouse column types | Notes |
 |---|---|---|
 | `BOOLEAN` | `Bool` | |
-| `TINYINT` | `Int8` or wider signed | |
-| `SMALLINT` | `Int16`, `UInt8`, wider signed | |
-| `INT` | `Int32`, `UInt16`, wider signed | |
-| `BIGINT` | `Int64`, `UInt32`, `Int128`, `Int256` | |
+| `TINYINT` | `Int8` or wider signed; any `UInt8..UInt256` | unsigned targets are range-checked per record |
+| `SMALLINT` | `Int16` or wider signed; any `UInt8..UInt256` | unsigned targets are range-checked per record |
+| `INT` | `Int32` or wider signed; any `UInt8..UInt256` | unsigned targets are range-checked per record |
+| `BIGINT` | `Int64`, `Int128`, `Int256`; any `UInt8..UInt256` | unsigned targets are range-checked per record |
 | `DECIMAL(p, s)` | a `Decimal(p', s')` it fits; with `s = 0` also any `Int8..Int256` / `UInt8..UInt256` whose digits cover `p` | boundary precisions (`DECIMAL(19, 0)` → `Int64`, `DECIMAL(20, 0)` → `UInt64`) and unsigned targets are range-checked per record |
 | `FLOAT` / `DOUBLE` | `Float32` (`FLOAT` only), `Float64` | |
 | `CHAR` / `VARCHAR` / `STRING` | `String`, `FixedString(n)`, `UUID`, `JSON` | `FixedString` checked in bytes; `UUID` must be canonical text |

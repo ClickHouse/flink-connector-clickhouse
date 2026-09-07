@@ -25,6 +25,7 @@ import org.apache.flink.table.types.logical.MapType;
 import org.apache.flink.table.types.logical.MultisetType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.SmallIntType;
+import org.apache.flink.table.types.logical.TinyIntType;
 import org.apache.flink.table.types.logical.TimestampType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.junit.jupiter.api.Test;
@@ -84,9 +85,26 @@ class ClickHouseTypeMapperTest {
     }
 
     @Test
-    void signedIntNeverTargetsUnsignedOfSameWidth() {
-        assertThrows(TypeMappingException.class,
-                () -> ClickHouseTypeMapper.converterFor(new IntType(false), col("UInt32"), UTC, "c"));
+    void anySignedIntegerTargetsAnyUnsignedColumnWithARangeCheck() {
+        ValueConverter intToUInt32 = ClickHouseTypeMapper.converterFor(new IntType(false), col("UInt32"), UTC, "c");
+        assertEquals(7L, intToUInt32.convert(7));
+        assertRangeError(() -> intToUInt32.convert(-1), "UInt32 range 0..4294967295");
+
+        ValueConverter smallIntToUInt16 = ClickHouseTypeMapper.converterFor(new SmallIntType(false), col("UInt16"), UTC, "c");
+        assertEquals(7, smallIntToUInt16.convert((short) 7));
+        assertRangeError(() -> smallIntToUInt16.convert((short) -1), "UInt16 range 0..65535");
+
+        ValueConverter tinyIntToUInt8 = ClickHouseTypeMapper.converterFor(new TinyIntType(false), col("UInt8"), UTC, "c");
+        assertEquals(7, tinyIntToUInt8.convert((byte) 7));
+        assertRangeError(() -> tinyIntToUInt8.convert((byte) -1), "UInt8 range 0..255");
+
+        ValueConverter bigIntToUInt8 = ClickHouseTypeMapper.converterFor(new BigIntType(false), col("UInt8"), UTC, "c");
+        assertEquals(255, bigIntToUInt8.convert(255L));
+        assertRangeError(() -> bigIntToUInt8.convert(256L), "UInt8 range 0..255");
+
+        ValueConverter bigIntToUInt64 = ClickHouseTypeMapper.converterFor(new BigIntType(false), col("UInt64"), UTC, "c");
+        assertEquals(BigInteger.valueOf(Long.MAX_VALUE), bigIntToUInt64.convert(Long.MAX_VALUE));
+        assertRangeError(() -> bigIntToUInt64.convert(-1L), "unsigned type UInt64");
     }
 
     @Test
