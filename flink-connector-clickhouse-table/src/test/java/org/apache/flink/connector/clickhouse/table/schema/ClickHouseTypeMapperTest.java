@@ -16,6 +16,8 @@ import org.apache.flink.table.data.binary.BinaryRowData;
 import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.DateType;
+import org.apache.flink.table.types.logical.FloatType;
+import org.apache.flink.table.types.logical.CharType;
 import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.DoubleType;
 import org.apache.flink.table.types.logical.IntType;
@@ -55,6 +57,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ClickHouseTypeMapperTest {
 
     private static final ZoneId UTC = ZoneId.of("UTC");
+    private static final TypeMappingOptions LENIENT = new TypeMappingOptions(UTC, false);
+    private static final TypeMappingOptions STRICT = new TypeMappingOptions(UTC, true);
+
+    private static TypeMappingOptions lenientIn(ZoneId sinkTimezone) {
+        return new TypeMappingOptions(sinkTimezone, false);
+    }
 
     private static ClickHouseColumn col(String type) {
         return ClickHouseColumn.of("c", type);
@@ -72,45 +80,85 @@ class ClickHouseTypeMapperTest {
 
     @Test
     void intWritesToInt32AndWidensToInt64() {
-        ValueConverter toInt32 = ClickHouseTypeMapper.converterFor(new IntType(false), col("Int32"), UTC, "c");
+        ValueConverter toInt32 = ClickHouseTypeMapper.converterFor(new IntType(false), col("Int32"), LENIENT, "c");
         assertEquals(7, toInt32.convert(7));
-        ValueConverter toInt64 = ClickHouseTypeMapper.converterFor(new IntType(false), col("Int64"), UTC, "c");
+        ValueConverter toInt64 = ClickHouseTypeMapper.converterFor(new IntType(false), col("Int64"), LENIENT, "c");
         assertEquals(7L, toInt64.convert(7));
     }
 
     @Test
-    void narrowingIntToInt16IsRejected() {
-        assertThrows(TypeMappingException.class,
-                () -> ClickHouseTypeMapper.converterFor(new IntType(false), col("Int16"), UTC, "c"));
+    void narrowingIntToInt16IsRangeCheckedPerRecord() {
+        ValueConverter toInt16 = ClickHouseTypeMapper.converterFor(new IntType(false), col("Int16"), LENIENT, "c");
+        assertEquals((short) 7, toInt16.convert(7));
+        assertRangeError(() -> toInt16.convert(40000), "Int16 range -32768..32767");
+    }
+
+    @Test
+    void doubleToFloat32IsRangeCheckedPerRecord() {
+        ValueConverter toFloat32 = ClickHouseTypeMapper.converterFor(new DoubleType(false), col("Float32"), LENIENT, "c");
+        assertEquals(1.5f, toFloat32.convert(1.5d));
+        assertEquals(Float.POSITIVE_INFINITY, toFloat32.convert(Double.POSITIVE_INFINITY));
+        assertRangeError(() -> toFloat32.convert(1e300), "Float32 range");
+    }
+
+    @Test
+    void strictTypeMappingRejectsEveryPairThatNeedsAPerRecordCheck() {
+        assertStrictRejects(new BigIntType(false), "UInt32");
+        assertStrictRejects(new IntType(false), "Int16");
+        assertStrictRejects(new DoubleType(false), "Float32");
+        assertStrictRejects(new DecimalType(false, 20, 0), "UInt64");
+        assertStrictRejects(new DateType(false), "Date");
+        assertStrictRejects(new TimestampType(false, 3), "DateTime64(3)");
+        assertStrictRejects(new VarCharType(false, VarCharType.MAX_LENGTH), "FixedString(4)");
+        assertStrictRejects(new VarCharType(false, VarCharType.MAX_LENGTH), "UUID");
+    }
+
+    @Test
+    void strictTypeMappingKeepsEveryPairWhoseValuesAlwaysFit() {
+        ClickHouseTypeMapper.converterFor(new IntType(false), col("Int32"), STRICT, "c");
+        ClickHouseTypeMapper.converterFor(new IntType(false), col("Int64"), STRICT, "c");
+        ClickHouseTypeMapper.converterFor(new FloatType(false), col("Float64"), STRICT, "c");
+        ClickHouseTypeMapper.converterFor(new DecimalType(false, 3, 0), col("Int16"), STRICT, "c");
+        ClickHouseTypeMapper.converterFor(new DecimalType(false, 5, 2), col("Decimal(10, 2)"), STRICT, "c");
+        ClickHouseTypeMapper.converterFor(new CharType(false, 4), col("FixedString(16)"), STRICT, "c");
+        ClickHouseTypeMapper.converterFor(new VarCharType(false, VarCharType.MAX_LENGTH), col("String"), STRICT, "c");
+    }
+
+    /** Strict rejects the pair at planning naming the option; lenient takes the same pair with a per-record check. */
+    private static void assertStrictRejects(LogicalType flinkType, String clickHouseType) {
+        TypeMappingException e = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(flinkType, col(clickHouseType), STRICT, "c"));
+        assertTrue(e.getMessage().contains("'sink.strict-type-mapping'"), e.getMessage());
+        ClickHouseTypeMapper.converterFor(flinkType, col(clickHouseType), LENIENT, "c");
     }
 
     @Test
     void anySignedIntegerTargetsAnyUnsignedColumnWithARangeCheck() {
-        ValueConverter intToUInt32 = ClickHouseTypeMapper.converterFor(new IntType(false), col("UInt32"), UTC, "c");
+        ValueConverter intToUInt32 = ClickHouseTypeMapper.converterFor(new IntType(false), col("UInt32"), LENIENT, "c");
         assertEquals(7L, intToUInt32.convert(7));
         assertRangeError(() -> intToUInt32.convert(-1), "UInt32 range 0..4294967295");
 
-        ValueConverter smallIntToUInt16 = ClickHouseTypeMapper.converterFor(new SmallIntType(false), col("UInt16"), UTC, "c");
+        ValueConverter smallIntToUInt16 = ClickHouseTypeMapper.converterFor(new SmallIntType(false), col("UInt16"), LENIENT, "c");
         assertEquals(7, smallIntToUInt16.convert((short) 7));
         assertRangeError(() -> smallIntToUInt16.convert((short) -1), "UInt16 range 0..65535");
 
-        ValueConverter tinyIntToUInt8 = ClickHouseTypeMapper.converterFor(new TinyIntType(false), col("UInt8"), UTC, "c");
+        ValueConverter tinyIntToUInt8 = ClickHouseTypeMapper.converterFor(new TinyIntType(false), col("UInt8"), LENIENT, "c");
         assertEquals(7, tinyIntToUInt8.convert((byte) 7));
         assertRangeError(() -> tinyIntToUInt8.convert((byte) -1), "UInt8 range 0..255");
 
-        ValueConverter bigIntToUInt8 = ClickHouseTypeMapper.converterFor(new BigIntType(false), col("UInt8"), UTC, "c");
+        ValueConverter bigIntToUInt8 = ClickHouseTypeMapper.converterFor(new BigIntType(false), col("UInt8"), LENIENT, "c");
         assertEquals(255, bigIntToUInt8.convert(255L));
         assertRangeError(() -> bigIntToUInt8.convert(256L), "UInt8 range 0..255");
 
-        ValueConverter bigIntToUInt64 = ClickHouseTypeMapper.converterFor(new BigIntType(false), col("UInt64"), UTC, "c");
+        ValueConverter bigIntToUInt64 = ClickHouseTypeMapper.converterFor(new BigIntType(false), col("UInt64"), LENIENT, "c");
         assertEquals(BigInteger.valueOf(Long.MAX_VALUE), bigIntToUInt64.convert(Long.MAX_VALUE));
-        assertRangeError(() -> bigIntToUInt64.convert(-1L), "unsigned type UInt64");
+        assertRangeError(() -> bigIntToUInt64.convert(-1L), "UInt64 range 0..18446744073709551615");
     }
 
     @Test
     void stringConvertsToUuidForUuidColumns() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                new VarCharType(false, VarCharType.MAX_LENGTH), col("UUID"), UTC, "c");
+                new VarCharType(false, VarCharType.MAX_LENGTH), col("UUID"), LENIENT, "c");
         UUID uuid = UUID.randomUUID();
         assertEquals(uuid, converter.convert(StringData.fromString(uuid.toString())));
         assertEquals(uuid, converter.convert(
@@ -120,7 +168,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void overlongStringIntoFixedStringFailsNamingTheColumn() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                new VarCharType(false, VarCharType.MAX_LENGTH), col("FixedString(4)"), UTC, "c");
+                new VarCharType(false, VarCharType.MAX_LENGTH), col("FixedString(4)"), LENIENT, "c");
         assertEquals("abcd", converter.convert(StringData.fromString("abcd")));
         assertEquals("ab", converter.convert(StringData.fromString("ab")));
         // Three chars but six UTF-8 bytes — the limit is bytes, not characters.
@@ -133,7 +181,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void nonCanonicalUuidTextIsRejectedNamingTheColumn() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                new VarCharType(false, VarCharType.MAX_LENGTH), col("UUID"), UTC, "c");
+                new VarCharType(false, VarCharType.MAX_LENGTH), col("UUID"), LENIENT, "c");
         // UUID.fromString would silently zero-expand this to 00000001-0001-...-000000000001.
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> converter.convert(StringData.fromString("1-1-1-1-1")));
@@ -146,7 +194,7 @@ class ClickHouseTypeMapperTest {
         TypeMappingException e = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
                         new VarCharType(false, VarCharType.MAX_LENGTH),
-                        col("Enum8('new' = 1, 'done' = 2)"), UTC, "c"));
+                        col("Enum8('new' = 1, 'done' = 2)"), LENIENT, "c"));
         assertEquals(TypeMappingException.Kind.TARGET_UNSUPPORTED, e.getKind());
         assertTrue(e.getMessage().contains("issue #43"), e.getMessage());
     }
@@ -155,7 +203,7 @@ class ClickHouseTypeMapperTest {
     void timestampPrecisionMayNotExceedColumnScale() {
         TypeMappingException e = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
-                        new TimestampType(false, 9), col("DateTime64(3)"), UTC, "c"));
+                        new TimestampType(false, 9), col("DateTime64(3)"), LENIENT, "c"));
         assertEquals("precision 9 exceeds the column's scale 3", e.getMessage());
     }
 
@@ -163,7 +211,7 @@ class ClickHouseTypeMapperTest {
     void timestampIsInterpretedInTheSinkTimezone() {
         ZoneId tokyo = ZoneId.of("Asia/Tokyo");
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                new TimestampType(false, 3), col("DateTime64(3)"), tokyo, "c");
+                new TimestampType(false, 3), col("DateTime64(3)"), lenientIn(tokyo), "c");
         LocalDateTime wallClock = LocalDateTime.of(2026, 1, 2, 3, 4, 5, 678_000_000);
         assertEquals(ZonedDateTime.of(wallClock, tokyo),
                 converter.convert(TimestampData.fromLocalDateTime(wallClock)));
@@ -173,7 +221,7 @@ class ClickHouseTypeMapperTest {
     void dstGapAndOverlapResolveAsDocumented() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
                 new TimestampType(false, 3), col("DateTime64(3)"),
-                ZoneId.of("America/New_York"), "c");
+                lenientIn(ZoneId.of("America/New_York")), "c");
         // 02:30 does not exist on 2026-03-08 (spring forward): shifted an hour ahead.
         ZonedDateTime gap = (ZonedDateTime) converter.convert(
                 TimestampData.fromLocalDateTime(LocalDateTime.of(2026, 3, 8, 2, 30)));
@@ -187,7 +235,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void simpleAggregateFunctionIsTransparentForMatching() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                new IntType(false), col("SimpleAggregateFunction(max, Int32)"), UTC, "c");
+                new IntType(false), col("SimpleAggregateFunction(max, Int32)"), LENIENT, "c");
         assertEquals(41, converter.convert(41));
     }
 
@@ -197,7 +245,7 @@ class ClickHouseTypeMapperTest {
         TypeMappingException e = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
                         new ArrayType(false, new IntType(false)),
-                        col("Array(SimpleAggregateFunction(max, Int32))"), UTC, "c"));
+                        col("Array(SimpleAggregateFunction(max, Int32))"), LENIENT, "c"));
         assertEquals(TypeMappingException.Kind.TARGET_UNSUPPORTED, e.getKind());
         assertTrue(e.getMessage().contains("top-level column"), e.getMessage());
     }
@@ -205,7 +253,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void multisetWritesElementCountsAsLongs() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                multisetOfString(), col("Map(String, UInt64)"), UTC, "c");
+                multisetOfString(), col("Map(String, UInt64)"), LENIENT, "c");
         Map<Object, Object> counts = new LinkedHashMap<>();
         counts.put(StringData.fromString("a"), 2);
         assertEquals(Map.of("a", 2L), converter.convert(new GenericMapData(counts)));
@@ -215,26 +263,26 @@ class ClickHouseTypeMapperTest {
     void multisetRequiresUInt64CountColumns() {
         TypeMappingException e = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
-                        multisetOfString(), col("Map(String, UInt32)"), UTC, "c"));
+                        multisetOfString(), col("Map(String, UInt32)"), LENIENT, "c"));
         assertTrue(e.getMessage().contains("exactly UInt64"), e.getMessage());
     }
 
     @Test
     void unsignedTargetsRejectSignAndOverflowNamingTheColumn() {
         ValueConverter toUInt8 = ClickHouseTypeMapper.converterFor(
-                new SmallIntType(false), col("UInt8"), UTC, "c");
+                new SmallIntType(false), col("UInt8"), LENIENT, "c");
         assertEquals(255, toUInt8.convert((short) 255));
         assertRangeError(() -> toUInt8.convert((short) -1), "UInt8 range 0..255");
         assertRangeError(() -> toUInt8.convert((short) 256), "UInt8 range 0..255");
 
         ValueConverter toUInt16 = ClickHouseTypeMapper.converterFor(
-                new IntType(false), col("UInt16"), UTC, "c");
+                new IntType(false), col("UInt16"), LENIENT, "c");
         assertEquals(65535, toUInt16.convert(65535));
         assertRangeError(() -> toUInt16.convert(-1), "UInt16 range 0..65535");
         assertRangeError(() -> toUInt16.convert(65536), "UInt16 range 0..65535");
 
         ValueConverter toUInt32 = ClickHouseTypeMapper.converterFor(
-                new BigIntType(false), col("UInt32"), UTC, "c");
+                new BigIntType(false), col("UInt32"), LENIENT, "c");
         assertEquals(4294967295L, toUInt32.convert(4294967295L));
         assertRangeError(() -> toUInt32.convert(-1L), "UInt32 range 0..4294967295");
         assertRangeError(() -> toUInt32.convert(4294967296L), "UInt32 range 0..4294967295");
@@ -243,7 +291,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void decimalToUInt64IsRangeCheckedPerRecord() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                new DecimalType(false, 20, 0), col("UInt64"), UTC, "c");
+                new DecimalType(false, 20, 0), col("UInt64"), LENIENT, "c");
         assertEquals(new BigInteger("18446744073709551615"),
                 converter.convert(decimal("18446744073709551615")));
         // 20 digits pass the planning precision check but exceed UInt64's maximum.
@@ -295,7 +343,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void nestedUnsignedValuesAreRangeCheckedToo() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                new ArrayType(false, new BigIntType(false)), col("Array(UInt32)"), UTC, "c");
+                new ArrayType(false, new BigIntType(false)), col("Array(UInt32)"), LENIENT, "c");
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> converter.convert(new GenericArrayData(new long[]{1L, -1L})));
         assertTrue(e.getMessage().contains("Column 'c element'"), e.getMessage());
@@ -305,7 +353,7 @@ class ClickHouseTypeMapperTest {
     void rowWritesToTupleWithPositionalFields() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
                 rowOf(new IntType(false), new VarCharType(false, VarCharType.MAX_LENGTH)),
-                col("Tuple(Int32, String)"), UTC, "c");
+                col("Tuple(Int32, String)"), LENIENT, "c");
         Object[] tuple = (Object[]) converter.convert(
                 GenericRowData.of(7, StringData.fromString("x")));
         assertArrayEquals(new Object[]{7, "x"}, tuple);
@@ -315,7 +363,7 @@ class ClickHouseTypeMapperTest {
     void rowFieldCountMustMatchTupleElementCount() {
         TypeMappingException e = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
-                        rowOf(new IntType(false)), col("Tuple(Int32, String)"), UTC, "c"));
+                        rowOf(new IntType(false)), col("Tuple(Int32, String)"), LENIENT, "c"));
         assertEquals("ROW has 1 fields but the Tuple has 2 elements", e.getMessage());
     }
 
@@ -323,14 +371,14 @@ class ClickHouseTypeMapperTest {
     void nullableTupleElementsAreRejectedOnEitherSide() {
         TypeMappingException flinkSide = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
-                        rowOf(new IntType(true)), col("Tuple(Int32)"), UTC, "c"));
+                        rowOf(new IntType(true)), col("Tuple(Int32)"), LENIENT, "c"));
         assertTrue(flinkSide.getMessage().contains("the Flink ROW field 'f0' is nullable"),
                 flinkSide.getMessage());
         assertTrue(flinkSide.getMessage().contains("declare it NOT NULL"), flinkSide.getMessage());
 
         TypeMappingException clickHouseSide = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
-                        rowOf(new IntType(false)), col("Tuple(Nullable(Int32))"), UTC, "c"));
+                        rowOf(new IntType(false)), col("Tuple(Nullable(Int32))"), LENIENT, "c"));
         assertTrue(clickHouseSide.getMessage().contains("Nullable Tuple elements (Nullable(Int32) at position 1)"),
                 clickHouseSide.getMessage());
     }
@@ -340,14 +388,14 @@ class ClickHouseTypeMapperTest {
         VarCharType key = new VarCharType(false, VarCharType.MAX_LENGTH);
         TypeMappingException flinkSide = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
-                        new MapType(false, key, new IntType(true)), col("Map(String, Int32)"), UTC, "c"));
+                        new MapType(false, key, new IntType(true)), col("Map(String, Int32)"), LENIENT, "c"));
         assertTrue(flinkSide.getMessage().contains("the Flink map value type INT is nullable"),
                 flinkSide.getMessage());
         assertTrue(flinkSide.getMessage().contains("declare it NOT NULL"), flinkSide.getMessage());
 
         TypeMappingException clickHouseSide = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
-                        new MapType(false, key, new IntType(false)), col("Map(String, Nullable(Int32))"), UTC, "c"));
+                        new MapType(false, key, new IntType(false)), col("Map(String, Nullable(Int32))"), LENIENT, "c"));
         assertTrue(clickHouseSide.getMessage().contains("Nullable Map values (Nullable(Int32))"),
                 clickHouseSide.getMessage());
     }
@@ -359,21 +407,21 @@ class ClickHouseTypeMapperTest {
                 new RowType.RowField("lon", new DoubleType(false)),
                 new RowType.RowField("lat", new DoubleType(false))));
         TypeMappingException e = assertThrows(TypeMappingException.class,
-                () -> ClickHouseTypeMapper.converterFor(swapped, col("Tuple(lat Float64, lon Float64)"), UTC, "c"));
+                () -> ClickHouseTypeMapper.converterFor(swapped, col("Tuple(lat Float64, lon Float64)"), LENIENT, "c"));
         assertTrue(e.getMessage().contains("[lon, lat]"), e.getMessage());
         assertTrue(e.getMessage().contains("[lat, lon]"), e.getMessage());
 
         // The same order, different names, or unnamed elements keep the positional contract.
-        ClickHouseTypeMapper.converterFor(swapped, col("Tuple(lon Float64, lat Float64)"), UTC, "c");
-        ClickHouseTypeMapper.converterFor(swapped, col("Tuple(x Float64, y Float64)"), UTC, "c");
-        ClickHouseTypeMapper.converterFor(swapped, col("Tuple(Float64, Float64)"), UTC, "c");
+        ClickHouseTypeMapper.converterFor(swapped, col("Tuple(lon Float64, lat Float64)"), LENIENT, "c");
+        ClickHouseTypeMapper.converterFor(swapped, col("Tuple(x Float64, y Float64)"), LENIENT, "c");
+        ClickHouseTypeMapper.converterFor(swapped, col("Tuple(Float64, Float64)"), LENIENT, "c");
     }
 
     @Test
     void nullRowFieldFailsNamingTheColumn() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
                 rowOf(new IntType(false), new VarCharType(false, VarCharType.MAX_LENGTH)),
-                col("Tuple(Int32, String)"), UTC, "c");
+                col("Tuple(Int32, String)"), LENIENT, "c");
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> converter.convert(GenericRowData.of(7, null)));
         assertTrue(e.getMessage().contains("Column 'c'"), e.getMessage());
@@ -387,7 +435,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void nullRowFieldInABinaryRowFailsInsteadOfWritingZero() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                rowOf(new IntType(false), new IntType(false)), col("Tuple(Int32, Int32)"), UTC, "c");
+                rowOf(new IntType(false), new IntType(false)), col("Tuple(Int32, Int32)"), LENIENT, "c");
         int size = BinaryRowData.calculateFixPartSizeInBytes(2);
         BinaryRowData row = new BinaryRowData(2);
         row.pointTo(MemorySegmentFactory.wrap(new byte[size]), 0, size);
@@ -401,7 +449,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void nullArrayElementFailsForNonNullableElementsNamingTheColumn() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                new ArrayType(false, new IntType(false)), col("Array(Int32)"), UTC, "c");
+                new ArrayType(false, new IntType(false)), col("Array(Int32)"), LENIENT, "c");
         BinaryArrayData binary = BinaryArrayData.fromPrimitiveArray(new int[]{1, 2});
         binary.setNullInt(0);
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> converter.convert(binary));
@@ -414,7 +462,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void nullArrayElementsAreForwardedIntoNullableElements() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                new ArrayType(false, new IntType(true)), col("Array(Nullable(Int32))"), UTC, "c");
+                new ArrayType(false, new IntType(true)), col("Array(Nullable(Int32))"), LENIENT, "c");
         BinaryArrayData binary = BinaryArrayData.fromPrimitiveArray(new int[]{1, 2});
         binary.setNullInt(0);
         assertEquals(Arrays.asList(null, 2), converter.convert(binary));
@@ -423,7 +471,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void nullMapValueInABinaryMapFailsNamingTheColumn() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                new MapType(false, new IntType(false), new IntType(false)), col("Map(Int32, Int32)"), UTC, "c");
+                new MapType(false, new IntType(false), new IntType(false)), col("Map(Int32, Int32)"), LENIENT, "c");
         BinaryArrayData values = BinaryArrayData.fromPrimitiveArray(new int[]{9});
         values.setNullInt(0);
         BinaryMapData map = BinaryMapData.valueOf(BinaryArrayData.fromPrimitiveArray(new int[]{7}), values);
@@ -437,12 +485,12 @@ class ClickHouseTypeMapperTest {
     void nullableElementHintIsDroppedForCompositeElements() {
         TypeMappingException scalar = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
-                        new ArrayType(false, new IntType(true)), col("Array(Int32)"), UTC, "c"));
+                        new ArrayType(false, new IntType(true)), col("Array(Int32)"), LENIENT, "c"));
         assertTrue(scalar.getMessage().contains("or make the element Nullable"), scalar.getMessage());
         TypeMappingException composite = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
                         new ArrayType(false, new ArrayType(true, new IntType(false))),
-                        col("Array(Array(Int32))"), UTC, "c"));
+                        col("Array(Array(Int32))"), LENIENT, "c"));
         assertTrue(composite.getMessage().contains("declare the element NOT NULL"), composite.getMessage());
         assertFalse(composite.getMessage().contains("make the element Nullable"), composite.getMessage());
     }
@@ -450,7 +498,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void rowFieldRangeChecksNameTheFieldPath() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                rowOf(new SmallIntType(false)), col("Tuple(UInt8)"), UTC, "c");
+                rowOf(new SmallIntType(false)), col("Tuple(UInt8)"), LENIENT, "c");
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> converter.convert(GenericRowData.of((short) 256)));
         assertTrue(e.getMessage().contains("Column 'c.f0'"), e.getMessage());
@@ -460,7 +508,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void multisetRejectsNegativeCounts() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                multisetOfString(), col("Map(String, UInt64)"), UTC, "c");
+                multisetOfString(), col("Map(String, UInt64)"), LENIENT, "c");
         Map<Object, Object> counts = new LinkedHashMap<>();
         counts.put(StringData.fromString("a"), -1);
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
@@ -474,14 +522,14 @@ class ClickHouseTypeMapperTest {
         MapType mapType = new MapType(false,
                 new DecimalType(false, 20, 0), new VarCharType(false, VarCharType.MAX_LENGTH));
         TypeMappingException e = assertThrows(TypeMappingException.class,
-                () -> ClickHouseTypeMapper.converterFor(mapType, col("Map(UInt64, String)"), UTC, "c"));
+                () -> ClickHouseTypeMapper.converterFor(mapType, col("Map(UInt64, String)"), LENIENT, "c"));
         assertTrue(e.getMessage().contains("Map keys of type UInt64"), e.getMessage());
         assertTrue(e.getMessage().contains("upper half of the UInt64 range"), e.getMessage());
 
         TypeMappingException multisetError = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
                         new MultisetType(false, new DecimalType(false, 20, 0)),
-                        col("Map(UInt64, UInt64)"), UTC, "c"));
+                        col("Map(UInt64, UInt64)"), LENIENT, "c"));
         assertTrue(multisetError.getMessage().contains("Map keys of type UInt64"),
                 multisetError.getMessage());
     }
@@ -492,7 +540,7 @@ class ClickHouseTypeMapperTest {
         MapType mapType = new MapType(false,
                 new DecimalType(false, 38, 0), new VarCharType(false, VarCharType.MAX_LENGTH));
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                mapType, col("Map(UInt128, String)"), UTC, "c");
+                mapType, col("Map(UInt128, String)"), LENIENT, "c");
         Map<Object, Object> entries = new LinkedHashMap<>();
         entries.put(DecimalData.fromBigDecimal(new BigDecimal("18446744073709551616"), 38, 0),
                 StringData.fromString("v"));
@@ -507,7 +555,7 @@ class ClickHouseTypeMapperTest {
                 new DecimalType(false, 9, 2), new VarCharType(false, VarCharType.MAX_LENGTH));
         for (String key : List.of("Decimal(10, 2)", "Decimal32(2)", "Decimal64(2)", "Decimal128(2)", "Decimal256(2)")) {
             ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                    mapType, col("Map(" + key + ", String)"), UTC, "c");
+                    mapType, col("Map(" + key + ", String)"), LENIENT, "c");
             Map<Object, Object> entries = new LinkedHashMap<>();
             entries.put(DecimalData.fromBigDecimal(new BigDecimal("12.34"), 9, 2), StringData.fromString("v"));
             assertEquals(Map.of("12.34", "v"), converter.convert(new GenericMapData(entries)), key);
@@ -517,7 +565,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void date32IsRangeCheckedPerRecord() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                new DateType(false), col("Date32"), UTC, "c");
+                new DateType(false), col("Date32"), LENIENT, "c");
         assertEquals(LocalDate.of(1900, 1, 1),
                 converter.convert((int) LocalDate.of(1900, 1, 1).toEpochDay()));
         assertEquals(LocalDate.of(2299, 12, 31),
@@ -531,7 +579,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void dateTimeRejectsInstantsOutsideUInt32Seconds() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                new TimestampType(false, 0), col("DateTime"), UTC, "c");
+                new TimestampType(false, 0), col("DateTime"), LENIENT, "c");
         converter.convert(TimestampData.fromLocalDateTime(LocalDateTime.of(1970, 1, 1, 0, 0)));
         converter.convert(TimestampData.fromLocalDateTime(LocalDateTime.of(2106, 2, 7, 6, 28, 15)));
         assertRangeError(() -> converter.convert(
@@ -545,7 +593,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void dateTime64RejectsInstantsOutsideItsDocumentedRange() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                new TimestampType(false, 3), col("DateTime64(3)"), UTC, "c");
+                new TimestampType(false, 3), col("DateTime64(3)"), LENIENT, "c");
         converter.convert(TimestampData.fromLocalDateTime(LocalDateTime.of(1900, 1, 1, 0, 0)));
         converter.convert(TimestampData.fromLocalDateTime(LocalDateTime.of(2299, 12, 31, 23, 59, 59)));
         assertRangeError(() -> converter.convert(
@@ -559,7 +607,7 @@ class ClickHouseTypeMapperTest {
     @Test
     void dateTime64Scale9CapsAtInt64TickRange() {
         ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                new TimestampType(false, 9), col("DateTime64(9)"), UTC, "c");
+                new TimestampType(false, 9), col("DateTime64(9)"), LENIENT, "c");
         converter.convert(TimestampData.fromLocalDateTime(LocalDateTime.of(2262, 4, 11, 0, 0)));
         // Inside the documented 2299 bound, but its scale-9 ticks overflow Int64.
         assertRangeError(() -> converter.convert(
@@ -573,7 +621,7 @@ class ClickHouseTypeMapperTest {
         RowType pair = rowOf(new IntType(false), new VarCharType(false, VarCharType.MAX_LENGTH));
 
         ValueConverter arrayConverter = ClickHouseTypeMapper.converterFor(
-                new ArrayType(false, pair), col("Array(Tuple(Int32, String))"), UTC, "c");
+                new ArrayType(false, pair), col("Array(Tuple(Int32, String))"), LENIENT, "c");
         List<?> tuples = (List<?>) arrayConverter.convert(new GenericArrayData(new Object[]{
                 GenericRowData.of(1, StringData.fromString("p")),
                 GenericRowData.of(2, StringData.fromString("q"))}));
@@ -583,14 +631,14 @@ class ClickHouseTypeMapperTest {
 
         ValueConverter mapConverter = ClickHouseTypeMapper.converterFor(
                 new MapType(false, new VarCharType(false, VarCharType.MAX_LENGTH), pair),
-                col("Map(String, Tuple(Int32, String))"), UTC, "c");
+                col("Map(String, Tuple(Int32, String))"), LENIENT, "c");
         Map<Object, Object> entries = new LinkedHashMap<>();
         entries.put(StringData.fromString("k"), GenericRowData.of(1, StringData.fromString("p")));
         Map<?, ?> payload = (Map<?, ?>) mapConverter.convert(new GenericMapData(entries));
         assertArrayEquals(new Object[]{1, "p"}, (Object[]) payload.get("k"));
 
         ValueConverter nestedConverter = ClickHouseTypeMapper.converterFor(
-                rowOf(new IntType(false), pair), col("Tuple(Int32, Tuple(Int32, String))"), UTC, "c");
+                rowOf(new IntType(false), pair), col("Tuple(Int32, Tuple(Int32, String))"), LENIENT, "c");
         Object[] outer = (Object[]) nestedConverter.convert(
                 GenericRowData.of(5, GenericRowData.of(6, StringData.fromString("z"))));
         assertEquals(5, outer[0]);
@@ -604,7 +652,7 @@ class ClickHouseTypeMapperTest {
     }
 
     private static ValueConverter decimalTo(int precision, String target) {
-        return ClickHouseTypeMapper.converterFor(new DecimalType(false, precision, 0), col(target), UTC, "c");
+        return ClickHouseTypeMapper.converterFor(new DecimalType(false, precision, 0), col(target), LENIENT, "c");
     }
 
     private static DecimalData decimal(String unscaled) {

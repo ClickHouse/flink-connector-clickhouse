@@ -16,13 +16,25 @@ public final class SchemaResolverOptions {
     public final String table;
     public final ZoneId sinkTimezone;
     public final boolean ignoreUnknownFlinkColumns;
+    /** {@code sink.strict-type-mapping}: reject at planning every pair whose values would need a per-record check. */
+    public final boolean strictTypeMapping;
 
     public SchemaResolverOptions(String database, String table, ZoneId sinkTimezone,
                                  boolean ignoreUnknownFlinkColumns) {
+        this(database, table, sinkTimezone, ignoreUnknownFlinkColumns, false);
+    }
+
+    public SchemaResolverOptions(String database, String table, ZoneId sinkTimezone,
+                                 boolean ignoreUnknownFlinkColumns, boolean strictTypeMapping) {
         this.database = Objects.requireNonNull(database, "database");
         this.table = requireUnquotedTableName(table);
         this.sinkTimezone = Objects.requireNonNull(sinkTimezone, "sinkTimezone");
         this.ignoreUnknownFlinkColumns = ignoreUnknownFlinkColumns;
+        this.strictTypeMapping = strictTypeMapping;
+    }
+
+    public TypeMappingOptions typeMapping() {
+        return new TypeMappingOptions(sinkTimezone, strictTypeMapping);
     }
 
     /**

@@ -52,6 +52,7 @@ import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOpt
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.SINK_MAX_RETRIES;
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.SINK_RECORD_MAX_BYTES;
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.SINK_TIMEZONE;
+import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.SINK_STRICT_TYPE_MAPPING;
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.TABLE;
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.URL;
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.USERNAME;
@@ -127,6 +128,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         options.add(SINK_BATCH_FAILURE_STRATEGY);
         options.add(SINK_TIMEZONE);
         options.add(SINK_IGNORE_UNKNOWN_FLINK_COLUMNS);
+        options.add(SINK_STRICT_TYPE_MAPPING);
         return options;
     }
 
@@ -139,7 +141,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         SchemaResolverOptions resolverOptions = buildResolverOptions(options);
         logIgnoredPrimaryKey(context);
 
-        ClickHouseClientConfig clientConfig = buildClientConfig(context, options);
+        ClickHouseClientConfig clientConfig = buildClientConfig(context.getCatalogTable().getOptions(), options);
         List<ResolvedColumnMapping> mappings = SchemaResolver.resolve(
                 context.getCatalogTable().getResolvedSchema(),
                 introspect(options, clientConfig),
@@ -208,11 +210,12 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
                 options.get(DATABASE),
                 options.get(TABLE),
                 parseSinkTimezone(options.get(SINK_TIMEZONE)),
-                options.get(SINK_IGNORE_UNKNOWN_FLINK_COLUMNS));
+                options.get(SINK_IGNORE_UNKNOWN_FLINK_COLUMNS),
+                options.get(SINK_STRICT_TYPE_MAPPING));
     }
 
-    private static ClickHouseClientConfig buildClientConfig(Context context, ReadableConfig options) {
-        Map<String, String> tableOptions = context.getCatalogTable().getOptions();
+    /** {@code tableOptions} are the raw DDL options, needed for the prefix scan the typed {@code options} cannot do. */
+    private static ClickHouseClientConfig buildClientConfig(Map<String, String> tableOptions, ReadableConfig options) {
         Map<String, String> clientOptions = clientOptions(tableOptions);
         Map<String, String> serverSettings = serverSettings(tableOptions);
         checkServerSettingDefinedOnce(clientOptions, serverSettings);

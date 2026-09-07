@@ -50,6 +50,8 @@ public final class SchemaResolver {
                                                       TableSchema clickHouseSchema,
                                                       SchemaResolverOptions options) {
         Map<String, ClickHouseColumn> clickHouseColumns = columnsByName(clickHouseSchema);
+        String qualifiedTable = options.database + "." + options.table;
+        TypeMappingOptions typeMapping = options.typeMapping();
 
         List<ResolvedColumnMapping> mappings = new ArrayList<>();
         List<RowType.RowField> fields = physicalRowType(flinkSchema).getFields();
@@ -60,15 +62,15 @@ public final class SchemaResolver {
                 if (options.ignoreUnknownFlinkColumns) {
                     continue;
                 }
-                throw unknownFlinkColumn(field.getName(), clickHouseColumns, options);
+                throw unknownFlinkColumn(field.getName(), clickHouseColumns, qualifiedTable);
             }
             // After the unknown-column skip: a dropped column never becomes a payload key.
             checkNotReservedName(field.getName());
-            mappings.add(resolveColumn(i, field, column, options));
+            mappings.add(resolveColumn(i, field, column, typeMapping));
         }
 
-        warnOnOmittedColumnsWithoutDefaults(clickHouseSchema, mappedNames(mappings), options);
-        checkNotEmpty(mappings, options);
+        warnOnOmittedColumnsWithoutDefaults(clickHouseSchema, mappedNames(mappings), qualifiedTable);
+        checkNotEmpty(mappings, qualifiedTable);
         return mappings;
     }
 
@@ -83,10 +85,10 @@ public final class SchemaResolver {
 
     private static ResolvedColumnMapping resolveColumn(int fieldIndex, RowType.RowField field,
                                                        ClickHouseColumn column,
-                                                       SchemaResolverOptions options) {
+                                                       TypeMappingOptions typeMapping) {
         checkInsertable(field.getName(), column);
         ClickHouseColumn effective = unwrapSimpleAggregateFunction(column);
-        ValueConverter converter = converterFor(field, column, options);
+        ValueConverter converter = converterFor(field, column, typeMapping);
         checkNullability(field, column, effective);
         FieldAccessor accessor = FieldAccessor.of(
                 RowData.createFieldGetter(field.getType(), fieldIndex), converter);
@@ -94,10 +96,9 @@ public final class SchemaResolver {
     }
 
     private static ValueConverter converterFor(RowType.RowField field, ClickHouseColumn column,
-                                               SchemaResolverOptions options) {
+                                               TypeMappingOptions typeMapping) {
         try {
-            return ClickHouseTypeMapper.converterFor(
-                    field.getType(), column, options.sinkTimezone, field.getName());
+            return ClickHouseTypeMapper.converterFor(field.getType(), column, typeMapping, field.getName());
         } catch (TypeMappingException e) {
             throw asValidationException(e, field, column);
         }
@@ -202,16 +203,15 @@ public final class SchemaResolver {
      */
     private static void warnOnOmittedColumnsWithoutDefaults(TableSchema clickHouseSchema,
                                                             Set<String> mappedNames,
-                                                            SchemaResolverOptions options) {
+                                                            String qualifiedTable) {
         for (ClickHouseColumn column : clickHouseSchema.getColumns()) {
             if (mappedNames.contains(column.getColumnName()) || !isRequired(column)) {
                 continue;
             }
-            LOG.warn("ClickHouse column '{} {}' in {}.{} is neither Nullable nor has a DEFAULT "
+            LOG.warn("ClickHouse column '{} {}' in {} is neither Nullable nor has a DEFAULT "
                     + "and is missing from the Flink schema — every insert fills it with the "
                     + "type default (0/''/empty).",
-                    column.getColumnName(), column.getOriginalTypeName(),
-                    options.database, options.table);
+                    column.getColumnName(), column.getOriginalTypeName(), qualifiedTable);
         }
     }
 
@@ -222,24 +222,22 @@ public final class SchemaResolver {
         return !unwrapSimpleAggregateFunction(column).isNullable();
     }
 
-    private static void checkNotEmpty(List<ResolvedColumnMapping> mappings,
-                                      SchemaResolverOptions options) {
+    private static void checkNotEmpty(List<ResolvedColumnMapping> mappings, String qualifiedTable) {
         if (mappings.isEmpty()) {
             throw new ValidationException(String.format(
-                    "None of the Flink schema columns map to ClickHouse table %s.%s — nothing to insert.",
-                    options.database, options.table));
+                    "None of the Flink schema columns map to ClickHouse table %s — nothing to insert.",
+                    qualifiedTable));
         }
     }
 
     private static ValidationException unknownFlinkColumn(String name,
                                                           Map<String, ClickHouseColumn> clickHouseColumns,
-                                                          SchemaResolverOptions options) {
+                                                          String qualifiedTable) {
         return new ValidationException(String.format(
-                "Column '%s' declared in the Flink schema does not exist in %s.%s. "
+                "Column '%s' declared in the Flink schema does not exist in %s. "
                 + "ClickHouse columns: %s. "
                 + "Set 'sink.ignore-unknown-flink-columns' = 'true' to drop it instead.",
-                name, options.database, options.table,
-                String.join(", ", clickHouseColumns.keySet())));
+                name, qualifiedTable, String.join(", ", clickHouseColumns.keySet())));
     }
 
     // ------------------------------------------------------------------------------------

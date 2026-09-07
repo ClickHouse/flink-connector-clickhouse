@@ -227,6 +227,19 @@ public class ClickHouseTableApiIntegrationTests {
     }
 
     @Test
+    void strictTypeMappingRejectsARangeCheckedPairAtPlanning() throws Exception {
+        String table = "table_api_strict";
+        createTable(table, "id Int64, hits UInt32");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_strict", table, "id BIGINT NOT NULL, hits BIGINT NOT NULL",
+                ", 'sink.strict-type-mapping' = 'true'"));
+
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_strict VALUES (1, 1)"),
+                "Column 'hits'", "UInt32 range", "'sink.strict-type-mapping'");
+    }
+
+    @Test
     void outOfRangeDate32FailsNamingTheColumn() throws Exception {
         String table = "table_api_date32";
         createTable(table, "id Int64, event_day Date32");

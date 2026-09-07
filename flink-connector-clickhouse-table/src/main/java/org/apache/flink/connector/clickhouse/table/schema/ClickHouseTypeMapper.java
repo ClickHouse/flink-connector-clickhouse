@@ -20,6 +20,7 @@ import org.apache.flink.table.types.logical.MapType;
 import org.apache.flink.table.types.logical.MultisetType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.TimestampType;
+import org.apache.flink.table.types.logical.utils.LogicalTypeChecks;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -47,11 +48,12 @@ import static com.clickhouse.utils.writer.DataWriter.unwrapSimpleAggregateFuncti
  * the plain Java value {@code DataWriter} expects, or throws a {@link TypeMappingException}
  * saying why the pair is rejected.
  *
- * <p>Narrowing is rejected, lossless widening is implicit, and a signed Flink integer may target
- * any unsigned column — or {@code DECIMAL(p,0)} any integer whose digit count covers {@code p} —
- * with every value range-checked per record: the wire format cannot represent a sign, and the
- * client's writer would otherwise fail without the column name or (UInt64 inside composites)
- * wrap the value silently.
+ * <p>Lossless widening is implicit. A pair whose values may not all fit the column — a narrower or
+ * unsigned integer, {@code Float32} from {@code DOUBLE}, {@code DECIMAL(p,0)} at an integer's digit
+ * boundary, the {@code Date}/{@code DateTime} ranges, {@code FixedString} lengths, UUID text — is
+ * checked per record naming the column (the client's writer would fail without it or, for UInt64
+ * inside composites, wrap the value silently); under {@code sink.strict-type-mapping} such a pair is
+ * rejected at planning instead, so no record can fail at write time.
  *
  * <p>{@code build*Converter} methods run once per column at planning time; {@code toPayload*}
  * methods run per record on the TaskManager. Wrapper shedding is shared with the write path
@@ -62,7 +64,7 @@ public final class ClickHouseTypeMapper {
     /** One matrix row: maps a pair to a converter or throws {@link TypeMappingException}. */
     @FunctionalInterface
     private interface TypeMappingRule {
-        ValueConverter apply(LogicalType flinkType, ClickHouseColumn target, ZoneId sinkTimezone, String columnPathText);
+        ValueConverter apply(LogicalType flinkType, ClickHouseColumn target, TypeMappingOptions options, String columnPathText);
     }
 
     /** ClickHouse types the sink can write, after unwrapping transparent wrappers. */
@@ -136,11 +138,11 @@ public final class ClickHouseTypeMapper {
      *
      * @param flinkType    the Flink column/field type
      * @param column       the introspected ClickHouse column (wrappers still attached)
-     * @param sinkTimezone zone in which {@code TIMESTAMP} wall-clock values are interpreted
+     * @param options      sink time zone for {@code TIMESTAMP} wall clocks, and the strictness
      * @param columnPathText column path for runtime error messages (e.g. {@code "props value"})
      */
     public static ValueConverter converterFor(LogicalType flinkType, ClickHouseColumn column,
-                                              ZoneId sinkTimezone, String columnPathText) {
+                                              TypeMappingOptions options, String columnPathText) {
         ClickHouseColumn target = unwrapSimpleAggregateFunction(column);
         checkTargetWritable(target);
         TypeMappingRule rule = RULES.get(flinkType.getTypeRoot());
@@ -149,7 +151,7 @@ public final class ClickHouseTypeMapper {
             throw TypeMappingException.mismatch(
                     "Flink type root " + flinkType.getTypeRoot() + " is unknown to this connector build");
         }
-        return rule.apply(flinkType, target, sinkTimezone, columnPathText);
+        return rule.apply(flinkType, target, options, columnPathText);
     }
 
     /** Roots the matrix covers — the guard test asserts this equals all of {@link LogicalTypeRoot}. */
@@ -206,13 +208,13 @@ public final class ClickHouseTypeMapper {
         Map<LogicalTypeRoot, TypeMappingRule> rules = new EnumMap<>(LogicalTypeRoot.class);
 
         rules.put(LogicalTypeRoot.BOOLEAN, ClickHouseTypeMapper::buildBooleanConverter);
-        rules.put(LogicalTypeRoot.TINYINT, ClickHouseTypeMapper::buildTinyIntConverter);
-        rules.put(LogicalTypeRoot.SMALLINT, ClickHouseTypeMapper::buildSmallIntConverter);
-        rules.put(LogicalTypeRoot.INTEGER, ClickHouseTypeMapper::buildIntConverter);
-        rules.put(LogicalTypeRoot.BIGINT, ClickHouseTypeMapper::buildBigIntConverter);
+        rules.put(LogicalTypeRoot.TINYINT, ClickHouseTypeMapper::buildIntegerConverter);
+        rules.put(LogicalTypeRoot.SMALLINT, ClickHouseTypeMapper::buildIntegerConverter);
+        rules.put(LogicalTypeRoot.INTEGER, ClickHouseTypeMapper::buildIntegerConverter);
+        rules.put(LogicalTypeRoot.BIGINT, ClickHouseTypeMapper::buildIntegerConverter);
         rules.put(LogicalTypeRoot.DECIMAL, ClickHouseTypeMapper::buildDecimalConverter);
-        rules.put(LogicalTypeRoot.FLOAT, ClickHouseTypeMapper::buildFloatConverter);
-        rules.put(LogicalTypeRoot.DOUBLE, ClickHouseTypeMapper::buildDoubleConverter);
+        rules.put(LogicalTypeRoot.FLOAT, ClickHouseTypeMapper::buildFloatingPointConverter);
+        rules.put(LogicalTypeRoot.DOUBLE, ClickHouseTypeMapper::buildFloatingPointConverter);
         rules.put(LogicalTypeRoot.CHAR, ClickHouseTypeMapper::buildStringConverter);
         rules.put(LogicalTypeRoot.VARCHAR, ClickHouseTypeMapper::buildStringConverter);
         rules.put(LogicalTypeRoot.DATE, ClickHouseTypeMapper::buildDateConverter);
@@ -267,7 +269,7 @@ public final class ClickHouseTypeMapper {
     }
 
     private static TypeMappingRule rejected(String reason) {
-        return (flinkType, target, zone, columnPathText) -> {
+        return (flinkType, target, options, columnPathText) -> {
             throw TypeMappingException.mismatch(reason);
         };
     }
@@ -277,89 +279,84 @@ public final class ClickHouseTypeMapper {
     // ------------------------------------------------------------------------------------
 
     private static ValueConverter buildBooleanConverter(LogicalType flinkType, ClickHouseColumn target,
-                                                       ZoneId zone, String columnPathText) {
+                                                       TypeMappingOptions options, String columnPathText) {
         if (target.getDataType() == ClickHouseDataType.Bool) {
             return value -> value;
         }
         throw noConversion(flinkType, "Bool");
     }
 
-    /** TINYINT..BIGINT: signed columns must be at least as wide; any unsigned column is range-checked per record. */
-    private static ValueConverter buildTinyIntConverter(LogicalType flinkType, ClickHouseColumn target,
-                                                        ZoneId zone, String columnPathText) {
-        ClickHouseDataType targetType = target.getDataType();
-        switch (targetType) {
-            case Int8:    return value -> value;
-            case Int16:   return value -> ((Number) value).shortValue();
-            case Int32:   return value -> ((Number) value).intValue();
-            case Int64:   return value -> ((Number) value).longValue();
-            case Int128:
-            case Int256:  return value -> BigInteger.valueOf(((Number) value).longValue());
-            case UInt8: case UInt16: case UInt32: case UInt64: case UInt128: case UInt256:
-                return rangeCheckedUnsigned(targetType, columnPathText);
-            default:      throw noConversion(flinkType, "Int8 or wider, or any UInt (range-checked per record)");
-        }
-    }
-
-    private static ValueConverter buildSmallIntConverter(LogicalType flinkType, ClickHouseColumn target,
-                                                         ZoneId zone, String columnPathText) {
-        ClickHouseDataType targetType = target.getDataType();
-        switch (targetType) {
-            case Int16:   return value -> value;
-            case Int32:   return value -> ((Number) value).intValue();
-            case Int64:   return value -> ((Number) value).longValue();
-            case Int128:
-            case Int256:  return value -> BigInteger.valueOf(((Number) value).longValue());
-            case UInt8: case UInt16: case UInt32: case UInt64: case UInt128: case UInt256:
-                return rangeCheckedUnsigned(targetType, columnPathText);
-            default:      throw noConversion(flinkType, "Int16 or wider, or any UInt (range-checked per record)");
-        }
-    }
-
-    private static ValueConverter buildIntConverter(LogicalType flinkType, ClickHouseColumn target,
-                                                    ZoneId zone, String columnPathText) {
-        ClickHouseDataType targetType = target.getDataType();
-        switch (targetType) {
-            case Int32:   return value -> value;
-            case Int64:   return value -> ((Number) value).longValue();
-            case Int128:
-            case Int256:  return value -> BigInteger.valueOf(((Number) value).longValue());
-            case UInt8: case UInt16: case UInt32: case UInt64: case UInt128: case UInt256:
-                return rangeCheckedUnsigned(targetType, columnPathText);
-            default:      throw noConversion(flinkType, "Int32 or wider, or any UInt (range-checked per record)");
-        }
-    }
-
-    private static ValueConverter buildBigIntConverter(LogicalType flinkType, ClickHouseColumn target,
-                                                       ZoneId zone, String columnPathText) {
-        ClickHouseDataType targetType = target.getDataType();
-        switch (targetType) {
-            case Int64:   return value -> value;
-            case Int128:
-            case Int256:  return value -> BigInteger.valueOf(((Number) value).longValue());
-            case UInt8: case UInt16: case UInt32: case UInt64: case UInt128: case UInt256:
-                return rangeCheckedUnsigned(targetType, columnPathText);
-            default:      throw noConversion(flinkType, "Int64 or wider, or any UInt (range-checked per record)");
-        }
-    }
-
     /**
-     * A signed Flink integer into an unsigned column: negatives never fit, and a column narrower
-     * than the source caps the value. DataWriter takes UInt8/UInt16 as int, UInt32 as long and
-     * the rest as BigInteger.
+     * TINYINT..BIGINT into any integer column. A column holding the whole source range takes the
+     * value as is; a narrower or unsigned one checks every value, since the wire format would store
+     * an out-of-range value wrapped.
      */
-    private static ValueConverter rangeCheckedUnsigned(ClickHouseDataType unsigned, String columnPathText) {
-        String name = unsigned.name();
-        switch (unsigned) {
-            case UInt8:  return value -> (int) checkUnsignedRange(((Number) value).longValue(), UINT8_MAX, name, columnPathText);
-            case UInt16: return value -> (int) checkUnsignedRange(((Number) value).longValue(), UINT16_MAX, name, columnPathText);
-            case UInt32: return value -> checkUnsignedRange(((Number) value).longValue(), UINT32_MAX, name, columnPathText);
-            default:     return value -> BigInteger.valueOf(checkNonNegative(((Number) value).longValue(), name, columnPathText));
+    private static ValueConverter buildIntegerConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                        TypeMappingOptions options, String columnPathText) {
+        ClickHouseDataType targetType = target.getDataType();
+        if (!INTEGER_TARGETS.contains(targetType)) {
+            throw noConversion(flinkType, "Int8..Int256, UInt8..UInt256");
         }
+        int sourceBits = integerBits(flinkType.getTypeRoot());
+        int targetBits = targetType.getByteLength() * 8;
+        if (targetType.isSigned() && targetBits == sourceBits) {
+            return value -> value;
+        }
+        if (targetType.isSigned() && targetBits > sourceBits) {
+            return toDataWriterType(targetType);
+        }
+        return rangeCheckedInteger(targetType, toDataWriterType(targetType), options, columnPathText);
+    }
+
+    private static final Set<ClickHouseDataType> INTEGER_TARGETS = EnumSet.of(
+            ClickHouseDataType.Int8, ClickHouseDataType.Int16, ClickHouseDataType.Int32,
+            ClickHouseDataType.Int64, ClickHouseDataType.Int128, ClickHouseDataType.Int256,
+            ClickHouseDataType.UInt8, ClickHouseDataType.UInt16, ClickHouseDataType.UInt32,
+            ClickHouseDataType.UInt64, ClickHouseDataType.UInt128, ClickHouseDataType.UInt256);
+
+    /** The Java type DataWriter's dispatch takes for each integer column, from any Flink integer. */
+    private static ValueConverter toDataWriterType(ClickHouseDataType target) {
+        switch (target) {
+            case Int8:                           return value -> (byte) ((Number) value).longValue();
+            case Int16:                          return value -> (short) ((Number) value).longValue();
+            case Int32: case UInt8: case UInt16: return value -> (int) ((Number) value).longValue();
+            case Int64: case UInt32:             return value -> ((Number) value).longValue();
+            default:                             return value -> BigInteger.valueOf(((Number) value).longValue());
+        }
+    }
+
+    private static int integerBits(LogicalTypeRoot root) {
+        switch (root) {
+            case TINYINT:  return 8;
+            case SMALLINT: return 16;
+            case INTEGER:  return 32;
+            default:       return 64;
+        }
+    }
+
+    /** The column's bounds clamped to long — only UInt64 and wider exceed it, where only a negative can fail. */
+    private static ValueConverter rangeCheckedInteger(ClickHouseDataType targetType, ValueConverter toTarget,
+                                                      TypeMappingOptions options, String columnPathText) {
+        BigInteger min = integerMin(targetType);
+        BigInteger max = integerMax(targetType);
+        long lowest = min.max(BigInteger.valueOf(Long.MIN_VALUE)).longValue();
+        long highest = max.min(BigInteger.valueOf(Long.MAX_VALUE)).longValue();
+        String range = targetType + " range " + min + ".." + max;
+        if (options.strict) {
+            throw strictModeRejects("values outside the " + range);
+        }
+        return value -> {
+            long v = ((Number) value).longValue();
+            if (v < lowest || v > highest) {
+                throw new IllegalArgumentException(
+                        "Column '" + columnPathText + "': value " + v + " is outside the " + range);
+            }
+            return toTarget.convert(value);
+        };
     }
 
     private static ValueConverter buildDecimalConverter(LogicalType flinkType, ClickHouseColumn target,
-                                                        ZoneId zone, String columnPathText) {
+                                                        TypeMappingOptions options, String columnPathText) {
         DecimalType decimalType = (DecimalType) flinkType;
         int precision = decimalType.getPrecision();
         int scale = decimalType.getScale();
@@ -384,7 +381,7 @@ public final class ClickHouseTypeMapper {
             case UInt128:
             case UInt256:
                 checkDecimalFitsInteger(precision, scale, target);
-                return buildIntegerDecimalConverter(target.getDataType(), precision, columnPathText);
+                return buildIntegerDecimalConverter(target.getDataType(), precision, options, columnPathText);
             default:
                 throw noConversion(flinkType,
                         "Decimal(p,s); with s = 0 also any Int8..Int256 or UInt8..UInt256 whose digits cover p");
@@ -425,13 +422,16 @@ public final class ClickHouseTypeMapper {
      * targets are range-checked per record; a narrower signed DECIMAL always fits and is not.
      */
     private static ValueConverter buildIntegerDecimalConverter(ClickHouseDataType targetType, int precision,
-                                                               String columnPathText) {
+                                                               TypeMappingOptions options, String columnPathText) {
         ValueConverter narrow = integerNarrowing(targetType);
         if (targetType.isSigned() && precision < targetType.getMaxPrecision()) {
             return value -> narrow.convert(((DecimalData) value).toBigDecimal().toBigIntegerExact());
         }
         BigInteger min = integerMin(targetType);
         BigInteger max = integerMax(targetType);
+        if (options.strict) {
+            throw strictModeRejects("values outside the " + targetType + " range " + min + ".." + max);
+        }
         return value -> {
             BigInteger integer = ((DecimalData) value).toBigDecimal().toBigIntegerExact();
             if (integer.signum() < 0 && !targetType.isSigned()) {
@@ -473,41 +473,56 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    private static ValueConverter buildFloatConverter(LogicalType flinkType, ClickHouseColumn target,
-                                                      ZoneId zone, String columnPathText) {
+    /** FLOAT/DOUBLE into Float32/Float64; only DOUBLE into Float32 can overflow (to infinity), so it is checked. */
+    private static ValueConverter buildFloatingPointConverter(LogicalType flinkType, ClickHouseColumn target,
+                                                              TypeMappingOptions options, String columnPathText) {
+        boolean fromDouble = flinkType.getTypeRoot() == LogicalTypeRoot.DOUBLE;
         switch (target.getDataType()) {
-            case Float32: return value -> value;
-            case Float64: return value -> ((Float) value).doubleValue();
+            case Float64: return fromDouble ? value -> value : value -> ((Float) value).doubleValue();
+            case Float32: return fromDouble ? doubleToFloat32(options, columnPathText) : value -> value;
             default:      throw noConversion(flinkType, "Float32, Float64");
         }
     }
 
-    private static ValueConverter buildDoubleConverter(LogicalType flinkType, ClickHouseColumn target,
-                                                       ZoneId zone, String columnPathText) {
-        if (target.getDataType() == ClickHouseDataType.Float64) {
-            return value -> value;
+    private static ValueConverter doubleToFloat32(TypeMappingOptions options, String columnPathText) {
+        if (options.strict) {
+            throw strictModeRejects("values outside the Float32 range ±" + Float.MAX_VALUE);
         }
-        throw noConversion(flinkType, "Float64");
+        return value -> {
+            double v = (Double) value;
+            if (!Double.isInfinite(v) && Math.abs(v) > Float.MAX_VALUE) {
+                throw new IllegalArgumentException(
+                        "Column '" + columnPathText + "': value " + v + " is outside the Float32 range ±" + Float.MAX_VALUE);
+            }
+            return (float) v;
+        };
     }
 
     /** {@code CHAR}/{@code VARCHAR} arrive as {@link StringData}; every target starts from its text. */
     private static ValueConverter buildStringConverter(LogicalType flinkType, ClickHouseColumn target,
-                                                       ZoneId zone, String columnPathText) {
+                                                       TypeMappingOptions options, String columnPathText) {
         switch (target.getDataType()) {
             case String:
             case JSON:
                 return Object::toString;
             case FixedString:
-                return buildFixedStringConverter(target.getPrecision(), columnPathText);
+                return buildFixedStringConverter(flinkType, target.getPrecision(), options, columnPathText);
             case UUID:
-                return buildUuidConverter(columnPathText);
+                return buildUuidConverter(options, columnPathText);
             default:
                 throw noConversion(flinkType, "String, FixedString(n), UUID, JSON");
         }
     }
 
-    /** The write-time length check throws without the column name, so enforce n here instead. */
-    private static ValueConverter buildFixedStringConverter(int maxBytes, String columnPathText) {
+    /** The write-time length check throws without the column name, so enforce n here; a CHAR/VARCHAR that cannot exceed n bytes needs no check. */
+    private static ValueConverter buildFixedStringConverter(LogicalType flinkType, int maxBytes,
+                                                            TypeMappingOptions options, String columnPathText) {
+        if (LogicalTypeChecks.getLength(flinkType) * 4L <= maxBytes) {
+            return Object::toString;
+        }
+        if (options.strict) {
+            throw strictModeRejects("strings longer than " + maxBytes + " UTF-8 bytes");
+        }
         return value -> {
             String text = value.toString();
             int byteLength = utf8ByteLength(text);
@@ -530,7 +545,10 @@ public final class ClickHouseTypeMapper {
         return text.length();
     }
 
-    private static ValueConverter buildUuidConverter(String columnPathText) {
+    private static ValueConverter buildUuidConverter(TypeMappingOptions options, String columnPathText) {
+        if (options.strict) {
+            throw strictModeRejects("strings that are not canonical UUID text");
+        }
         return value -> {
             String text = value.toString();
             // fromString also zero-expands forms like '1-1-1-1-1'; accept only the canonical form.
@@ -560,13 +578,13 @@ public final class ClickHouseTypeMapper {
     }
 
     private static ValueConverter buildDateConverter(LogicalType flinkType, ClickHouseColumn target,
-                                                     ZoneId zone, String columnPathText) {
+                                                     TypeMappingOptions options, String columnPathText) {
         switch (target.getDataType()) {
             case Date32:
-                return rangeCheckedEpochDayConverter(columnPathText, DATE32_MIN_EPOCH_DAY, DATE32_MAX_EPOCH_DAY,
+                return rangeCheckedEpochDayConverter(options, columnPathText, DATE32_MIN_EPOCH_DAY, DATE32_MAX_EPOCH_DAY,
                         "Date32 range 1900-01-01..2299-12-31");
             case Date:
-                return rangeCheckedEpochDayConverter(columnPathText, 0, DATE_MAX_EPOCH_DAY,
+                return rangeCheckedEpochDayConverter(options, columnPathText, 0, DATE_MAX_EPOCH_DAY,
                         "Date range 1970-01-01..2149-06-06 — use Date32 for a wider range");
             default:
                 throw noConversion(flinkType, "Date, Date32");
@@ -574,8 +592,11 @@ public final class ClickHouseTypeMapper {
     }
 
     /** The client writes days as raw UInt16/Int32, so an out-of-range day would be stored wrapped. */
-    private static ValueConverter rangeCheckedEpochDayConverter(String columnPathText, int minEpochDay,
-                                                                int maxEpochDay, String rangeText) {
+    private static ValueConverter rangeCheckedEpochDayConverter(TypeMappingOptions options, String columnPathText,
+                                                                int minEpochDay, int maxEpochDay, String rangeText) {
+        if (options.strict) {
+            throw strictModeRejects("DATE values outside the ClickHouse " + rangeText);
+        }
         return value -> {
             int epochDay = (Integer) value;
             if (epochDay < minEpochDay || epochDay > maxEpochDay) {
@@ -589,17 +610,18 @@ public final class ClickHouseTypeMapper {
 
     /** A wall-clock value: interpreted in sink.timezone, written instant-exactly. */
     private static ValueConverter buildTimestampConverter(LogicalType flinkType, ClickHouseColumn target,
-                                                          ZoneId zone, String columnPathText) {
+                                                          TypeMappingOptions options, String columnPathText) {
         checkDateTimeTargetFits(flinkType, target, ((TimestampType) flinkType).getPrecision());
-        return rangeCheckedDateTimeConverter(target, columnPathText,
+        ZoneId zone = options.sinkTimezone;   // the converter captures the zone only
+        return rangeCheckedDateTimeConverter(target, options, columnPathText,
                 value -> ZonedDateTime.of(((TimestampData) value).toLocalDateTime(), zone));
     }
 
     /** An instant: the zone cannot change the wire bytes, and UTC keeps the state small. */
     private static ValueConverter buildTimestampLtzConverter(LogicalType flinkType, ClickHouseColumn target,
-                                                             ZoneId zone, String columnPathText) {
+                                                             TypeMappingOptions options, String columnPathText) {
         checkDateTimeTargetFits(flinkType, target, ((LocalZonedTimestampType) flinkType).getPrecision());
-        return rangeCheckedDateTimeConverter(target, columnPathText,
+        return rangeCheckedDateTimeConverter(target, options, columnPathText,
                 value -> ZonedDateTime.ofInstant(((TimestampData) value).toInstant(), ZoneOffset.UTC));
     }
 
@@ -608,8 +630,8 @@ public final class ClickHouseTypeMapper {
      * seconds (the client's writer rejects the rest without naming the column) and DateTime64
      * spans 1900..2299 — less at scale 9, where the client's Int64 tick math wraps silently.
      */
-    private static ValueConverter rangeCheckedDateTimeConverter(ClickHouseColumn target, String columnPathText,
-                                                                ValueConverter toZonedDateTime) {
+    private static ValueConverter rangeCheckedDateTimeConverter(ClickHouseColumn target, TypeMappingOptions options,
+                                                                String columnPathText, ValueConverter toZonedDateTime) {
         boolean isDateTime64 = target.getDataType() == ClickHouseDataType.DateTime64;
         long minEpochSecond = isDateTime64 ? DATETIME64_MIN_EPOCH_SECOND : 0L;
         long maxEpochSecond = isDateTime64
@@ -617,6 +639,9 @@ public final class ClickHouseTypeMapper {
                 : DATETIME_MAX_EPOCH_SECOND;
         String targetName = isDateTime64 ? "DateTime64" : "DateTime";
         String range = Instant.ofEpochSecond(minEpochSecond) + ".." + Instant.ofEpochSecond(maxEpochSecond);
+        if (options.strict) {
+            throw strictModeRejects("TIMESTAMP values outside the " + targetName + " range " + range);
+        }
         return value -> {
             ZonedDateTime converted = (ZonedDateTime) toZonedDateTime.convert(value);
             long epochSecond = converted.toEpochSecond();
@@ -661,7 +686,7 @@ public final class ClickHouseTypeMapper {
     // ------------------------------------------------------------------------------------
 
     private static ValueConverter buildArrayConverter(LogicalType flinkType, ClickHouseColumn target,
-                                                      ZoneId zone, String columnPathText) {
+                                                      TypeMappingOptions options, String columnPathText) {
         requireTargetType(target, ClickHouseDataType.Array, flinkType, "Array(T)");
         LogicalType elementType = ((ArrayType) flinkType).getElementType();
         ClickHouseColumn elementColumn = target.getNestedColumns().get(0);
@@ -669,7 +694,7 @@ public final class ClickHouseTypeMapper {
 
         ArrayData.ElementGetter elementGetter = nullCheckingElementGetter(elementType);
         ValueConverter elementConverter = buildNestedConverter(
-                elementType, elementColumn, zone, columnPathText + " element", "array element");
+                elementType, elementColumn, options, columnPathText + " element", "array element");
         boolean nullableElements = elementColumn.isNullable();
         return value -> toPayloadList((ArrayData) value, elementGetter, elementConverter,
                 nullableElements, columnPathText);
@@ -688,24 +713,24 @@ public final class ClickHouseTypeMapper {
     }
 
     private static ValueConverter buildMapConverter(LogicalType flinkType, ClickHouseColumn target,
-                                                    ZoneId zone, String columnPathText) {
+                                                    TypeMappingOptions options, String columnPathText) {
         requireTargetType(target, ClickHouseDataType.Map, flinkType, "Map(K, V)");
         MapType mapType = (MapType) flinkType;
         LogicalType keyType = mapType.getKeyType();
         LogicalType valueType = mapType.getValueType();
-        ValueConverter keyConverter = buildMapKeyConverter(keyType, target.getKeyInfo(), zone, columnPathText);
-        ValueConverter valueConverter = buildMapValueConverter(valueType, target.getValueInfo(), zone, columnPathText);
+        ValueConverter keyConverter = buildMapKeyConverter(keyType, target.getKeyInfo(), options, columnPathText);
+        ValueConverter valueConverter = buildMapValueConverter(valueType, target.getValueInfo(), options, columnPathText);
         return buildPayloadMapConverter(keyType, keyConverter, valueType, valueConverter, columnPathText);
     }
 
     /** MULTISET&lt;T&gt; is a map from T to a non-null int count, matched against {@code Map(T', UInt64)}. */
     private static ValueConverter buildMultisetConverter(LogicalType flinkType, ClickHouseColumn target,
-                                                         ZoneId zone, String columnPathText) {
+                                                         TypeMappingOptions options, String columnPathText) {
         requireTargetType(target, ClickHouseDataType.Map, flinkType, "Map(T, UInt64)");
         checkMultisetCountTarget(target);
         LogicalType elementType = ((MultisetType) flinkType).getElementType();
         LogicalType countType = new IntType(false);
-        ValueConverter keyConverter = buildMapKeyConverter(elementType, target.getKeyInfo(), zone, columnPathText);
+        ValueConverter keyConverter = buildMapKeyConverter(elementType, target.getKeyInfo(), options, columnPathText);
         // DataWriter's UInt64 write path takes a Long; the count getter yields an Integer.
         ValueConverter countConverter = buildMultisetCountConverter(columnPathText);
         return buildPayloadMapConverter(elementType, keyConverter, countType, countConverter, columnPathText);
@@ -749,11 +774,11 @@ public final class ClickHouseTypeMapper {
      * client's serializer parses them back.
      */
     private static ValueConverter buildMapKeyConverter(LogicalType keyType, ClickHouseColumn keyColumn,
-                                                       ZoneId zone, String columnPathText) {
+                                                       TypeMappingOptions options, String columnPathText) {
         checkMapKeyNullability(keyColumn);
         checkMapKeyIsRestorableFromString(keyColumn);
         ValueConverter keyConverter = buildNestedConverter(
-                keyType, keyColumn, zone, columnPathText + " key", "map key");
+                keyType, keyColumn, options, columnPathText + " key", "map key");
         return value -> String.valueOf(keyConverter.convert(value));
     }
 
@@ -785,11 +810,11 @@ public final class ClickHouseTypeMapper {
     }
 
     private static ValueConverter buildMapValueConverter(LogicalType valueType, ClickHouseColumn valueColumn,
-                                                         ZoneId zone, String columnPathText) {
+                                                         TypeMappingOptions options, String columnPathText) {
         checkNestedNullability(valueType, valueColumn,
                 "Map values (" + valueColumn.getOriginalTypeName() + ")",
                 "the Flink map value type " + valueType.asSummaryString());
-        return buildNestedConverter(valueType, valueColumn, zone, columnPathText + " value", "map value");
+        return buildNestedConverter(valueType, valueColumn, options, columnPathText + " value", "map value");
     }
 
     /**
@@ -869,7 +894,7 @@ public final class ClickHouseTypeMapper {
 
     /** ROW fields match Tuple elements positionally. */
     private static ValueConverter buildRowConverter(LogicalType flinkType, ClickHouseColumn target,
-                                                    ZoneId zone, String columnPathText) {
+                                                    TypeMappingOptions options, String columnPathText) {
         requireTargetType(target, ClickHouseDataType.Tuple, flinkType, "Tuple(...)");
         RowType rowType = (RowType) flinkType;
         List<ClickHouseColumn> elements = target.getNestedColumns();
@@ -881,7 +906,7 @@ public final class ClickHouseTypeMapper {
         for (int i = 0; i < rowType.getFieldCount(); i++) {
             RowType.RowField field = rowType.getFields().get(i);
             fieldGetters[i] = nullCheckingFieldGetter(field.getType(), i);
-            fieldConverters[i] = buildRowFieldConverter(field, elements.get(i), i, zone, columnPathText);
+            fieldConverters[i] = buildRowFieldConverter(field, elements.get(i), i, options, columnPathText);
         }
         return value -> toPayloadTuple((RowData) value, fieldGetters, fieldConverters, columnPathText);
     }
@@ -913,11 +938,11 @@ public final class ClickHouseTypeMapper {
     }
 
     private static ValueConverter buildRowFieldConverter(RowType.RowField field, ClickHouseColumn element,
-                                                         int position, ZoneId zone, String columnPathText) {
+                                                         int position, TypeMappingOptions options, String columnPathText) {
         checkNestedNullability(field.getType(), element,
                 String.format("Tuple elements (%s at position %d)", element.getOriginalTypeName(), position + 1),
                 "the Flink ROW field '" + field.getName() + "'");
-        return buildNestedConverter(field.getType(), element, zone,
+        return buildNestedConverter(field.getType(), element, options,
                 columnPathText + "." + field.getName(), "ROW field '" + field.getName() + "'");
     }
 
@@ -955,28 +980,6 @@ public final class ClickHouseTypeMapper {
         return column.getDataType().isNested() ? "" : hint;
     }
 
-    /**
-     * Unsigned targets reject sign/overflow per record, mirroring the DATE→Date range check:
-     * the client's writer would otherwise fail without naming the column.
-     */
-    private static long checkUnsignedRange(long value, long max, String targetType, String columnPathText) {
-        if (value < 0 || value > max) {
-            throw new IllegalArgumentException(
-                    "Column '" + columnPathText + "': value " + value + " is outside the "
-                    + targetType + " range 0.." + max);
-        }
-        return value;
-    }
-
-    private static long checkNonNegative(long value, String targetType, String columnPathText) {
-        if (value < 0) {
-            throw new IllegalArgumentException(
-                    "Column '" + columnPathText + "': value " + value
-                    + " is negative and cannot be written to the unsigned type " + targetType);
-        }
-        return value;
-    }
-
     private static void requireTargetType(ClickHouseColumn target, ClickHouseDataType expected,
                                           LogicalType flinkType, String supportedTargetsText) {
         if (target.getDataType() != expected) {
@@ -986,17 +989,23 @@ public final class ClickHouseTypeMapper {
 
     /** Recurses into a nested pair, prefixing mismatch reasons with the structural context. */
     private static ValueConverter buildNestedConverter(LogicalType flinkType, ClickHouseColumn column,
-                                                       ZoneId zone, String columnPathText, String context) {
+                                                       TypeMappingOptions options, String columnPathText, String context) {
         // Every composite recursion passes here, so nested SAF can never reach converterFor's unwrap.
         rejectNestedSimpleAggregateFunction(column, context);
         try {
-            return converterFor(flinkType, column, zone, columnPathText);
+            return converterFor(flinkType, column, options, columnPathText);
         } catch (TypeMappingException e) {
             if (e.getKind() == TypeMappingException.Kind.TARGET_UNSUPPORTED) {
                 throw e;
             }
             throw TypeMappingException.mismatch(context + ": " + e.getMessage());
         }
+    }
+
+    /** Under {@code sink.strict-type-mapping}, a pair whose values may not all fit is rejected at planning, so no record can fail at write time. */
+    private static TypeMappingException strictModeRejects(String whatCannotFit) {
+        return TypeMappingException.mismatch(whatCannotFit
+                + " can only be caught per record, which 'sink.strict-type-mapping' forbids");
     }
 
     private static TypeMappingException noConversion(LogicalType flinkType, String supportedTargetsText) {

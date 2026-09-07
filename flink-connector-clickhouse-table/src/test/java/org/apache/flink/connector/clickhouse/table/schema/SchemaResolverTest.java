@@ -213,12 +213,12 @@ class SchemaResolverTest {
     }
 
     @Test
-    void narrowingFailsWithColumnAndBothTypesNamed() {
+    void unsupportedPairFailsWithColumnAndBothTypesNamed() {
         ResolvedSchema schema = ResolvedSchema.of(Column.physical("v", DataTypes.INT().notNull()));
         ValidationException e = assertThrows(ValidationException.class, () ->
-                SchemaResolver.resolve(schema, clickHouseSchema("v Int16"), options(false)));
+                SchemaResolver.resolve(schema, clickHouseSchema("v String"), options(false)));
         assertTrue(e.getMessage().startsWith(
-                "Column 'v': Flink type INT NOT NULL cannot be written to ClickHouse column 'v Int16'"),
+                "Column 'v': Flink type INT NOT NULL cannot be written to ClickHouse column 'v String'"),
                 e.getMessage());
     }
 

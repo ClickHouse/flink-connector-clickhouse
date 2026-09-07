@@ -192,6 +192,7 @@ Connection options (required unless noted): `url`, `username`, `password` (defau
 |---|---|---|
 | `sink.timezone` | `UTC` | zone in which `TIMESTAMP` (no time zone) wall-clock values are interpreted; DST gap wall clocks shift forward, ambiguous fall-back wall clocks take the earlier offset |
 | `sink.ignore-unknown-flink-columns` | `false` | `true` drops Flink columns absent from the ClickHouse table instead of failing |
+| `sink.strict-type-mapping` | `false` | `true` rejects at planning every type pair whose values may not all fit the column, instead of checking each value at write time; lossless widening stays allowed |
 
 **Passthrough**: `clickhouse.client.<key>` options are forwarded to the ClickHouse client,
 `clickhouse.server.<key>` become per-query server settings. The connector sends
@@ -206,19 +207,18 @@ the client's JSON-as-string mode automatically exactly when a `JSON` column is m
 
 ### Type mapping
 
-Widening is implicit, unsigned targets are range-checked per record, and any other pair fails
-at planning naming the column and both types.
+Lossless widening is implicit. A pair whose values may not all fit the column (the "Notes" below)
+is accepted and every value is checked at write time, failing the job naming the column, value and
+range; with `'sink.strict-type-mapping' = 'true'` such pairs are rejected at planning instead. Any other
+pair fails at planning naming the column and both types.
 
 | Flink SQL type | ClickHouse column types | Notes |
 |---|---|---|
 | `BOOLEAN` | `Bool` | |
-| `TINYINT` | `Int8` or wider signed; any `UInt8..UInt256` | unsigned targets are range-checked per record |
-| `SMALLINT` | `Int16` or wider signed; any `UInt8..UInt256` | unsigned targets are range-checked per record |
-| `INT` | `Int32` or wider signed; any `UInt8..UInt256` | unsigned targets are range-checked per record |
-| `BIGINT` | `Int64`, `Int128`, `Int256`; any `UInt8..UInt256` | unsigned targets are range-checked per record |
+| `TINYINT` / `SMALLINT` / `INT` / `BIGINT` | any `Int8..Int256` or `UInt8..UInt256` | a narrower or unsigned column is range-checked per record |
 | `DECIMAL(p, s)` | a `Decimal(p', s')` it fits; with `s = 0` also any `Int8..Int256` / `UInt8..UInt256` whose digits cover `p` | boundary precisions (`DECIMAL(19, 0)` → `Int64`, `DECIMAL(20, 0)` → `UInt64`) and unsigned targets are range-checked per record |
-| `FLOAT` / `DOUBLE` | `Float32` (`FLOAT` only), `Float64` | |
-| `CHAR` / `VARCHAR` / `STRING` | `String`, `FixedString(n)`, `UUID`, `JSON` | `FixedString` checked in bytes; `UUID` must be canonical text |
+| `FLOAT` / `DOUBLE` | `Float32`, `Float64` | `DOUBLE` into `Float32` is range-checked per record |
+| `CHAR` / `VARCHAR` / `STRING` | `String`, `FixedString(n)`, `UUID`, `JSON` | `FixedString` length checked in bytes per record unless the Flink length cannot exceed it; `UUID` text checked per record |
 | `DATE` | `Date`, `Date32` | range-checked per record |
 | `TIMESTAMP(p)` / `TIMESTAMP_LTZ(p)` | `DateTime` (`p = 0`), `DateTime64(s >= p)` | Flink's default `TIMESTAMP` is precision 6 — declare `TIMESTAMP(3)` for `DateTime64(3)`. `TIMESTAMP` is a wall clock in `sink.timezone`; `TIMESTAMP_LTZ` an instant |
 | `ARRAY<t>` | `Array(T)` | only `Array(Nullable(T))` can carry nested NULLs |
