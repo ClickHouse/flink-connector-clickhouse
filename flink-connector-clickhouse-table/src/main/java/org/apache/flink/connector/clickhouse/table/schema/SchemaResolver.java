@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static com.clickhouse.utils.writer.DataWriter.unwrapTransparentWrappers;
+import static com.clickhouse.utils.writer.DataWriter.unwrapSimpleAggregateFunction;
 
 /**
  * Pure function from {@code (ResolvedSchema, ClickHouse TableSchema, options)} to the
@@ -85,7 +85,7 @@ public final class SchemaResolver {
                                                        ClickHouseColumn column,
                                                        SchemaResolverOptions options) {
         checkInsertable(field.getName(), column);
-        ClickHouseColumn effective = unwrapTransparentWrappers(column);
+        ClickHouseColumn effective = unwrapSimpleAggregateFunction(column);
         ValueConverter converter = converterFor(field, column, options);
         checkNullability(field, column, effective);
         FieldAccessor accessor = FieldAccessor.of(
@@ -219,7 +219,7 @@ public final class SchemaResolver {
         if (column.hasDefault()) {
             return false;
         }
-        return !unwrapTransparentWrappers(column).isNullable();
+        return !unwrapSimpleAggregateFunction(column).isNullable();
     }
 
     private static void checkNotEmpty(List<ResolvedColumnMapping> mappings,

@@ -232,8 +232,8 @@ public class DataWriter {
         }
     }
 
-    /** SimpleAggregateFunction(f, T) is wire-encoded as its inner type T (issue #143); planning unwraps with this too. */
-    public static ClickHouseColumn unwrapTransparentWrappers(ClickHouseColumn column) {
+    /** SimpleAggregateFunction(f, T) is wire-encoded as its inner type T */
+    public static ClickHouseColumn unwrapSimpleAggregateFunction(ClickHouseColumn column) {
         ClickHouseColumn c = column;
         while (c.getDataType() == ClickHouseDataType.SimpleAggregateFunction && c.hasNestedColumn()) {
             c = c.getNestedColumns().get(0);
@@ -246,7 +246,7 @@ public class DataWriter {
      * {@code column.getDataType()}. Per design spec §8a.
      */
     public void writeValue(Object value, ClickHouseColumn column) throws IOException {
-        column = unwrapTransparentWrappers(column);
+        column = unwrapSimpleAggregateFunction(column);
 
         ClickHouseDataType type = column.getDataType();
         boolean nullable = column.isNullable();

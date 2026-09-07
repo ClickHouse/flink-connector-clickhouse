@@ -39,7 +39,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-import static com.clickhouse.utils.writer.DataWriter.unwrapTransparentWrappers;
+import static com.clickhouse.utils.writer.DataWriter.unwrapSimpleAggregateFunction;
 
 /**
  * The (Flink {@code LogicalType}, {@code ClickHouseColumn}) compatibility matrix of the
@@ -57,13 +57,13 @@ import static com.clickhouse.utils.writer.DataWriter.unwrapTransparentWrappers;
  *
  * <p>{@code build*Converter} methods run once per column at planning time; {@code toPayload*}
  * methods run per record on the TaskManager. Wrapper shedding is shared with the write path
- * (DataWriter#unwrapTransparentWrappers).
+ * (DataWriter#unwrapSimpleAggregateFunction).
  */
 public final class ClickHouseTypeMapper {
 
     /** One matrix row: maps a pair to a converter or throws {@link TypeMappingException}. */
     @FunctionalInterface
-    private interface RootRule {
+    private interface TypeMappingRule {
         ValueConverter apply(LogicalType flinkType, ClickHouseColumn target, ZoneId sinkTimezone, String path);
     }
 
@@ -125,7 +125,7 @@ public final class ClickHouseTypeMapper {
     static final long DATETIME64_MAX_EPOCH_SECOND =
             LocalDate.of(2299, 12, 31).atTime(23, 59, 59).toEpochSecond(ZoneOffset.UTC);
 
-    private static final Map<LogicalTypeRoot, RootRule> RULES = buildRules();
+    private static final Map<LogicalTypeRoot, TypeMappingRule> RULES = buildRules();
 
     private ClickHouseTypeMapper() {}
 
@@ -143,9 +143,9 @@ public final class ClickHouseTypeMapper {
      */
     public static ValueConverter converterFor(LogicalType flinkType, ClickHouseColumn column,
                                               ZoneId sinkTimezone, String path) {
-        ClickHouseColumn target = unwrapTransparentWrappers(column);
+        ClickHouseColumn target = unwrapSimpleAggregateFunction(column);
         checkTargetWritable(target);
-        RootRule rule = RULES.get(flinkType.getTypeRoot());
+        TypeMappingRule rule = RULES.get(flinkType.getTypeRoot());
         if (rule == null) {
             // Only reachable on a Flink generation newer than this build's type-root set.
             throw TypeMappingException.mismatch(
@@ -204,8 +204,8 @@ public final class ClickHouseTypeMapper {
     // Matrix registration — one entry per LogicalTypeRoot
     // ------------------------------------------------------------------------------------
 
-    private static Map<LogicalTypeRoot, RootRule> buildRules() {
-        Map<LogicalTypeRoot, RootRule> rules = new EnumMap<>(LogicalTypeRoot.class);
+    private static Map<LogicalTypeRoot, TypeMappingRule> buildRules() {
+        Map<LogicalTypeRoot, TypeMappingRule> rules = new EnumMap<>(LogicalTypeRoot.class);
 
         rules.put(LogicalTypeRoot.BOOLEAN, ClickHouseTypeMapper::buildBooleanConverter);
         rules.put(LogicalTypeRoot.TINYINT, signedIntegerRule(
@@ -274,7 +274,7 @@ public final class ClickHouseTypeMapper {
         return rules;
     }
 
-    private static void registerIfPresent(Map<LogicalTypeRoot, RootRule> rules, String root, RootRule rule) {
+    private static void registerIfPresent(Map<LogicalTypeRoot, TypeMappingRule> rules, String root, TypeMappingRule rule) {
         try {
             rules.put(LogicalTypeRoot.valueOf(root), rule);
         } catch (IllegalArgumentException e) {
@@ -282,7 +282,7 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    private static RootRule rejected(String reason) {
+    private static TypeMappingRule rejected(String reason) {
         return (flinkType, target, zone, path) -> {
             throw TypeMappingException.mismatch(reason);
         };
@@ -301,10 +301,10 @@ public final class ClickHouseTypeMapper {
     }
 
     /** The shared rule shape of the four signed Flink integers; sources are all {@code Number}s. */
-    private static RootRule signedIntegerRule(ClickHouseDataType identityTarget,
+    private static TypeMappingRule signedIntegerRule(ClickHouseDataType identityTarget,
                                               ClickHouseDataType unsignedTarget, long unsignedMax,
                                               Set<ClickHouseDataType> wideningTargets,
-                                              String supportedTargets) {
+                                              String supportedTargetsMessage) {
         return (flinkType, target, zone, path) -> {
             ClickHouseDataType targetType = target.getDataType();
             if (targetType == identityTarget) {
@@ -326,7 +326,7 @@ public final class ClickHouseTypeMapper {
                     default:     return value -> BigInteger.valueOf(((Number) value).longValue());
                 }
             }
-            throw noConversion(flinkType, supportedTargets);
+            throw noConversion(flinkType, supportedTargetsMessage);
         };
     }
 
@@ -941,9 +941,9 @@ public final class ClickHouseTypeMapper {
     }
 
     private static void requireTargetType(ClickHouseColumn target, ClickHouseDataType expected,
-                                          LogicalType flinkType, String supportedTargets) {
+                                          LogicalType flinkType, String supportedTargetsText) {
         if (target.getDataType() != expected) {
-            throw noConversion(flinkType, supportedTargets);
+            throw noConversion(flinkType, supportedTargetsText);
         }
     }
 
@@ -962,9 +962,9 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    private static TypeMappingException noConversion(LogicalType flinkType, String supportedTargets) {
+    private static TypeMappingException noConversion(LogicalType flinkType, String supportedTargetsText) {
         return TypeMappingException.mismatch(String.format(
                 "no supported conversion; supported ClickHouse types for %s: %s",
-                flinkType.asSummaryString(), supportedTargets));
+                flinkType.asSummaryString(), supportedTargetsText));
     }
 }
