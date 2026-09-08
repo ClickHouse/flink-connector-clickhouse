@@ -207,18 +207,20 @@ the client's JSON-as-string mode automatically exactly when a `JSON` column is m
 
 ### Type mapping
 
-Lossless widening is implicit. A pair whose values may not all fit the column (the "Notes" below)
-is accepted and every value is checked at write time, failing the job naming the column, value and
-range; with `'sink.strict-type-mapping' = 'true'` such pairs are rejected at planning instead. Any other
-pair fails at planning naming the column and both types.
+Lossless widening is implicit; a pair that would round a value (`DOUBLE` into `Float32`, a narrower
+`Decimal` scale or timestamp precision) is rejected at planning. A pair whose values may not all fit the
+column (the "Notes" below) is accepted and every value is checked at write time, failing the job naming
+the column, value and range; with `'sink.strict-type-mapping' = 'true'` such pairs are rejected at
+planning instead. Any other pair fails at planning naming the column and both types.
 
 | Flink SQL type | ClickHouse column types | Notes |
 |---|---|---|
 | `BOOLEAN` | `Bool` | |
 | `TINYINT` / `SMALLINT` / `INT` / `BIGINT` | any `Int8..Int256` or `UInt8..UInt256` | a narrower or unsigned column is range-checked per record |
 | `DECIMAL(p, s)` | a `Decimal(p', s')` it fits; with `s = 0` also any `Int8..Int256` / `UInt8..UInt256` whose digits cover `p` | boundary precisions (`DECIMAL(19, 0)` → `Int64`, `DECIMAL(20, 0)` → `UInt64`) and unsigned targets are range-checked per record |
-| `FLOAT` / `DOUBLE` | `Float32`, `Float64` | `DOUBLE` into `Float32` is range-checked per record |
-| `CHAR` / `VARCHAR` / `STRING` | `String`, `FixedString(n)`, `UUID`, `JSON` | `FixedString` length checked in bytes per record unless the Flink length cannot exceed it; `UUID` text checked per record |
+| `FLOAT` | `Float32`, `Float64` | |
+| `DOUBLE` | `Float64` | `Float32` would round — `CAST` to `FLOAT` to round explicitly |
+| `CHAR` / `VARCHAR` / `STRING` | `String`, `FixedString(n)`, `UUID`, `JSON` | `FixedString` length checked in UTF-8 bytes per record, whatever the declared Flink length (Flink does not enforce it by default); `UUID` text checked per record |
 | `DATE` | `Date`, `Date32` | range-checked per record |
 | `TIMESTAMP(p)` / `TIMESTAMP_LTZ(p)` | `DateTime` (`p = 0`), `DateTime64(s >= p)` | Flink's default `TIMESTAMP` is precision 6 — declare `TIMESTAMP(3)` for `DateTime64(3)`. `TIMESTAMP` is a wall clock in `sink.timezone`; `TIMESTAMP_LTZ` an instant |
 | `ARRAY<t>` | `Array(T)` | only `Array(Nullable(T))` can carry nested NULLs |

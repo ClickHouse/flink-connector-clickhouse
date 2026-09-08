@@ -20,7 +20,6 @@ import org.apache.flink.table.types.logical.MapType;
 import org.apache.flink.table.types.logical.MultisetType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.TimestampType;
-import org.apache.flink.table.types.logical.utils.LogicalTypeChecks;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -48,12 +47,13 @@ import static com.clickhouse.utils.writer.DataWriter.unwrapSimpleAggregateFuncti
  * the plain Java value {@code DataWriter} expects, or throws a {@link TypeMappingException}
  * saying why the pair is rejected.
  *
- * <p>Lossless widening is implicit. A pair whose values may not all fit the column — a narrower or
- * unsigned integer, {@code Float32} from {@code DOUBLE}, {@code DECIMAL(p,0)} at an integer's digit
- * boundary, the {@code Date}/{@code DateTime} ranges, {@code FixedString} lengths, UUID text — is
- * checked per record naming the column (the client's writer would fail without it or, for UInt64
- * inside composites, wrap the value silently); under {@code sink.strict-type-mapping} such a pair is
- * rejected at planning instead, so no record can fail at write time.
+ * <p>Lossless widening is implicit; a pair that would round a value ({@code DOUBLE} into
+ * {@code Float32}, a narrower Decimal scale or timestamp precision) is rejected at planning. A pair
+ * whose values may not all fit the column — a narrower or unsigned integer, {@code DECIMAL(p,0)} at an
+ * integer's digit boundary, the {@code Date}/{@code DateTime} ranges, {@code FixedString} lengths, UUID
+ * text — is checked per record naming the column (the client's writer would fail without it or, for
+ * UInt64 inside composites, wrap the value silently); under {@code sink.strict-type-mapping} such a
+ * pair is rejected at planning instead, so no record can fail at write time.
  *
  * <p>{@code build*Converter} methods run once per column at planning time; {@code toPayload*}
  * methods run per record on the TaskManager. Wrapper shedding is shared with the write path
@@ -473,29 +473,22 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    /** FLOAT/DOUBLE into Float32/Float64; only DOUBLE into Float32 can overflow (to infinity), so it is checked. */
+    /** FLOAT into Float32/Float64, DOUBLE into Float64 only: Float32 would round almost every double. */
     private static ValueConverter buildFloatingPointConverter(LogicalType flinkType, ClickHouseColumn target,
                                                               TypeMappingOptions options, String columnPathText) {
         boolean fromDouble = flinkType.getTypeRoot() == LogicalTypeRoot.DOUBLE;
         switch (target.getDataType()) {
-            case Float64: return fromDouble ? value -> value : value -> ((Float) value).doubleValue();
-            case Float32: return fromDouble ? doubleToFloat32(options, columnPathText) : value -> value;
-            default:      throw noConversion(flinkType, "Float32, Float64");
+            case Float64:
+                return fromDouble ? value -> value : value -> ((Float) value).doubleValue();
+            case Float32:
+                if (fromDouble) {
+                    throw TypeMappingException.mismatch("Float32 would round DOUBLE values to single precision — "
+                            + "CAST the value to FLOAT to round it explicitly, or use a Float64 column");
+                }
+                return value -> value;
+            default:
+                throw noConversion(flinkType, fromDouble ? "Float64" : "Float32, Float64");
         }
-    }
-
-    private static ValueConverter doubleToFloat32(TypeMappingOptions options, String columnPathText) {
-        if (options.strict) {
-            throw strictModeRejects("values outside the Float32 range ±" + Float.MAX_VALUE);
-        }
-        return value -> {
-            double v = (Double) value;
-            if (!Double.isInfinite(v) && Math.abs(v) > Float.MAX_VALUE) {
-                throw new IllegalArgumentException(
-                        "Column '" + columnPathText + "': value " + v + " is outside the Float32 range ±" + Float.MAX_VALUE);
-            }
-            return (float) v;
-        };
     }
 
     /** {@code CHAR}/{@code VARCHAR} arrive as {@link StringData}; every target starts from its text. */
@@ -506,7 +499,7 @@ public final class ClickHouseTypeMapper {
             case JSON:
                 return Object::toString;
             case FixedString:
-                return buildFixedStringConverter(flinkType, target.getPrecision(), options, columnPathText);
+                return buildFixedStringConverter(target.getPrecision(), options, columnPathText);
             case UUID:
                 return buildUuidConverter(options, columnPathText);
             default:
@@ -514,12 +507,9 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    /** The write-time length check throws without the column name, so enforce n here; a CHAR/VARCHAR that cannot exceed n bytes needs no check. */
-    private static ValueConverter buildFixedStringConverter(LogicalType flinkType, int maxBytes,
-                                                            TypeMappingOptions options, String columnPathText) {
-        if (LogicalTypeChecks.getLength(flinkType) * 4L <= maxBytes) {
-            return Object::toString;
-        }
+    /** Checked whatever the CHAR/VARCHAR length: Flink does not enforce declared lengths by default, and the client's own check throws without the column name. */
+    private static ValueConverter buildFixedStringConverter(int maxBytes, TypeMappingOptions options,
+                                                            String columnPathText) {
         if (options.strict) {
             throw strictModeRejects("strings longer than " + maxBytes + " UTF-8 bytes");
         }

@@ -97,9 +97,10 @@ class ClickHouseTypeMapperTest {
         "DECIMAL(9,0)     | Int32 Int64 Int128 Int256 Decimal(18,4) | UInt32 UInt64 UInt128 UInt256",
         "DECIMAL(10,2)    | Decimal(10,2) Decimal(18,4)             | ",
         "FLOAT            | Float32 Float64                         | ",
-        "DOUBLE           | Float64                                 | Float32",
-        // CHAR(n)/VARCHAR(n): a FixedString(m) needs no check when 4n <= m, the most UTF-8 bytes n characters take
-        "CHAR(4)          | String JSON FixedString(16)             | FixedString(4) UUID",
+        // DOUBLE into Float32 would round, so it is rejected outright
+        "DOUBLE           | Float64                                 | ",
+        // FixedString(m) is checked whatever the CHAR/VARCHAR length: Flink does not enforce declared lengths by default
+        "CHAR(4)          | String JSON                             | FixedString(4) FixedString(16) UUID",
         "STRING           | String JSON                             | FixedString(4) FixedString(16) UUID",
         "DATE             |                                         | Date Date32",
         "TIMESTAMP(0)     |                                         | DateTime DateTime64(3) DateTime64(9)",
@@ -248,8 +249,6 @@ class ClickHouseTypeMapperTest {
                 probe("BIGINT", "UInt64", in(0L, BigInteger.ZERO, Long.MAX_VALUE, BigInteger.valueOf(Long.MAX_VALUE)),
                         out(-1L, "UInt64 range 0..18446744073709551615")),
                 probe("BIGINT", "UInt256", in(Long.MAX_VALUE, BigInteger.valueOf(Long.MAX_VALUE)), out(-1L, "UInt256 range 0..")),
-                probe("DOUBLE", "Float32", in(1.5d, 1.5f, (double) -Float.MAX_VALUE, -Float.MAX_VALUE, Double.POSITIVE_INFINITY, Float.POSITIVE_INFINITY),
-                        out(1e300, "Float32 range", -1e300, "Float32 range")),
                 // 20 digits pass the planning precision check but reach past UInt64's maximum
                 probe("DECIMAL(20,0)", "UInt64", in(decimal("18446744073709551615"), new BigInteger("18446744073709551615")),
                         out(decimal("99999999999999999999"), "UInt64 range", decimal("-1"), "unsigned type UInt64")),
@@ -260,6 +259,8 @@ class ClickHouseTypeMapperTest {
                         out(decimal("-1"), "unsigned type UInt8", decimal("256"), "UInt8 range 0..255")),
                 // three characters but six UTF-8 bytes: the limit is bytes
                 probe("STRING", "FixedString(4)", in(str("abcd"), "abcd", str("ab"), "ab"), out(str("ééé"), "FixedString(4)")),
+                // a CHAR(4) value may still exceed four characters: Flink does not enforce declared lengths by default
+                probe("CHAR(4)", "FixedString(16)", in(str("abcd"), "abcd"), out(str("abcdefghijklmnopq"), "FixedString(16)")),
                 // UUID.fromString would zero-expand 1-1-1-1-1 silently; only canonical text passes, in either case
                 probe("STRING", "UUID", in(str(SOME_UUID.toString()), SOME_UUID, str(SOME_UUID.toString().toUpperCase()), SOME_UUID),
                         out(str("1-1-1-1-1"), "not a valid UUID")),
@@ -437,6 +438,35 @@ class ClickHouseTypeMapperTest {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> converter.convert(new GenericArrayData(new long[]{1L, -1L})));
         assertTrue(e.getMessage().contains("Column 'c element'"), e.getMessage());
+    }
+
+    /** Strictness reaches every nesting level: a range-checked pair is rejected at planning inside composites too. */
+    @Test
+    void strictModeRejectsRangeCheckedPairsInsideComposites() {
+        LogicalType bigint = new BigIntType(false);
+        VarCharType string = new VarCharType(false, VarCharType.MAX_LENGTH);
+        assertStrictRejects(new ArrayType(false, bigint), "Array(UInt32)", "array element");
+        assertStrictRejects(new MapType(false, bigint, string), "Map(UInt32, String)", "map key");
+        assertStrictRejects(new MapType(false, string, bigint), "Map(String, UInt32)", "map value");
+        assertStrictRejects(new MultisetType(false, bigint), "Map(UInt32, UInt64)", "map key");
+        assertStrictRejects(rowOf(bigint), "Tuple(UInt32)", "ROW field 'f0'");
+    }
+
+    private static void assertStrictRejects(LogicalType flinkType, String target, String context) {
+        ClickHouseTypeMapper.converterFor(flinkType, col(target), LENIENT, "c");
+        TypeMappingException e = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(flinkType, col(target), STRICT, "c"));
+        assertTrue(e.getMessage().startsWith(context + ": "), e.getMessage());
+        assertTrue(e.getMessage().contains("'sink.strict-type-mapping'"), e.getMessage());
+    }
+
+    @Test
+    void doubleIntoFloat32IsRejectedBecauseItRounds() {
+        for (TypeMappingOptions options : List.of(LENIENT, STRICT)) {
+            TypeMappingException e = assertThrows(TypeMappingException.class,
+                    () -> ClickHouseTypeMapper.converterFor(new DoubleType(false), col("Float32"), options, "c"));
+            assertTrue(e.getMessage().contains("CAST the value to FLOAT"), e.getMessage());
+        }
     }
 
     @Test
