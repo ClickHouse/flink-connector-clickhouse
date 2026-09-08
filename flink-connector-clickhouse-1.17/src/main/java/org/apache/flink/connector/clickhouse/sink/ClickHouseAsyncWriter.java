@@ -73,14 +73,14 @@ public class ClickHouseAsyncWriter<InputT>
                                  Collection<BufferedRequestState<ClickHousePayload>> state) {
         super(elementConverter,
                 context,
-                AsyncSinkWriterConfiguration.builder()
-                        .setMaxBatchSize(maxBatchSize)
-                        .setMaxBatchSizeInBytes(maxBatchSizeInBytes)
-                        .setMaxInFlightRequests(maxInFlightRequests)
-                        .setMaxBufferedRequests(maxBufferedRequests)
-                        .setMaxTimeInBufferMS(maxTimeInBufferMS)
-                        .setMaxRecordSizeInBytes(maxRecordSizeInBytes)
-                        .build(),
+                buildConfiguration(
+                        maxBatchSize,
+                        maxInFlightRequests,
+                        maxBufferedRequests,
+                        maxBatchSizeInBytes,
+                        maxTimeInBufferMS,
+                        maxRecordSizeInBytes,
+                        clickHouseClientConfig),
                 state);
 
         if (!(elementConverter instanceof ClickHouseConvertor)) {
@@ -116,6 +116,28 @@ public class ClickHouseAsyncWriter<InputT>
                 new DescriptiveStatisticsHistogram(1000));
         this.writeFailureLatencyHistogram = metricGroup.histogram("writeFailureLatencyHistogram",
                 new DescriptiveStatisticsHistogram(1000));
+    }
+
+    private static AsyncSinkWriterConfiguration buildConfiguration(
+            int maxBatchSize,
+            int maxInFlightRequests,
+            int maxBufferedRequests,
+            long maxBatchSizeInBytes,
+            long maxTimeInBufferMS,
+            long maxRecordSizeInBytes,
+            ClickHouseClientConfig clickHouseClientConfig) {
+        AsyncSinkWriterConfiguration.AsyncSinkWriterConfigurationBuilder builder =
+                AsyncSinkWriterConfiguration.builder()
+                        .setMaxBatchSize(maxBatchSize)
+                        .setMaxBatchSizeInBytes(maxBatchSizeInBytes)
+                        .setMaxInFlightRequests(maxInFlightRequests)
+                        .setMaxBufferedRequests(maxBufferedRequests)
+                        .setMaxTimeInBufferMS(maxTimeInBufferMS)
+                        .setMaxRecordSizeInBytes(maxRecordSizeInBytes);
+        if (clickHouseClientConfig.getRateLimitingStrategySupplier() != null) {
+            builder.setRateLimitingStrategy(clickHouseClientConfig.getRateLimitingStrategySupplier().get());
+        }
+        return builder.build();
     }
 
     private static byte[] buildHeader(List<ColumnBinding> bindings) {

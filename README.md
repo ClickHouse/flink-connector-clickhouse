@@ -212,6 +212,29 @@ Our Sink is built on top of Flink’s `AsyncSinkBase`
 | maxTimeInBufferMS         | The maximum time a record may stay in the sink before being flushed                                                                 | N/A        |
 | maxRecordSizeInBytes         | The maximum record size that the sink will accept, records larger than this will be automatically rejected                                                                 | N/A        |
 
+### Rate limiting strategy
+
+By default, throughput is governed by Flink's default congestion-control `RateLimitingStrategy`. Use
+`ClickHouseClientConfig#setRateLimitingStrategySupplier` to supply your own `RateLimitingStrategy` instead,
+e.g. to tune ingestion for a smaller cluster:
+
+```java
+ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(url, username, password, database, table);
+clickHouseClientConfig.setRateLimitingStrategySupplier(() ->
+        CongestionControlRateLimitingStrategy.builder()
+                .setMaxInFlightRequests(maxInFlightRequests)
+                .setInitialMaxInFlightMessages(maxBatchSize)
+                .setScalingStrategy(AIMDScalingStrategy.builder(maxBatchSize)
+                        .setIncreaseRate(10)
+                        .setDecreaseFactor(0.5)
+                        .build())
+                .build());
+```
+
+A supplier is required (rather than a strategy instance) because `RateLimitingStrategy` isn't
+`Serializable` — the `SerializableSupplier` is what gets shipped to task managers, and each writer calls
+`get()` locally to construct its own strategy instance.
+
 ### Sink Metrics
 
 Our Sink exposes additional metrics on top of Flink's existing metrics:
