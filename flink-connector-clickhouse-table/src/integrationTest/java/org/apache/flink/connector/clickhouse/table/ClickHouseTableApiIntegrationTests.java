@@ -1120,6 +1120,209 @@ public class ClickHouseTableApiIntegrationTests {
                 "is EPHEMERAL", "without a column list");
     }
 
+    // ------------------------------------------------------------------------------------
+    // Rejections: every pair the matrix refuses at planning, and every check it defers to
+    // write time. Both are tables so a rule that stops firing shows up as a named row rather
+    // than as a silently accepted insert.
+    // ------------------------------------------------------------------------------------
+
+    /** Splits the {@code ~}-separated needle cell of the rejection tables below. */
+    private static String[] needles(String cell) {
+        return cell.split("~");
+    }
+
+    /** Fails the row by name rather than by index when a table-driven rejection stops firing. */
+    private static void assertRejectedWith(String description, Executable insert, String... needles) {
+        Exception failure = Assertions.assertThrows(Exception.class, insert, description + " was accepted");
+        for (String needle : needles) {
+            Assertions.assertTrue(exceptionChainContains(failure, needle),
+                    description + ": no '" + needle + "' in " + failure);
+        }
+    }
+
+    /** One ClickHouse column {@code c} of the given type, plus {@code id}; table name per row. */
+    private static String rejectionTable(String prefix, int index, String clickHouseType) throws Exception {
+        String table = String.format("table_api_%s_%02d", prefix, index);
+        createTable(table, "id Int64, c " + clickHouseType);
+        return table;
+    }
+
+    /**
+     * Every pair rejected at planning: the scalar matrix cells, the structural composite rules
+     * (element/key/value/field nullability, Tuple arity and named-Tuple order, unsupported map
+     * keys) and the strict-mapping paths, scalar and nested. The inserted value is always valid —
+     * these fail on the types alone, before a record exists.
+     */
+    @Test
+    void everyRejectedPairFailsAtPlanningWithItsReason() throws Exception {
+        String strict = ", 'sink.strict-numeric-mapping' = 'true'";
+        String[][] pairs = {
+            // ClickHouse type | Flink type of column 'c' | a valid value | options | expected message fragments
+            // --- ClickHouse targets the sink has no write path for
+            {"Enum8('a' = 1, 'b' = 2)", "STRING NOT NULL", "'a'", "",
+             "is not yet supported by the sink~issue #43"},
+            {"Array(SimpleAggregateFunction(sum, Int64))", "ARRAY<BIGINT NOT NULL> NOT NULL",
+             "ARRAY[CAST(1 AS BIGINT)]", "", "SimpleAggregateFunction is only writable as a top-level column"},
+            // --- Decimal: the four ways a Decimal source can fail to fit
+            {"Decimal(10, 2)", "DECIMAL(10, 4) NOT NULL", "CAST('1.2345' AS DECIMAL(10, 4))", "",
+             "Column 'c'~scale 4 exceeds the column's scale 2"},
+            {"Decimal(10, 2)", "DECIMAL(12, 2) NOT NULL", "CAST('1.23' AS DECIMAL(12, 2))", "",
+             "10 integer digits exceed the column's 8 integer digits"},
+            {"Int32", "DECIMAL(9, 2) NOT NULL", "CAST('1.23' AS DECIMAL(9, 2))", "",
+             "only DECIMAL(p, 0) can be written to an integer column"},
+            {"Int32", "DECIMAL(11, 0) NOT NULL", "CAST(1 AS DECIMAL(11, 0))", "",
+             "precision 11 exceeds Int32's 10 digits"},
+            // --- no conversion at all between the two type families
+            {"Bool", "INT NOT NULL", "CAST(1 AS INT)", "", "no supported conversion~for INT NOT NULL: Int8..Int256, UInt8..UInt256"},
+            {"Int64", "BOOLEAN NOT NULL", "TRUE", "", "supported ClickHouse types for BOOLEAN NOT NULL: Bool"},
+            {"String", "DATE NOT NULL", "DATE '2026-01-02'", "", "supported ClickHouse types for DATE NOT NULL: Date, Date32"},
+            {"Date", "TIMESTAMP(3) NOT NULL", "TIMESTAMP '2026-01-02 03:04:05.678'", "",
+             "DateTime, DateTime64(s) with s >= the Flink precision"},
+            // --- nullability, at the column and at every nested position
+            {"Int64", "BIGINT", "CAST(1 AS BIGINT)", "",
+             "Column 'c'~is nullable but ClickHouse column 'c Int64' is not Nullable"},
+            {"Array(Int32)", "ARRAY<INT> NOT NULL", "ARRAY[CAST(1 AS INT)]", "",
+             "the Flink array element type INT is nullable but the ClickHouse element type Int32 is not Nullable"},
+            {"Map(String, Int32)", "MAP<STRING NOT NULL, INT> NOT NULL", "MAP['k', CAST(1 AS INT)]", "",
+             "the Flink map value type INT is nullable but the ClickHouse type Int32 is not Nullable"},
+            {"Tuple(Int32, String)", "ROW<a INT, b STRING NOT NULL> NOT NULL", "ROW(CAST(1 AS INT), 'x')", "",
+             "the Flink ROW field 'a' is nullable but the ClickHouse type Int32 is not Nullable"},
+            // --- composite structure
+            {"Tuple(Int32, String)", "ROW<a INT NOT NULL> NOT NULL", "ROW(CAST(1 AS INT))", "",
+             "ROW has 1 fields but the Tuple has 2 elements"},
+            {"Tuple(a Int32, b String)", "ROW<b INT NOT NULL, a STRING NOT NULL> NOT NULL",
+             "ROW(CAST(1 AS INT), 'x')", "", "bind to Tuple elements by position, but the Tuple names them"},
+            // --- map keys are checkpointed as strings, so only types that parse back are allowed
+            {"Map(UInt64, String)", "MAP<DECIMAL(20, 0) NOT NULL, STRING NOT NULL> NOT NULL",
+             "MAP[CAST(1 AS DECIMAL(20, 0)), 'v']", "",
+             "Map keys of type UInt64 are not supported~use an Int64 or UInt128 key column instead"},
+            {"Map(UUID, String)", "MAP<STRING NOT NULL, STRING NOT NULL> NOT NULL", "MAP['k', 'v']", "",
+             "Map key type UUID is not supported~cannot be restored from a string"},
+            // --- strict numeric mapping, on each path that would otherwise range-check per record
+            {"UInt32", "BIGINT NOT NULL", "CAST(1 AS BIGINT)", strict,
+             "Column 'c'~UInt32 range~'sink.strict-numeric-mapping'"},
+            {"Int32", "DECIMAL(10, 0) NOT NULL", "CAST(1 AS DECIMAL(10, 0))", strict,
+             "Column 'c'~Int32 range~'sink.strict-numeric-mapping'"},
+            {"Array(UInt64)", "ARRAY<BIGINT NOT NULL> NOT NULL", "ARRAY[CAST(1 AS BIGINT)]", strict,
+             "Column 'c'~array element~UInt64 range~'sink.strict-numeric-mapping'"},
+            {"Map(String, UInt32)", "MAP<STRING NOT NULL, BIGINT NOT NULL> NOT NULL",
+             "MAP['k', CAST(1 AS BIGINT)]", strict, "Column 'c'~map value~UInt32 range~'sink.strict-numeric-mapping'"},
+            {"Tuple(a UInt8, b String)", "ROW<a BIGINT NOT NULL, b STRING NOT NULL> NOT NULL",
+             "ROW(CAST(1 AS BIGINT), 'x')", strict, "Column 'c'~ROW field 'a'~UInt8 range~'sink.strict-numeric-mapping'"},
+        };
+
+        TableEnvironment env = tableEnvironment();
+        for (int i = 0; i < pairs.length; i++) {
+            String table = rejectionTable("reject", i, pairs[i][0]);
+            String flinkTable = "ch_reject_pair_" + i;
+            String value = pairs[i][2];
+            env.executeSql(sinkDdl(flinkTable, table, "id BIGINT NOT NULL, c " + pairs[i][1], pairs[i][3]));
+
+            String description = pairs[i][0] + " <- " + pairs[i][1] + pairs[i][3];
+            assertRejectedWith(description,
+                    () -> env.executeSql("INSERT INTO " + flinkTable + " VALUES (1, " + value + ")"),
+                    needles(pairs[i][4]));
+        }
+    }
+
+    /** Flink SQL has no MULTISET literal, so this one pair needs COLLECT rather than the table above. */
+    @Test
+    void multisetIntoANonUInt64MapValueIsRejectedAtPlanning() throws Exception {
+        String table = "table_api_multiset_reject";
+        createTable(table, "id Int64, tags Map(String, Int64)");
+
+        TableEnvironment env = TableEnvironment.create(EnvironmentSettings.inBatchMode());
+        env.executeSql(sinkDdl("ch_multiset_reject", table,
+                "id BIGINT NOT NULL, tags MULTISET<STRING NOT NULL> NOT NULL"));
+
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_multiset_reject "
+                        + "SELECT CAST(id AS BIGINT), COLLECT(CAST(tag AS STRING)) "
+                        + "FROM (VALUES (1, 'a')) AS t(id, tag) GROUP BY id"),
+                "Column 'tags'", "MULTISET counts require a Map value type of exactly UInt64, found Int64");
+    }
+
+    /**
+     * Every check the sink defers to write time, at one step past the bound: the value the types
+     * alone cannot rule out fails per record, naming the column — and, inside a composite, the
+     * path within it ({@code c element}, {@code c value}, {@code c.a}).
+     */
+    @Test
+    void everyDeferredValueCheckFailsPerRecordNamingItsPath() throws Exception {
+        String[][] cases = {
+            // ClickHouse column type | Flink type of 'c' | out-of-range value | expected message fragments
+            {"Date", "DATE NOT NULL", "DATE '1969-12-31'",
+             "Column 'c': DATE value 1969-12-31 is outside the ClickHouse Date range"},
+            {"DateTime", "TIMESTAMP(0) NOT NULL", "TIMESTAMP '2106-02-07 06:28:16'",
+             "Column 'c'~is outside the ClickHouse DateTime range"},
+            {"DateTime64(3)", "TIMESTAMP(3) NOT NULL", "TIMESTAMP '1899-12-31 23:59:59.999'",
+             "Column 'c'~is outside the ClickHouse DateTime64 range"},
+            {"UInt8", "BIGINT NOT NULL", "CAST(256 AS BIGINT)", "Column 'c': value 256 is outside the UInt8 range"},
+            {"UInt64", "DECIMAL(20, 0) NOT NULL", "CAST('-1' AS DECIMAL(20, 0))",
+             "Column 'c': value -1 is negative and cannot be written to the unsigned type UInt64"},
+            {"Int32", "DECIMAL(10, 0) NOT NULL", "CAST(2147483648 AS DECIMAL(10, 0))",
+             "Column 'c': value 2147483648 is outside the Int32 range"},
+            {"FixedString(2)", "STRING NOT NULL", "'abc'", "Column 'c': value of 3 bytes does not fit FixedString(2)"},
+            {"UUID", "STRING NOT NULL", "'not-a-uuid'", "Column 'c': value is not a valid UUID: not-a-uuid"},
+            // the same checks, reached through each composite position
+            {"Array(UInt64)", "ARRAY<BIGINT NOT NULL> NOT NULL", "ARRAY[CAST(-1 AS BIGINT)]",
+             "Column 'c element': value -1 is outside the UInt64 range"},
+            {"Array(FixedString(2))", "ARRAY<STRING NOT NULL> NOT NULL", "ARRAY['abc']",
+             "Column 'c element': value of 3 bytes does not fit FixedString(2)"},
+            {"Map(String, UInt32)", "MAP<STRING NOT NULL, BIGINT NOT NULL> NOT NULL", "MAP['k', CAST(-1 AS BIGINT)]",
+             "Column 'c value': value -1 is outside the UInt32 range"},
+            {"Tuple(a UInt8, b String)", "ROW<a BIGINT NOT NULL, b STRING NOT NULL> NOT NULL",
+             "ROW(CAST(256 AS BIGINT), 'x')", "Column 'c.a': value 256 is outside the UInt8 range"},
+            // nulls the header cannot encode inside a composite
+            {"Map(String, Int32)", "MAP<STRING NOT NULL, INT NOT NULL> NOT NULL", "MAP['k', CAST(NULL AS INT)]",
+             "Column 'c': null map value cannot be written to a non-Nullable ClickHouse Map value type"},
+            {"Map(String, Int32)", "MAP<STRING NOT NULL, INT NOT NULL> NOT NULL", "MAP[CAST(NULL AS STRING), 1]",
+             "Column 'c': null map key cannot be written to ClickHouse"},
+        };
+
+        TableEnvironment env = tableEnvironment();
+        for (int i = 0; i < cases.length; i++) {
+            String table = rejectionTable("value_check", i, cases[i][0]);
+            String flinkTable = "ch_value_check_" + i;
+            String value = cases[i][2];
+            env.executeSql(sinkDdl(flinkTable, table, "id BIGINT NOT NULL, c " + cases[i][1]));
+
+            String description = cases[i][0] + " <- " + cases[i][1] + " value " + value;
+            assertRejectedWith(description,
+                    () -> env.executeSql("INSERT INTO " + flinkTable + " VALUES (1, " + value + ")").await(),
+                    needles(cases[i][3]));
+            // The check runs in the sink, so the statement planned and nothing reached the table.
+            Assertions.assertEquals(0, readBack("id", table, "id", 0).size(), description + " wrote a row");
+        }
+    }
+
+    /** The payload map reserves one key name; a sink column colliding with it is refused up front. */
+    @Test
+    void reservedPayloadKeyColumnIsRejectedAtPlanning() throws Exception {
+        String table = "table_api_reserved_key";
+        createTable(table, "id Int64, `__clickhouse_raw__` String");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_reserved_key", table,
+                "id BIGINT NOT NULL, `__clickhouse_raw__` STRING NOT NULL"));
+
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_reserved_key VALUES (1, 'x')"),
+                "collides with the connector's reserved payload key");
+    }
+
+    /** Dropping every unknown column leaves nothing to insert, which is a schema error, not an empty write. */
+    @Test
+    void ignoringEveryFlinkColumnLeavesNothingToInsert() throws Exception {
+        String table = "table_api_nothing_to_insert";
+        createTable(table, "id Int64");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_nothing", table, "nickname STRING NOT NULL",
+                ", 'sink.ignore-unknown-flink-columns' = 'true'"));
+
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_nothing VALUES ('nick')"),
+                "None of the Flink schema columns map to ClickHouse table", "nothing to insert");
+    }
+
     /**
      * Read-back after {@code await()}. On Cloud the replica answering the SELECT may not yet see the
      * acknowledged insert, so poll (bounded) until the expected row count shows up; one read elsewhere.
