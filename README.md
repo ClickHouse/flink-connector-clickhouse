@@ -192,7 +192,7 @@ Connection options (required unless noted): `url`, `username`, `password` (defau
 |---|---|---|
 | `sink.timezone` | `UTC` | zone in which `TIMESTAMP` (no time zone) wall-clock values are interpreted; DST gap wall clocks shift forward, ambiguous fall-back wall clocks take the earlier offset |
 | `sink.ignore-unknown-flink-columns` | `false` | `true` drops Flink columns absent from the ClickHouse table instead of failing |
-| `sink.strict-type-mapping` | `false` | `true` rejects at planning every type pair whose values may not all fit the column, instead of checking each value at write time; lossless widening stays allowed |
+| `sink.strict-numeric-mapping` | `false` | `true` rejects at planning every numeric type pair whose values may not all fit the column (a narrower or unsigned integer column, a `DECIMAL(p,0)` at an integer's digit boundary or into an unsigned integer), instead of range-checking each value at write time; lossless widening stays allowed |
 
 **Passthrough**: `clickhouse.client.<key>` options are forwarded to the ClickHouse client,
 `clickhouse.server.<key>` become per-query server settings. The connector sends
@@ -210,8 +210,9 @@ the client's JSON-as-string mode automatically exactly when a `JSON` column is m
 Lossless widening is implicit; a pair that would round a value (`DOUBLE` into `Float32`, a narrower
 `Decimal` scale or timestamp precision) is rejected at planning. A pair whose values may not all fit the
 column (the "Notes" below) is accepted and every value is checked at write time, failing the job naming
-the column, value and range; with `'sink.strict-type-mapping' = 'true'` such pairs are rejected at
-planning instead. Any other pair fails at planning naming the column and both types.
+the column, value and range; with `'sink.strict-numeric-mapping' = 'true'` the numeric pairs among them are
+rejected at planning instead, since a wider column can always take their place. Any other pair fails at
+planning naming the column and both types.
 
 | Flink SQL type | ClickHouse column types | Notes |
 |---|---|---|
@@ -221,8 +222,8 @@ planning instead. Any other pair fails at planning naming the column and both ty
 | `FLOAT` | `Float32`, `Float64` | |
 | `DOUBLE` | `Float64` | `Float32` would round — `CAST` to `FLOAT` to round explicitly |
 | `CHAR` / `VARCHAR` / `STRING` | `String`, `FixedString(n)`, `UUID`, `JSON` | `FixedString` length checked in UTF-8 bytes per record, whatever the declared Flink length (Flink does not enforce it by default); `UUID` text checked per record |
-| `DATE` | `Date`, `Date32` | range-checked per record |
-| `TIMESTAMP(p)` / `TIMESTAMP_LTZ(p)` | `DateTime` (`p = 0`), `DateTime64(s >= p)` | Flink's default `TIMESTAMP` is precision 6 — declare `TIMESTAMP(3)` for `DateTime64(3)`. `TIMESTAMP` is a wall clock in `sink.timezone`; `TIMESTAMP_LTZ` an instant |
+| `DATE` | `Date`, `Date32` | range-checked per record: `Date` 1970-01-01..2149-06-06, `Date32` 1900-01-01..2299-12-31 |
+| `TIMESTAMP(p)` / `TIMESTAMP_LTZ(p)` | `DateTime` (`p = 0`), `DateTime64(s >= p)` | range-checked per record: `DateTime` 1970-01-01..2106-02-07, `DateTime64` 1900-01-01..2299-12-31 (2262-04-11 at scale 9). Flink's default `TIMESTAMP` is precision 6 — declare `TIMESTAMP(3)` for `DateTime64(3)`. `TIMESTAMP` is a wall clock in `sink.timezone`; `TIMESTAMP_LTZ` an instant |
 | `ARRAY<t>` | `Array(T)` | only `Array(Nullable(T))` can carry nested NULLs |
 | `MAP<k, v>` | `Map(K, V)` | string/integer/decimal keys except `UInt64`; values not `Nullable` |
 | `MULTISET<t>` | `Map(T, UInt64)` | counts become the values |

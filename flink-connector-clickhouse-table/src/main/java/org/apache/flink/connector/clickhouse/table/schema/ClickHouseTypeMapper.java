@@ -52,8 +52,8 @@ import static com.clickhouse.utils.writer.DataWriter.unwrapSimpleAggregateFuncti
  * whose values may not all fit the column — a narrower or unsigned integer, {@code DECIMAL(p,0)} at an
  * integer's digit boundary, the {@code Date}/{@code DateTime} ranges, {@code FixedString} lengths, UUID
  * text — is checked per record naming the column (the client's writer would fail without it or, for
- * UInt64 inside composites, wrap the value silently); under {@code sink.strict-type-mapping} such a
- * pair is rejected at planning instead, so no record can fail at write time.
+ * UInt64 inside composites, wrap the value silently). Under {@code sink.strict-numeric-mapping} the
+ * numeric pairs, which have a wider column to switch to, are rejected at planning instead.
  *
  * <p>{@code build*Converter} methods run once per column at planning time; {@code toPayload*}
  * methods run per record on the TaskManager. Wrapper shedding is shared with the write path
@@ -342,8 +342,8 @@ public final class ClickHouseTypeMapper {
         long lowest = min.max(BigInteger.valueOf(Long.MIN_VALUE)).longValue();
         long highest = max.min(BigInteger.valueOf(Long.MAX_VALUE)).longValue();
         String range = targetType + " range " + min + ".." + max;
-        if (options.strict) {
-            throw strictModeRejects("values outside the " + range);
+        if (options.strictNumeric) {
+            throw strictNumericRejects("values outside the " + range);
         }
         return value -> {
             long v = ((Number) value).longValue();
@@ -429,8 +429,8 @@ public final class ClickHouseTypeMapper {
         }
         BigInteger min = integerMin(targetType);
         BigInteger max = integerMax(targetType);
-        if (options.strict) {
-            throw strictModeRejects("values outside the " + targetType + " range " + min + ".." + max);
+        if (options.strictNumeric) {
+            throw strictNumericRejects("values outside the " + targetType + " range " + min + ".." + max);
         }
         return value -> {
             BigInteger integer = ((DecimalData) value).toBigDecimal().toBigIntegerExact();
@@ -499,20 +499,16 @@ public final class ClickHouseTypeMapper {
             case JSON:
                 return Object::toString;
             case FixedString:
-                return buildFixedStringConverter(target.getPrecision(), options, columnPathText);
+                return buildFixedStringConverter(target.getPrecision(), columnPathText);
             case UUID:
-                return buildUuidConverter(options, columnPathText);
+                return buildUuidConverter(columnPathText);
             default:
                 throw noConversion(flinkType, "String, FixedString(n), UUID, JSON");
         }
     }
 
     /** Checked whatever the CHAR/VARCHAR length: Flink does not enforce declared lengths by default, and the client's own check throws without the column name. */
-    private static ValueConverter buildFixedStringConverter(int maxBytes, TypeMappingOptions options,
-                                                            String columnPathText) {
-        if (options.strict) {
-            throw strictModeRejects("strings longer than " + maxBytes + " UTF-8 bytes");
-        }
+    private static ValueConverter buildFixedStringConverter(int maxBytes, String columnPathText) {
         return value -> {
             String text = value.toString();
             int byteLength = utf8ByteLength(text);
@@ -535,10 +531,7 @@ public final class ClickHouseTypeMapper {
         return text.length();
     }
 
-    private static ValueConverter buildUuidConverter(TypeMappingOptions options, String columnPathText) {
-        if (options.strict) {
-            throw strictModeRejects("strings that are not canonical UUID text");
-        }
+    private static ValueConverter buildUuidConverter(String columnPathText) {
         return value -> {
             String text = value.toString();
             // fromString also zero-expands forms like '1-1-1-1-1'; accept only the canonical form.
@@ -571,10 +564,10 @@ public final class ClickHouseTypeMapper {
                                                      TypeMappingOptions options, String columnPathText) {
         switch (target.getDataType()) {
             case Date32:
-                return rangeCheckedEpochDayConverter(options, columnPathText, DATE32_MIN_EPOCH_DAY, DATE32_MAX_EPOCH_DAY,
+                return rangeCheckedEpochDayConverter(columnPathText, DATE32_MIN_EPOCH_DAY, DATE32_MAX_EPOCH_DAY,
                         "Date32 range 1900-01-01..2299-12-31");
             case Date:
-                return rangeCheckedEpochDayConverter(options, columnPathText, 0, DATE_MAX_EPOCH_DAY,
+                return rangeCheckedEpochDayConverter(columnPathText, 0, DATE_MAX_EPOCH_DAY,
                         "Date range 1970-01-01..2149-06-06 — use Date32 for a wider range");
             default:
                 throw noConversion(flinkType, "Date, Date32");
@@ -582,11 +575,8 @@ public final class ClickHouseTypeMapper {
     }
 
     /** The client writes days as raw UInt16/Int32, so an out-of-range day would be stored wrapped. */
-    private static ValueConverter rangeCheckedEpochDayConverter(TypeMappingOptions options, String columnPathText,
-                                                                int minEpochDay, int maxEpochDay, String rangeText) {
-        if (options.strict) {
-            throw strictModeRejects("DATE values outside the ClickHouse " + rangeText);
-        }
+    private static ValueConverter rangeCheckedEpochDayConverter(String columnPathText, int minEpochDay, int maxEpochDay,
+                                                                String rangeText) {
         return value -> {
             int epochDay = (Integer) value;
             if (epochDay < minEpochDay || epochDay > maxEpochDay) {
@@ -603,7 +593,7 @@ public final class ClickHouseTypeMapper {
                                                           TypeMappingOptions options, String columnPathText) {
         checkDateTimeTargetFits(flinkType, target, ((TimestampType) flinkType).getPrecision());
         ZoneId zone = options.sinkTimezone;   // the converter captures the zone only
-        return rangeCheckedDateTimeConverter(target, options, columnPathText,
+        return rangeCheckedDateTimeConverter(target, columnPathText,
                 value -> ZonedDateTime.of(((TimestampData) value).toLocalDateTime(), zone));
     }
 
@@ -611,7 +601,7 @@ public final class ClickHouseTypeMapper {
     private static ValueConverter buildTimestampLtzConverter(LogicalType flinkType, ClickHouseColumn target,
                                                              TypeMappingOptions options, String columnPathText) {
         checkDateTimeTargetFits(flinkType, target, ((LocalZonedTimestampType) flinkType).getPrecision());
-        return rangeCheckedDateTimeConverter(target, options, columnPathText,
+        return rangeCheckedDateTimeConverter(target, columnPathText,
                 value -> ZonedDateTime.ofInstant(((TimestampData) value).toInstant(), ZoneOffset.UTC));
     }
 
@@ -620,8 +610,8 @@ public final class ClickHouseTypeMapper {
      * seconds (the client's writer rejects the rest without naming the column) and DateTime64
      * spans 1900..2299 — less at scale 9, where the client's Int64 tick math wraps silently.
      */
-    private static ValueConverter rangeCheckedDateTimeConverter(ClickHouseColumn target, TypeMappingOptions options,
-                                                                String columnPathText, ValueConverter toZonedDateTime) {
+    private static ValueConverter rangeCheckedDateTimeConverter(ClickHouseColumn target, String columnPathText,
+                                                                ValueConverter toZonedDateTime) {
         boolean isDateTime64 = target.getDataType() == ClickHouseDataType.DateTime64;
         long minEpochSecond = isDateTime64 ? DATETIME64_MIN_EPOCH_SECOND : 0L;
         long maxEpochSecond = isDateTime64
@@ -629,9 +619,6 @@ public final class ClickHouseTypeMapper {
                 : DATETIME_MAX_EPOCH_SECOND;
         String targetName = isDateTime64 ? "DateTime64" : "DateTime";
         String range = Instant.ofEpochSecond(minEpochSecond) + ".." + Instant.ofEpochSecond(maxEpochSecond);
-        if (options.strict) {
-            throw strictModeRejects("TIMESTAMP values outside the " + targetName + " range " + range);
-        }
         return value -> {
             ZonedDateTime converted = (ZonedDateTime) toZonedDateTime.convert(value);
             long epochSecond = converted.toEpochSecond();
@@ -992,10 +979,10 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    /** Under {@code sink.strict-type-mapping}, a pair whose values may not all fit is rejected at planning, so no record can fail at write time. */
-    private static TypeMappingException strictModeRejects(String whatCannotFit) {
+    /** Under {@code sink.strict-numeric-mapping}, a numeric pair whose values may not all fit is rejected at planning, so no record can fail at write time. */
+    private static TypeMappingException strictNumericRejects(String whatCannotFit) {
         return TypeMappingException.mismatch(whatCannotFit
-                + " can only be caught per record, which 'sink.strict-type-mapping' forbids");
+                + " can only be caught per record, which 'sink.strict-numeric-mapping' forbids");
     }
 
     private static TypeMappingException noConversion(LogicalType flinkType, String supportedTargetsText) {

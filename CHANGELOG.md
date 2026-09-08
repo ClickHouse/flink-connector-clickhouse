@@ -7,7 +7,7 @@
   against them, so mismatches fail at job submission. Options (`sink.buffer-flush.*`,
   `sink.max-in-flight-requests`, `sink.max-buffered-requests`, `sink.record.max-bytes`,
   `sink.parallelism`, `sink.max-retries`, `sink.batch-failure-strategy`, `sink.timezone`,
-  `sink.ignore-unknown-flink-columns`, `sink.strict-type-mapping`, `clickhouse.client.*` / `clickhouse.server.*`
+  `sink.ignore-unknown-flink-columns`, `sink.strict-numeric-mapping`, `clickhouse.client.*` / `clickhouse.server.*`
   passthrough) and the type mapping are documented in the README's "Table API" section.
 - `ClickHouseClientConfig`: `copy()`, `verifyConnectivity()`, and `createPlanningClient(Map)`
   (planning-only server settings).

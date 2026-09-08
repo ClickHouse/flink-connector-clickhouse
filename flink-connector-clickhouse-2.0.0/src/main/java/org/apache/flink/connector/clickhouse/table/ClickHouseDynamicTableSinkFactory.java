@@ -52,7 +52,7 @@ import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOpt
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.SINK_MAX_RETRIES;
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.SINK_RECORD_MAX_BYTES;
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.SINK_TIMEZONE;
-import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.SINK_STRICT_TYPE_MAPPING;
+import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.SINK_STRICT_NUMERIC_MAPPING;
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.TABLE;
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.URL;
 import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOptions.USERNAME;
@@ -128,7 +128,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         options.add(SINK_BATCH_FAILURE_STRATEGY);
         options.add(SINK_TIMEZONE);
         options.add(SINK_IGNORE_UNKNOWN_FLINK_COLUMNS);
-        options.add(SINK_STRICT_TYPE_MAPPING);
+        options.add(SINK_STRICT_NUMERIC_MAPPING);
         return options;
     }
 
@@ -211,7 +211,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
                 options.get(TABLE),
                 parseSinkTimezone(options.get(SINK_TIMEZONE)),
                 options.get(SINK_IGNORE_UNKNOWN_FLINK_COLUMNS),
-                options.get(SINK_STRICT_TYPE_MAPPING));
+                options.get(SINK_STRICT_NUMERIC_MAPPING));
     }
 
     /** {@code tableOptions} are the raw DDL options, needed for the prefix scan the typed {@code options} cannot do. */

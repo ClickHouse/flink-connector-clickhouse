@@ -140,12 +140,12 @@ public final class ClickHouseConnectorOptions {
             .defaultValue(false)
             .withDescription("Drop Flink columns absent from the ClickHouse table instead of failing.");
 
-    public static final ConfigOption<Boolean> SINK_STRICT_TYPE_MAPPING = ConfigOptions
-            .key("sink.strict-type-mapping")
+    public static final ConfigOption<Boolean> SINK_STRICT_NUMERIC_MAPPING = ConfigOptions
+            .key("sink.strict-numeric-mapping")
             .booleanType()
             .defaultValue(false)
-            .withDescription("Reject at planning every Flink/ClickHouse type pair whose values may not all fit the "
-                    + "column, instead of checking each value at write time. Lossless widening stays allowed.");
+            .withDescription("Reject at planning every numeric Flink/ClickHouse type pair whose values may not all fit "
+                    + "the column, instead of range-checking each value at write time. Lossless widening stays allowed.");
 
     // ------------------------------------------------------------------------------------
     // Passthrough prefixes (prefix-scanned, not enumerated)

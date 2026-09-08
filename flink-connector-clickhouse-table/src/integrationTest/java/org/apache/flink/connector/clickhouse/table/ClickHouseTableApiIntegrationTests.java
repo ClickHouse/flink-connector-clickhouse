@@ -205,6 +205,70 @@ public class ClickHouseTableApiIntegrationTests {
                 // the connector caps DateTime64(9) where the last whole second's ticks still fit Int64
                 {"DateTime64(9)",    "TIMESTAMP(9)",    "TIMESTAMP '1900-01-01 00:00:00.000000000'",                          "1900-01-01 00:00:00.000000000",           "TIMESTAMP '2262-04-11 23:47:15.999999999'",                         "2262-04-11 23:47:15.999999999"},
         };
+        roundTripAtBounds("table_api_bounds", "ch_bounds", columns);
+    }
+
+    /**
+     * Every pair whose Flink type is not the column's own counterpart, two rows at the bounds the pair
+     * admits: signed widening, signed narrowing and unsigned targets (range-checked), Decimal rescaling
+     * and each Decimal spelling, DECIMAL(p, 0) into integers, FLOAT into Float64, CHAR/VARCHAR sources
+     * and timestamp precision widening for wall clocks and instants.
+     */
+    @Test
+    void everyConvertingPairRoundTripsAtItsBounds() throws Exception {
+        String[][] columns = {
+                // ClickHouse type   Flink type          low (Flink SQL)                                                       printed                                     high (Flink SQL)                                                     printed
+                // signed widening: the value takes the wider column's Java type on the wire
+                {"Int16",            "TINYINT",          "CAST(-128 AS TINYINT)",                                              "-128",                                     "CAST(127 AS TINYINT)",                                              "127"},
+                {"Int32",            "SMALLINT",         "CAST(-32768 AS SMALLINT)",                                           "-32768",                                   "CAST(32767 AS SMALLINT)",                                           "32767"},
+                {"Int64",            "INT",              "CAST(-2147483648 AS INT)",                                           "-2147483648",                              "CAST(2147483647 AS INT)",                                           "2147483647"},
+                {"Int128",           "BIGINT",           "CAST('-9223372036854775808' AS BIGINT)",                             "-9223372036854775808",                     "CAST('9223372036854775807' AS BIGINT)",                             "9223372036854775807"},
+                {"Int256",           "TINYINT",          "CAST(-128 AS TINYINT)",                                              "-128",                                     "CAST(127 AS TINYINT)",                                              "127"},
+                // signed narrowing: range-checked per record, here at the column's bounds
+                {"Int8",             "SMALLINT",         "CAST(-128 AS SMALLINT)",                                             "-128",                                     "CAST(127 AS SMALLINT)",                                             "127"},
+                {"Int8",             "BIGINT",           "CAST(-128 AS BIGINT)",                                               "-128",                                     "CAST(127 AS BIGINT)",                                               "127"},
+                {"Int16",            "INT",              "CAST(-32768 AS INT)",                                                "-32768",                                   "CAST(32767 AS INT)",                                                "32767"},
+                {"Int32",            "BIGINT",           "CAST(-2147483648 AS BIGINT)",                                        "-2147483648",                              "CAST(2147483647 AS BIGINT)",                                        "2147483647"},
+                // unsigned targets: range-checked per record, up to whichever of the two ranges ends first
+                {"UInt8",            "TINYINT",          "CAST(0 AS TINYINT)",                                                 "0",                                        "CAST(127 AS TINYINT)",                                              "127"},
+                {"UInt8",            "BIGINT",           "CAST(0 AS BIGINT)",                                                  "0",                                        "CAST(255 AS BIGINT)",                                               "255"},
+                {"UInt16",           "SMALLINT",         "CAST(0 AS SMALLINT)",                                                "0",                                        "CAST(32767 AS SMALLINT)",                                           "32767"},
+                {"UInt16",           "BIGINT",           "CAST(0 AS BIGINT)",                                                  "0",                                        "CAST(65535 AS BIGINT)",                                             "65535"},
+                {"UInt32",           "INT",              "CAST(0 AS INT)",                                                     "0",                                        "CAST(2147483647 AS INT)",                                           "2147483647"},
+                {"UInt64",           "BIGINT",           "CAST(0 AS BIGINT)",                                                  "0",                                        "CAST('9223372036854775807' AS BIGINT)",                             "9223372036854775807"},
+                {"UInt128",          "BIGINT",           "CAST(0 AS BIGINT)",                                                  "0",                                        "CAST('9223372036854775807' AS BIGINT)",                             "9223372036854775807"},
+                {"UInt256",          "TINYINT",          "CAST(0 AS TINYINT)",                                                 "0",                                        "CAST(127 AS TINYINT)",                                              "127"},
+                // Decimal rescaling and each Decimal spelling; the server prints no trailing zeros
+                {"Decimal(18, 4)",   "DECIMAL(9, 2)",    "CAST('-9999999.99' AS DECIMAL(9, 2))",                               "-9999999.99",                              "CAST('9999999.99' AS DECIMAL(9, 2))",                               "9999999.99"},
+                {"Decimal(38, 10)",  "DECIMAL(9, 0)",    "CAST(-999999999 AS DECIMAL(9, 0))",                                  "-999999999",                               "CAST(999999999 AS DECIMAL(9, 0))",                                  "999999999"},
+                {"Decimal32(2)",     "DECIMAL(9, 2)",    "CAST('-9999999.99' AS DECIMAL(9, 2))",                               "-9999999.99",                              "CAST('9999999.99' AS DECIMAL(9, 2))",                               "9999999.99"},
+                {"Decimal64(4)",     "DECIMAL(18, 4)",   "CAST('-99999999999999.9999' AS DECIMAL(18, 4))",                     "-99999999999999.9999",                     "CAST('99999999999999.9999' AS DECIMAL(18, 4))",                     "99999999999999.9999"},
+                {"Decimal128(10)",   "DECIMAL(38, 10)",  "CAST('-9999999999999999999999999999.9999999999' AS DECIMAL(38, 10))", "-9999999999999999999999999999.9999999999", "CAST('9999999999999999999999999999.9999999999' AS DECIMAL(38, 10))", "9999999999999999999999999999.9999999999"},
+                {"Decimal256(20)",   "DECIMAL(38, 10)",  "CAST('-9999999999999999999999999999.9999999999' AS DECIMAL(38, 10))", "-9999999999999999999999999999.9999999999", "CAST('9999999999999999999999999999.9999999999' AS DECIMAL(38, 10))", "9999999999999999999999999999.9999999999"},
+                // DECIMAL(p, 0) into integers: below the digit boundary unchecked, at it or into unsigned range-checked
+                {"Int8",             "DECIMAL(3, 0)",    "CAST(-128 AS DECIMAL(3, 0))",                                        "-128",                                     "CAST(127 AS DECIMAL(3, 0))",                                        "127"},
+                {"Int16",            "DECIMAL(5, 0)",    "CAST(-32768 AS DECIMAL(5, 0))",                                      "-32768",                                   "CAST(32767 AS DECIMAL(5, 0))",                                      "32767"},
+                {"Int32",            "DECIMAL(9, 0)",    "CAST(-999999999 AS DECIMAL(9, 0))",                                  "-999999999",                               "CAST(999999999 AS DECIMAL(9, 0))",                                  "999999999"},
+                {"Int64",            "DECIMAL(19, 0)",   "CAST('-9223372036854775808' AS DECIMAL(19, 0))",                     "-9223372036854775808",                     "CAST('9223372036854775807' AS DECIMAL(19, 0))",                     "9223372036854775807"},
+                {"UInt32",           "DECIMAL(10, 0)",   "CAST(0 AS DECIMAL(10, 0))",                                          "0",                                        "CAST(4294967295 AS DECIMAL(10, 0))",                                "4294967295"},
+                // FLOAT widens exactly
+                {"Float64",          "FLOAT",            "CAST('-3.402823E38' AS FLOAT)",                                      "-3.4028230607370965e38",                   "CAST('3.402823E38' AS FLOAT)",                                      "3.4028230607370965e38"},
+                // CHAR/VARCHAR sources; a short value is zero-padded into FixedString, UUID text may be upper case
+                {"String",           "CHAR(4)",          "CAST('AB12' AS CHAR(4))",                                            "AB12",                                     "CAST('ZZ99' AS CHAR(4))",                                           "ZZ99"},
+                {"FixedString(4)",   "CHAR(4)",          "CAST('AB12' AS CHAR(4))",                                            "AB12",                                     "CAST('ZZ99' AS CHAR(4))",                                           "ZZ99"},
+                {"FixedString(4)",   "VARCHAR(4)",       "CAST('ab' AS VARCHAR(4))",                                           "ab",                                       "CAST('ZZ99' AS VARCHAR(4))",                                        "ZZ99"},
+                {"UUID",             "VARCHAR(36)",      "'123E4567-E89B-12D3-A456-426614174000'",                             "123e4567-e89b-12d3-a456-426614174000",     "'ffffffff-ffff-ffff-ffff-ffffffffffff'",                            "ffffffff-ffff-ffff-ffff-ffffffffffff"},
+                // timestamp precision widening, for wall clocks and for instants
+                {"DateTime64(3)",    "TIMESTAMP(0)",     "TIMESTAMP '1970-01-01 00:00:00'",                                    "1970-01-01 00:00:00.000",                  "TIMESTAMP '2299-12-31 23:59:59'",                                   "2299-12-31 23:59:59.000"},
+                {"DateTime64(9)",    "TIMESTAMP(3)",     "TIMESTAMP '1900-01-01 00:00:00.000'",                                "1900-01-01 00:00:00.000000000",            "TIMESTAMP '2026-01-02 03:04:05.678'",                               "2026-01-02 03:04:05.678000000"},
+                {"DateTime",         "TIMESTAMP_LTZ(0)", "CAST(TO_TIMESTAMP_LTZ(0, 3) AS TIMESTAMP_LTZ(0))",                   "1970-01-01 00:00:00",                      "CAST(TO_TIMESTAMP_LTZ(4294967295000, 3) AS TIMESTAMP_LTZ(0))",      "2106-02-07 06:28:15"},
+                {"DateTime64(9)",    "TIMESTAMP_LTZ(3)", "TO_TIMESTAMP_LTZ(" + epochMillis("1900-01-01T00:00:00Z") + ", 3)",   "1900-01-01 00:00:00.000000000",            "TO_TIMESTAMP_LTZ(" + epochMillis("2026-01-02T03:04:05.678Z") + ", 3)", "2026-01-02 03:04:05.678000000"},
+        };
+        roundTripAtBounds("table_api_conversions", "ch_conversions", columns);
+    }
+
+    /** Writes each column's two values through the sink and asserts the server prints them back as given. */
+    private static void roundTripAtBounds(String table, String flinkTable, String[][] columns) throws Exception {
         StringBuilder clickHouseColumns = new StringBuilder("id Int64");
         StringBuilder flinkColumns = new StringBuilder("id BIGINT NOT NULL");
         StringBuilder lows = new StringBuilder("(1");
@@ -215,15 +279,13 @@ public class ClickHouseTableApiIntegrationTests {
             flinkColumns.append(", c").append(i).append(' ').append(columns[i][1]).append(" NOT NULL");
             lows.append(", ").append(columns[i][2]);
             highs.append(", ").append(columns[i][4]);
-            String read = columns[i][0].equals("Float32") ? "toFloat64(c" + i + ")" : "c" + i;
-            readColumns.append(", toString(").append(read).append(") AS s").append(i);
+            readColumns.append(", ").append(printed(columns[i][0], "c" + i)).append(" AS s").append(i);
         }
-        String table = "table_api_bounds";
         createTable(table, clickHouseColumns.toString());
 
         TableEnvironment env = tableEnvironment();
-        env.executeSql(sinkDdl("ch_bounds", table, flinkColumns.toString()));
-        env.executeSql("INSERT INTO ch_bounds VALUES " + lows + "), " + highs + ")").await();
+        env.executeSql(sinkDdl(flinkTable, table, flinkColumns.toString()));
+        env.executeSql("INSERT INTO " + flinkTable + " VALUES " + lows + "), " + highs + ")").await();
 
         List<GenericRecord> rows = readBack(readColumns.toString(), table, "id", 2);
         Assertions.assertEquals(2, rows.size());
@@ -231,6 +293,82 @@ public class ClickHouseTableApiIntegrationTests {
             Assertions.assertEquals(columns[i][3], rows.get(0).getString("s" + i), columns[i][0] + " low");
             Assertions.assertEquals(columns[i][5], rows.get(1).getString("s" + i), columns[i][0] + " high");
         }
+    }
+
+    /** Float32 is widened so toString does not round it to 7 digits; FixedString drops its zero padding. */
+    private static String printed(String clickHouseType, String column) {
+        if (clickHouseType.equals("Float32")) {
+            return "toString(toFloat64(" + column + "))";
+        }
+        if (clickHouseType.startsWith("FixedString")) {
+            return "replaceAll(toString(" + column + "), '\\x00', '')";
+        }
+        return "toString(" + column + ")";
+    }
+
+    private static long epochMillis(String instant) {
+        return Instant.parse(instant).toEpochMilli();
+    }
+
+    /** The same conversions inside composites, plus integer and FixedString map keys restored from their text (24.3 has no Decimal keys). */
+    @Test
+    void conversionsHoldInsideCompositesAndTypedMapKeysRoundTrip() throws Exception {
+        String table = "table_api_nested_conversions";
+        createTable(table,
+                "id Int64, wide Array(Int128), unsigned Array(UInt64), floats Array(Float64), "
+                        + "money Array(Decimal(18, 4)), days Array(Date32), narrow Tuple(Int8, UInt16), "
+                        + "stamped Tuple(DateTime64(3), UUID), maybe Array(Nullable(UInt8)), "
+                        + "by_int Map(Int32, String), by_big Map(Int128, UInt8), by_fixed Map(FixedString(2), Int32)");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_nested_conversions", table,
+                "id BIGINT NOT NULL,"
+                        + "wide ARRAY<BIGINT NOT NULL> NOT NULL,"
+                        + "unsigned ARRAY<BIGINT NOT NULL> NOT NULL,"
+                        + "floats ARRAY<FLOAT NOT NULL> NOT NULL,"
+                        + "money ARRAY<DECIMAL(9, 2) NOT NULL> NOT NULL,"
+                        + "days ARRAY<DATE NOT NULL> NOT NULL,"
+                        + "narrow ROW<a SMALLINT NOT NULL, b INT NOT NULL> NOT NULL,"
+                        + "stamped ROW<stamp TIMESTAMP(3) NOT NULL, uid STRING NOT NULL> NOT NULL,"
+                        + "maybe ARRAY<SMALLINT> NOT NULL,"
+                        + "by_int MAP<INT, STRING NOT NULL> NOT NULL,"
+                        + "by_big MAP<DECIMAL(38, 0), SMALLINT NOT NULL> NOT NULL,"
+                        + "by_fixed MAP<STRING, INT NOT NULL> NOT NULL"));
+        env.executeSql("INSERT INTO ch_nested_conversions VALUES (1, "
+                + "ARRAY[CAST('-9223372036854775808' AS BIGINT), CAST('9223372036854775807' AS BIGINT)], "
+                + "ARRAY[CAST(0 AS BIGINT), CAST('9223372036854775807' AS BIGINT)], "
+                + "ARRAY[CAST(1.5 AS FLOAT)], "
+                + "ARRAY[CAST('12.5' AS DECIMAL(9, 2))], "
+                + "ARRAY[DATE '1900-01-01', DATE '2299-12-31'], "
+                + "ROW(CAST(-128 AS SMALLINT), 65535), "
+                + "ROW(TIMESTAMP '2026-01-02 03:04:05.678', '123e4567-e89b-12d3-a456-426614174000'), "
+                + "ARRAY[CAST(NULL AS SMALLINT), CAST(255 AS SMALLINT)], "
+                + "MAP[-7, 'neg', 2147483647, 'max'], "
+                + "MAP[CAST('99999999999999999999999999999999999999' AS DECIMAL(38, 0)), CAST(255 AS SMALLINT)], "
+                + "MAP['ab', 1])").await();
+
+        List<GenericRecord> rows = readBack(
+                "id, toString(wide) AS wide_s, toString(unsigned) AS unsigned_s, toString(floats) AS floats_s, "
+                        + "toString(money) AS money_s, toString(days) AS days_s, toString(narrow) AS narrow_s, "
+                        + "toString(stamped) AS stamped_s, toString(maybe) AS maybe_s, "
+                        + "by_int[-7] AS neg, by_int[2147483647] AS max, "
+                        + "toString(by_big) AS by_big_s, toString(by_fixed) AS by_fixed_s",
+                table, "id", 1);
+        Assertions.assertEquals(1, rows.size());
+        GenericRecord row = rows.get(0);
+        Assertions.assertEquals("[-9223372036854775808,9223372036854775807]", row.getString("wide_s"));
+        Assertions.assertEquals("[0,9223372036854775807]", row.getString("unsigned_s"));
+        Assertions.assertEquals("[1.5]", row.getString("floats_s"));
+        Assertions.assertEquals("[12.5]", row.getString("money_s"));
+        Assertions.assertEquals("['1900-01-01','2299-12-31']", row.getString("days_s"));
+        Assertions.assertEquals("(-128,65535)", row.getString("narrow_s"));
+        Assertions.assertEquals("('2026-01-02 03:04:05.678','123e4567-e89b-12d3-a456-426614174000')",
+                row.getString("stamped_s"));
+        Assertions.assertEquals("[NULL,255]", row.getString("maybe_s"));
+        Assertions.assertEquals("neg", row.getString("neg"));
+        Assertions.assertEquals("max", row.getString("max"));
+        Assertions.assertEquals("{99999999999999999999999999999999999999:255}", row.getString("by_big_s"));
+        Assertions.assertEquals("{'ab':1}", row.getString("by_fixed_s"));
     }
 
     @Test
@@ -294,16 +432,16 @@ public class ClickHouseTableApiIntegrationTests {
     }
 
     @Test
-    void strictTypeMappingRejectsARangeCheckedPairAtPlanning() throws Exception {
+    void strictNumericMappingRejectsARangeCheckedPairAtPlanning() throws Exception {
         String table = "table_api_strict";
         createTable(table, "id Int64, hits UInt32");
 
         TableEnvironment env = tableEnvironment();
         env.executeSql(sinkDdl("ch_strict", table, "id BIGINT NOT NULL, hits BIGINT NOT NULL",
-                ", 'sink.strict-type-mapping' = 'true'"));
+                ", 'sink.strict-numeric-mapping' = 'true'"));
 
         assertFailsWith(() -> env.executeSql("INSERT INTO ch_strict VALUES (1, 1)"),
-                "Column 'hits'", "UInt32 range", "'sink.strict-type-mapping'");
+                "Column 'hits'", "UInt32 range", "'sink.strict-numeric-mapping'");
     }
 
     @Test
@@ -754,6 +892,86 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals(1, rows.size());
         Assertions.assertEquals(255, rows.get(0).getInteger("small"));
         Assertions.assertEquals(123456789012345678L, rows.get(0).getLong("big"));
+    }
+
+    @Test
+    void doubleIntoFloat32IsRejectedAtPlanning() throws Exception {
+        String table = "table_api_double_float32";
+        createTable(table, "id Int64, ratio Float32");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_double_float32", table, "id BIGINT NOT NULL, ratio DOUBLE NOT NULL"));
+
+        // Rounding a double to single precision changes the value, so the pair is refused in every mode.
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_double_float32 VALUES (1, 0.1)"),
+                "Column 'ratio'", "Float32 would round DOUBLE values", "CAST the value to FLOAT");
+    }
+
+    @Test
+    void overlongStringIntoFixedStringFailsNamingTheColumn() throws Exception {
+        String table = "table_api_fixed_string";
+        createTable(table, "id Int64, code FixedString(4)");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_fixed_string", table, "id BIGINT NOT NULL, code STRING NOT NULL"));
+
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_fixed_string VALUES (1, 'ABCDE')").await(),
+                "Column 'code': value of 5 bytes does not fit FixedString(4)");
+        Assertions.assertEquals(0, readBack("id", table, "id", 0).size());
+    }
+
+    /** The option gates numeric range checks only; date, timestamp, UUID and FixedString values are still checked per record. */
+    @Test
+    void strictNumericMappingLeavesValueCheckedPairsAlone() throws Exception {
+        String table = "table_api_strict_values";
+        createTable(table, "id Int64, event_day Date, ts DateTime64(3), uid UUID, code FixedString(4)");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_strict_values", table,
+                "id BIGINT NOT NULL, event_day DATE NOT NULL, ts TIMESTAMP(3) NOT NULL, "
+                        + "uid STRING NOT NULL, code STRING NOT NULL",
+                ", 'sink.strict-numeric-mapping' = 'true'"));
+        env.executeSql("INSERT INTO ch_strict_values VALUES (1, DATE '2026-01-02', TIMESTAMP '2026-01-02 03:04:05.678', "
+                + "'123e4567-e89b-12d3-a456-426614174000', 'AB12')").await();
+
+        List<GenericRecord> rows = readBack(
+                "id, toString(event_day) AS day_s, toString(ts) AS ts_s, toString(uid) AS uid_s, toString(code) AS code_s",
+                table, "id", 1);
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals("2026-01-02", rows.get(0).getString("day_s"));
+        Assertions.assertEquals("2026-01-02 03:04:05.678", rows.get(0).getString("ts_s"));
+        Assertions.assertEquals("123e4567-e89b-12d3-a456-426614174000", rows.get(0).getString("uid_s"));
+        Assertions.assertEquals("AB12", rows.get(0).getString("code_s"));
+
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_strict_values VALUES (2, DATE '2026-01-02', "
+                        + "TIMESTAMP '2026-01-02 03:04:05.678', 'not-a-uuid', 'AB12')").await(),
+                "Column 'uid': value is not a valid UUID: not-a-uuid");
+    }
+
+    @Test
+    void nullableUnsignedColumnsAreRejectedAtPlanning() throws Exception {
+        String table = "table_api_nullable_unsigned";
+        createTable(table, "id Int64, hits Nullable(UInt32)");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_nullable_unsigned", table, "id BIGINT NOT NULL, hits BIGINT"));
+
+        // DataWriter writes a null into Nullable(UInt*) as 0 (issue #144), so planning refuses the pair.
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_nullable_unsigned VALUES (1, 1)"),
+                "Column 'hits'", "issue #144");
+    }
+
+    @Test
+    void defaultTimestampPrecisionIsRejectedForDateTime64Of3() throws Exception {
+        String table = "table_api_ts_precision";
+        createTable(table, "id Int64, ts DateTime64(3)");
+
+        TableEnvironment env = tableEnvironment();
+        // Flink's TIMESTAMP defaults to precision 6, which DateTime64(3) would truncate.
+        env.executeSql(sinkDdl("ch_ts_precision", table, "id BIGINT NOT NULL, ts TIMESTAMP NOT NULL"));
+
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_ts_precision VALUES (1, TIMESTAMP '2026-01-02 03:04:05')"),
+                "Column 'ts'", "precision 6 exceeds the column's scale 3");
     }
 
     @Test

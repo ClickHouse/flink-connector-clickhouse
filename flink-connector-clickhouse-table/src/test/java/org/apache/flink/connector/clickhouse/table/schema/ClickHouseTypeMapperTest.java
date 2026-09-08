@@ -69,7 +69,7 @@ class ClickHouseTypeMapperTest {
 
     private static final ZoneId UTC = ZoneId.of("UTC");
     private static final TypeMappingOptions LENIENT = new TypeMappingOptions(UTC, false);
-    private static final TypeMappingOptions STRICT = new TypeMappingOptions(UTC, true);
+    private static final TypeMappingOptions STRICT_NUMERIC = new TypeMappingOptions(UTC, true);
 
     private static TypeMappingOptions lenientIn(ZoneId sinkTimezone) {
         return new TypeMappingOptions(sinkTimezone, false);
@@ -81,31 +81,32 @@ class ClickHouseTypeMapperTest {
 
     /**
      * The type matrix, one row per Flink type. <b>planning check</b>: the types alone prove every
-     * value fits, allowed with and without {@code sink.strict-type-mapping}. <b>runtime check</b>:
-     * each value is checked at write time, so {@code sink.strict-type-mapping} rejects the pair at
-     * planning. Every column not named in a row is rejected either way.
+     * value fits. <b>numeric range check</b>: each value is range-checked at write time, and
+     * {@code sink.strict-numeric-mapping} rejects the pair at planning because a wider column exists.
+     * <b>value check</b>: each value is checked at write time whatever the options, since no column
+     * could take every value. Every column not named in a row is rejected either way.
      */
     private static final String[] MATRIX = {
-        //Flink type       | planning check: types alone prove fit   | runtime check: each value; rejected when strict
-        "BOOLEAN          | Bool                                    | ",
-        "TINYINT          | Int8 Int16 Int32 Int64 Int128 Int256    | UInt8 UInt16 UInt32 UInt64 UInt128 UInt256",
-        "SMALLINT         | Int16 Int32 Int64 Int128 Int256         | Int8 UInt8 UInt16 UInt32 UInt64 UInt128 UInt256",
-        "INT              | Int32 Int64 Int128 Int256               | Int8 Int16 UInt8 UInt16 UInt32 UInt64 UInt128 UInt256",
-        "BIGINT           | Int64 Int128 Int256                     | Int8 Int16 Int32 UInt8 UInt16 UInt32 UInt64 UInt128 UInt256",
+        //Flink type       | planning check                          | numeric range check; rejected when strict           | value check
+        "BOOLEAN          | Bool                                    |                                                     | ",
+        "TINYINT          | Int8 Int16 Int32 Int64 Int128 Int256    | UInt8 UInt16 UInt32 UInt64 UInt128 UInt256          | ",
+        "SMALLINT         | Int16 Int32 Int64 Int128 Int256         | Int8 UInt8 UInt16 UInt32 UInt64 UInt128 UInt256     | ",
+        "INT              | Int32 Int64 Int128 Int256               | Int8 Int16 UInt8 UInt16 UInt32 UInt64 UInt128 UInt256 | ",
+        "BIGINT           | Int64 Int128 Int256                     | Int8 Int16 Int32 UInt8 UInt16 UInt32 UInt64 UInt128 UInt256 | ",
         // DECIMAL(p, s): a Decimal needs scale >= s and integer digits >= p - s; with s = 0, an Int with more
         // digits than p needs no check, one with exactly p digits or any UInt whose digits cover p is checked
-        "DECIMAL(9,0)     | Int32 Int64 Int128 Int256 Decimal(18,4) | UInt32 UInt64 UInt128 UInt256",
-        "DECIMAL(10,2)    | Decimal(10,2) Decimal(18,4)             | ",
-        "FLOAT            | Float32 Float64                         | ",
+        "DECIMAL(9,0)     | Int32 Int64 Int128 Int256 Decimal(18,4) | UInt32 UInt64 UInt128 UInt256                       | ",
+        "DECIMAL(10,2)    | Decimal(10,2) Decimal(18,4)             |                                                     | ",
+        "FLOAT            | Float32 Float64                         |                                                     | ",
         // DOUBLE into Float32 would round, so it is rejected outright
-        "DOUBLE           | Float64                                 | ",
+        "DOUBLE           | Float64                                 |                                                     | ",
         // FixedString(m) is checked whatever the CHAR/VARCHAR length: Flink does not enforce declared lengths by default
-        "CHAR(4)          | String JSON                             | FixedString(4) FixedString(16) UUID",
-        "STRING           | String JSON                             | FixedString(4) FixedString(16) UUID",
-        "DATE             |                                         | Date Date32",
-        "TIMESTAMP(0)     |                                         | DateTime DateTime64(3) DateTime64(9)",
-        "TIMESTAMP(3)     |                                         | DateTime64(3) DateTime64(9)",
-        "TIMESTAMP_LTZ(3) |                                         | DateTime64(3) DateTime64(9)",
+        "CHAR(4)          | String JSON                             |                                                     | FixedString(4) FixedString(16) UUID",
+        "STRING           | String JSON                             |                                                     | FixedString(4) FixedString(16) UUID",
+        "DATE             |                                         |                                                     | Date Date32",
+        "TIMESTAMP(0)     |                                         |                                                     | DateTime DateTime64(3) DateTime64(9)",
+        "TIMESTAMP(3)     |                                         |                                                     | DateTime64(3) DateTime64(9)",
+        "TIMESTAMP_LTZ(3) |                                         |                                                     | DateTime64(3) DateTime64(9)",
     };
 
     /** Every ClickHouse scalar column the matrix is checked against. */
@@ -114,17 +115,19 @@ class ClickHouseTypeMapperTest {
             + "Float32 Float64 Decimal(10,2) Decimal(18,4) String FixedString(4) FixedString(16) UUID JSON "
             + "Date Date32 DateTime DateTime64(3) DateTime64(9)").split(" "));
 
-    enum Outcome { PLANNING_CHECK, RUNTIME_CHECK, REJECTED }
+    enum Outcome { PLANNING_CHECK, NUMERIC_RANGE_CHECK, VALUE_CHECK, REJECTED }
 
     private static Stream<Arguments> matrix() {
         return Arrays.stream(MATRIX).flatMap(row -> {
             String[] cells = row.split("\\|", -1);
             String flinkType = cells[0].trim();
             Set<String> planningCheck = names(cells[1]);
-            Set<String> runtimeCheck = names(cells[2]);
+            Set<String> numericRangeCheck = names(cells[2]);
+            Set<String> valueCheck = names(cells[3]);
             return TARGETS.stream().map(target -> Arguments.of(flinkType, target,
                     planningCheck.contains(target) ? Outcome.PLANNING_CHECK
-                            : runtimeCheck.contains(target) ? Outcome.RUNTIME_CHECK : Outcome.REJECTED));
+                            : numericRangeCheck.contains(target) ? Outcome.NUMERIC_RANGE_CHECK
+                            : valueCheck.contains(target) ? Outcome.VALUE_CHECK : Outcome.REJECTED));
         });
     }
 
@@ -142,10 +145,14 @@ class ClickHouseTypeMapperTest {
         for (String row : MATRIX) {
             String[] cells = row.split("\\|", -1);
             Set<String> planningCheck = names(cells[1]);
-            Set<String> runtimeCheck = names(cells[2]);
+            Set<String> numericRangeCheck = names(cells[2]);
+            Set<String> valueCheck = names(cells[3]);
             assertTrue(TARGETS.containsAll(planningCheck), row);
-            assertTrue(TARGETS.containsAll(runtimeCheck), row);
-            assertTrue(planningCheck.stream().noneMatch(runtimeCheck::contains), row);
+            assertTrue(TARGETS.containsAll(numericRangeCheck), row);
+            assertTrue(TARGETS.containsAll(valueCheck), row);
+            assertTrue(planningCheck.stream().noneMatch(numericRangeCheck::contains), row);
+            assertTrue(planningCheck.stream().noneMatch(valueCheck::contains), row);
+            assertTrue(numericRangeCheck.stream().noneMatch(valueCheck::contains), row);
         }
     }
 
@@ -154,20 +161,21 @@ class ClickHouseTypeMapperTest {
     void everyScalarPairHasItsDocumentedOutcome(String flinkType, String target, Outcome outcome) {
         switch (outcome) {
             case PLANNING_CHECK:
+            case VALUE_CHECK:
                 ClickHouseTypeMapper.converterFor(type(flinkType), col(target), LENIENT, "c");
-                ClickHouseTypeMapper.converterFor(type(flinkType), col(target), STRICT, "c");
+                ClickHouseTypeMapper.converterFor(type(flinkType), col(target), STRICT_NUMERIC, "c");
                 break;
-            case RUNTIME_CHECK:
+            case NUMERIC_RANGE_CHECK:
                 ClickHouseTypeMapper.converterFor(type(flinkType), col(target), LENIENT, "c");
                 TypeMappingException strict = assertThrows(TypeMappingException.class,
-                        () -> ClickHouseTypeMapper.converterFor(type(flinkType), col(target), STRICT, "c"));
-                assertTrue(strict.getMessage().contains("'sink.strict-type-mapping'"), strict.getMessage());
+                        () -> ClickHouseTypeMapper.converterFor(type(flinkType), col(target), STRICT_NUMERIC, "c"));
+                assertTrue(strict.getMessage().contains("'sink.strict-numeric-mapping'"), strict.getMessage());
                 break;
             case REJECTED:
                 assertThrows(TypeMappingException.class,
                         () -> ClickHouseTypeMapper.converterFor(type(flinkType), col(target), LENIENT, "c"));
                 assertThrows(TypeMappingException.class,
-                        () -> ClickHouseTypeMapper.converterFor(type(flinkType), col(target), STRICT, "c"));
+                        () -> ClickHouseTypeMapper.converterFor(type(flinkType), col(target), STRICT_NUMERIC, "c"));
                 break;
         }
     }
@@ -440,9 +448,9 @@ class ClickHouseTypeMapperTest {
         assertTrue(e.getMessage().contains("Column 'c element'"), e.getMessage());
     }
 
-    /** Strictness reaches every nesting level: a range-checked pair is rejected at planning inside composites too. */
+    /** Strictness reaches every nesting level: a range-checked numeric pair is rejected at planning inside composites too. */
     @Test
-    void strictModeRejectsRangeCheckedPairsInsideComposites() {
+    void strictNumericMappingRejectsRangeCheckedPairsInsideComposites() {
         LogicalType bigint = new BigIntType(false);
         VarCharType string = new VarCharType(false, VarCharType.MAX_LENGTH);
         assertStrictRejects(new ArrayType(false, bigint), "Array(UInt32)", "array element");
@@ -455,14 +463,14 @@ class ClickHouseTypeMapperTest {
     private static void assertStrictRejects(LogicalType flinkType, String target, String context) {
         ClickHouseTypeMapper.converterFor(flinkType, col(target), LENIENT, "c");
         TypeMappingException e = assertThrows(TypeMappingException.class,
-                () -> ClickHouseTypeMapper.converterFor(flinkType, col(target), STRICT, "c"));
+                () -> ClickHouseTypeMapper.converterFor(flinkType, col(target), STRICT_NUMERIC, "c"));
         assertTrue(e.getMessage().startsWith(context + ": "), e.getMessage());
-        assertTrue(e.getMessage().contains("'sink.strict-type-mapping'"), e.getMessage());
+        assertTrue(e.getMessage().contains("'sink.strict-numeric-mapping'"), e.getMessage());
     }
 
     @Test
     void doubleIntoFloat32IsRejectedBecauseItRounds() {
-        for (TypeMappingOptions options : List.of(LENIENT, STRICT)) {
+        for (TypeMappingOptions options : List.of(LENIENT, STRICT_NUMERIC)) {
             TypeMappingException e = assertThrows(TypeMappingException.class,
                     () -> ClickHouseTypeMapper.converterFor(new DoubleType(false), col("Float32"), options, "c"));
             assertTrue(e.getMessage().contains("CAST the value to FLOAT"), e.getMessage());
