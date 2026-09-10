@@ -83,7 +83,7 @@ public class ClickHouseClientConfig implements Serializable {
             boolean isServerAlive = false;
             for (int i = 0; i < DEFAULT_MAX_RETRIES && !isServerAlive; i++) {
                 isServerAlive = probe.ping();
-                if (!isServerAlive) {
+                if (!isServerAlive && i < DEFAULT_MAX_RETRIES - 1) {
                     LOG.warn("Ping failed; will retry up to {} times in {} seconds.", DEFAULT_MAX_RETRIES, 1);
                     try {
                         Thread.sleep(1000);

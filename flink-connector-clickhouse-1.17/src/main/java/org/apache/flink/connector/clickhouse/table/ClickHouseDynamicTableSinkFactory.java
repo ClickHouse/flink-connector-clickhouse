@@ -13,11 +13,14 @@ import com.clickhouse.config.RetryPolicy;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.connector.clickhouse.sink.ClickHouseClientConfig;
+import org.apache.flink.connector.clickhouse.sink.ConnectorServerSettings;
 import org.apache.flink.connector.clickhouse.table.data.RowDataDataMapper;
 import org.apache.flink.connector.clickhouse.table.schema.ResolvedColumnMapping;
 import org.apache.flink.connector.clickhouse.table.schema.SchemaResolver;
 import org.apache.flink.connector.clickhouse.table.schema.SchemaResolverOptions;
+import org.apache.flink.connector.clickhouse.table.schema.ServerComputedColumns;
 import org.apache.flink.table.api.ValidationException;
+import org.apache.flink.table.catalog.ResolvedSchema;
 import org.apache.flink.table.connector.sink.DynamicTableSink;
 import org.apache.flink.table.factories.DynamicTableSinkFactory;
 import org.apache.flink.table.factories.FactoryUtil;
@@ -94,9 +97,12 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
 
     /** Pinned per insert by ClickHouseAsyncWriter; client-v2 lets operation settings win, so a user copy would be discarded silently. */
     static final Set<String> INSERT_SERVER_SETTINGS = Set.of(
-            "input_format_null_as_default",
-            "input_format_defaults_for_omitted_fields",
+            ConnectorServerSettings.INPUT_FORMAT_NULL_AS_DEFAULT,
+            ConnectorServerSettings.INPUT_FORMAT_DEFAULTS_FOR_OMITTED_FIELDS,
             ServerSettings.INPUT_FORMAT_BINARY_READ_JSON_AS_STRING);
+
+    /** Same story one level up: pinned on the writer's InsertSettings, so a client-level copy would govern planning only and leave every insert async. */
+    static final Set<String> INSERT_CLIENT_OPTIONS = Set.of(ClientConfigProperties.ASYNC_OPERATIONS.getKey());
 
     @Override
     public String factoryIdentifier() {
@@ -142,14 +148,16 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         logIgnoredPrimaryKey(context);
 
         ClickHouseClientConfig clientConfig = buildClientConfig(context.getCatalogTable().getOptions(), options);
-        List<ResolvedColumnMapping> mappings = SchemaResolver.resolve(
-                context.getCatalogTable().getResolvedSchema(),
-                introspect(options, clientConfig),
-                resolverOptions);
+        ResolvedSchema flinkSchema = context.getCatalogTable().getResolvedSchema();
+        // One DESCRIBE per planning pass: the resolution and the server-computed set share it.
+        TableSchema clickHouseSchema = introspect(options, clientConfig);
+        List<ResolvedColumnMapping> mappings =
+                SchemaResolver.resolve(flinkSchema, clickHouseSchema, resolverOptions);
         // Servers too old to know input_format_binary_read_json_as_string never see it.
         clientConfig.setEnableJsonSupportAsString(SchemaResolver.targetsJsonColumn(mappings));
 
-        return new ClickHouseDynamicTableSink(clientConfig, RowDataDataMapper.of(mappings), options);
+        return new ClickHouseDynamicTableSink(clientConfig, RowDataDataMapper.of(mappings), options,
+                flinkSchema, ServerComputedColumns.of(flinkSchema, clickHouseSchema));
     }
 
     // ------------------------------------------------------------------------------------
@@ -243,13 +251,17 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         String database = options.get(DATABASE);
         String table = options.get(TABLE);
         LOG.info("Introspecting ClickHouse table {}.{} at {}", database, table, url);
-        try (Client client = clientConfig.createPlanningClient(PLANNING_SERVER_SETTINGS)) {
-            return client.getTableSchema(table, database);
+        Client client;
+        try {
+            client = clientConfig.createPlanningClient(PLANNING_SERVER_SETTINGS);
         } catch (IllegalArgumentException | ClientMisconfigurationException e) {
-            // Only Client.Builder.build() throws these here: option values and combinations parseConfigMap cannot see (the time-zone pair, SSL authentication, key store and certificate files).
+            // build() alone, so that a type client-v2 fails to parse cannot borrow this message: option values and combinations parseConfigMap cannot see (the time-zone pair, SSL authentication, key store and certificate files).
             throw new ValidationException(String.format(
                     "Invalid '%s*' option or option combination — the ClickHouse client rejected it: %s",
                     CLIENT_OPTIONS_PREFIX, withCause(e)), e);
+        }
+        try (Client planningClient = client) {
+            return planningClient.getTableSchema(table, database);
         } catch (Exception e) {
             throw new ValidationException(String.format(
                     "Could not read the schema of ClickHouse table %s.%s at %s — %s",
@@ -367,6 +379,11 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
 
     private static void checkClientOptionKey(String key) {
         checkNotConnectionOption(CLIENT_OPTIONS_PREFIX + key, RESERVED_CLIENT_KEYS.get(key));
+        if (INSERT_CLIENT_OPTIONS.contains(key)) {
+            throw new ValidationException(String.format(
+                    "Option '%s%s' collides with the option the connector itself pins on every "
+                    + "insert — remove it.", CLIENT_OPTIONS_PREFIX, key));
+        }
         // client-v2 strips the prefix and sends the rest verbatim, so a bare one becomes an empty setting or header name.
         if (key.equals(ClientConfigProperties.HTTP_HEADER_PREFIX) || key.equals(ClientConfigProperties.SERVER_SETTING_PREFIX)) {
             throw new ValidationException(String.format(
@@ -384,9 +401,10 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         if (!isClientOptionKey(key)) {
             throw new ValidationException(String.format(
                     "Option '%s%s' is not a ClickHouse client option. Supported keys: %s; "
-                    + "'%s<name>' and '%s<name>' are accepted too.",
+                    + "'%s%s<name>' and '%s%s<name>' are accepted too.",
                     CLIENT_OPTIONS_PREFIX, key, supportedClientKeys(),
-                    ClientConfigProperties.HTTP_HEADER_PREFIX, ClientConfigProperties.SERVER_SETTING_PREFIX));
+                    CLIENT_OPTIONS_PREFIX, ClientConfigProperties.HTTP_HEADER_PREFIX,
+                    CLIENT_OPTIONS_PREFIX, ClientConfigProperties.SERVER_SETTING_PREFIX));
         }
     }
 
@@ -436,6 +454,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         return Arrays.stream(ClientConfigProperties.values())
                 .map(ClientConfigProperties::getKey)
                 .filter(key -> !RESERVED_CLIENT_KEYS.containsKey(key))
+                .filter(key -> !INSERT_CLIENT_OPTIONS.contains(key))
                 .sorted()
                 .collect(Collectors.joining(", "));
     }

@@ -9,11 +9,21 @@
   `sink.parallelism`, `sink.max-retries`, `sink.batch-failure-strategy`, `sink.timezone`,
   `sink.ignore-unknown-flink-columns`, `sink.strict-numeric-mapping`, `clickhouse.client.*` / `clickhouse.server.*`
   passthrough) and the type mapping are documented in the README's "Table API" section.
+  Requires ClickHouse 23.10 or newer (schema introspection sends `print_pretty_type_names = 0`).
 - `ClickHouseClientConfig`: `copy()`, `verifyConnectivity()`, and `createPlanningClient(Map)`
   (planning-only server settings).
 - `ClickHouseAsyncSinkBuilder.setVerifyConnectivity(boolean)`: opt out of the connectivity
   check that `build()` performs.
 - `ClickHouseSinkDefaults`: the batching defaults shared by the DataStream builder and the SQL options.
+- Flink SQL partial inserts: `INSERT INTO t (a, b)` now writes only the columns the statement
+  names, so the omitted ones get their ClickHouse `DEFAULT` rather than the planner's padding
+  `NULL`. Requires Flink 1.18 or newer; Flink 1.17 does not report the column list to the sink.
+  A column list naming a field inside a structured column is rejected at planning.
+- A `MATERIALIZED`, `ALIAS` or `EPHEMERAL` ClickHouse column may now be declared in the Flink
+  schema, as long as every `INSERT` omits it through a column list; the sink drops it from the
+  request and the server fills it. Only a statement that would actually write one is rejected,
+  and the error names both the column and the column list. Declaring one used to fail at
+  planning unconditionally.
 
 ### Changed
 
@@ -26,6 +36,10 @@
 
 - `DataWriter` sized `Nullable(FixedString(n))` values by the column's estimated length (1)
   instead of `n`.
+- `'clickhouse.client.async'` passed option validation but had no effect on any insert: the
+  writer pins it per operation and client-v2 lets operation settings win, so the user's value
+  governed only the planning ping and `DESCRIBE`. It is now rejected like the server settings
+  the writer pins, and no longer advertised in the unknown-key error's list.
 
 ### Checkpoint migration
 

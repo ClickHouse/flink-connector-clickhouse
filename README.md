@@ -142,6 +142,16 @@ if they have none — the latter is logged as a warning at planning. A nullable 
 `Nullable` (in Flink SQL, columns and collection elements are nullable unless declared
 otherwise).
 
+An `INSERT INTO t (a, b)` column list is honoured: the columns the statement leaves out stay
+out of the request, so the server applies their `DEFAULT` instead of receiving the planner's
+padding `NULL`. This needs Flink 1.18 or newer — Flink 1.17 does not report the column list to
+the sink, so a partial insert there still writes an explicit `NULL` into every omitted column.
+
+`MATERIALIZED`, `ALIAS` and `EPHEMERAL` columns take no value from an insert. You may still
+declare them in the Flink schema as long as every statement omits them through a column list —
+declare them nullable, since Flink refuses to leave a `NOT NULL` column out of one. A statement
+that would write such a column fails at planning and names it.
+
 ### Snippet
 
 ```sql
@@ -198,9 +208,11 @@ Connection options (required unless noted): `url`, `username`, `password` (defau
 `clickhouse.server.<key>` become per-query server settings. The connector sends
 `print_pretty_type_names = 0` with its schema introspection only, so the type names it reads are
 canonical (named `Tuple` columns are otherwise pretty-printed across lines and rejected in the
-insert header), and pins `input_format_null_as_default`, `input_format_defaults_for_omitted_fields`
+insert header) — this makes ClickHouse 23.10 the SQL sink's minimum server version, as older
+servers reject the unknown setting — and pins `input_format_null_as_default`, `input_format_defaults_for_omitted_fields`
 and (for `JSON` columns) `input_format_binary_read_json_as_string` on every insert; a user copy of
-any of these settings, in either spelling, is rejected.
+any of these settings, in either spelling, is rejected. The client option `async` is pinned per
+insert the same way, so it is rejected too.
 
 Flink `STRING` into a ClickHouse `JSON` column works out of the box — the connector enables
 the client's JSON-as-string mode automatically exactly when a `JSON` column is mapped.
@@ -361,6 +373,7 @@ Our Sink exposes additional metrics on top of Flink's existing metrics:
 ## Compatibility
 
 - All projects in this repo are tested with all [active LTS versions](https://github.com/ClickHouse/ClickHouse/pulls?q=is%3Aopen+is%3Apr+label%3Arelease) of ClickHouse.
+- The Table API / SQL sink requires ClickHouse 23.10 or newer (see "Passthrough" under [Connector options](#connector-options)); the DataStream API has no such floor.
 - [Support policy](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md#security-change-log-and-support)
 - We recommend upgrading the connector continuously to not miss security fixes and new improvements
   - If you have an issue with migration - create and issue and we will respond!

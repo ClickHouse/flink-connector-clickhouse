@@ -29,6 +29,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -262,37 +263,54 @@ class SchemaResolverTest {
         SchemaResolver.resolve(schema, withDefault, options(false));
     }
 
+    /**
+     * A server-computed column is skipped, not rejected: an INSERT column list may legally omit
+     * it, and only {@link ServerComputedColumns} — reached once the statement is known — decides.
+     */
     @Test
-    void materializedColumnsAreNotInsertable() {
+    void materializedColumnsAreSkippedRatherThanResolved() {
         TableSchema schema = clickHouseSchema("id Int64, mat String");
         ClickHouseColumn mat = schema.getColumnByName("mat");
         mat.setHasDefault(true);
         mat.setDefaultValue(ClickHouseColumn.DefaultValue.MATERIALIZED);
         // Unmapped: fine, and excluded from the required-column check.
-        SchemaResolver.resolve(ResolvedSchema.of(
-                Column.physical("id", DataTypes.BIGINT().notNull())), schema, options(false));
-        // Mapped: rejected.
+        assertEquals(List.of("id"), columnNames(SchemaResolver.resolve(ResolvedSchema.of(
+                Column.physical("id", DataTypes.BIGINT().notNull())), schema, options(false))));
+        // Mapped: dropped from the mappings, so it reaches neither the header nor the row.
+        assertEquals(List.of("id"), columnNames(SchemaResolver.resolve(ResolvedSchema.of(
+                Column.physical("id", DataTypes.BIGINT().notNull()),
+                Column.physical("mat", DataTypes.STRING().notNull())), schema, options(false))));
+    }
+
+    /** Skipping is not silent acceptance when nothing else is left: no column list could help. */
+    @Test
+    void aSchemaOfNothingButServerComputedColumnsIsRejectedAtResolution() {
+        TableSchema schema = clickHouseSchema("mat String");
+        ClickHouseColumn mat = schema.getColumnByName("mat");
+        mat.setHasDefault(true);
+        mat.setDefaultValue(ClickHouseColumn.DefaultValue.MATERIALIZED);
         ValidationException e = assertThrows(ValidationException.class, () ->
                 SchemaResolver.resolve(ResolvedSchema.of(
-                        Column.physical("id", DataTypes.BIGINT().notNull()),
                         Column.physical("mat", DataTypes.STRING().notNull())), schema, options(false)));
         assertTrue(e.getMessage().contains("MATERIALIZED"), e.getMessage());
         assertTrue(e.getMessage().contains("the server computes it"), e.getMessage());
+        assertTrue(e.getMessage().contains("Exclude the column from the Flink schema"), e.getMessage());
     }
 
-    /** EPHEMERAL is insertable SQL-wise, but only via a column list the sink never sends. */
+    /** The skip runs before the type matrix: an unwritable target type must not shadow the reason. */
     @Test
-    void ephemeralColumnsAreRejectedBecauseTheSinkSendsNoColumnList() {
-        TableSchema schema = clickHouseSchema("id Int64, raw String");
-        ClickHouseColumn raw = schema.getColumnByName("raw");
-        raw.setHasDefault(true);
-        raw.setDefaultValue(ClickHouseColumn.DefaultValue.EPHEMERAL);
-        ValidationException e = assertThrows(ValidationException.class, () ->
-                SchemaResolver.resolve(ResolvedSchema.of(
-                        Column.physical("id", DataTypes.BIGINT().notNull()),
-                        Column.physical("raw", DataTypes.STRING().notNull())), schema, options(false)));
-        assertTrue(e.getMessage().contains("is EPHEMERAL"), e.getMessage());
-        assertTrue(e.getMessage().contains("without a column list"), e.getMessage());
+    void aServerComputedColumnOfAnUnsupportedTypeIsStillOnlySkipped() {
+        TableSchema schema = clickHouseSchema("id Int64, status Enum8('a' = 1)");
+        ClickHouseColumn status = schema.getColumnByName("status");
+        status.setHasDefault(true);
+        status.setDefaultValue(ClickHouseColumn.DefaultValue.ALIAS);
+        assertEquals(List.of("id"), columnNames(SchemaResolver.resolve(ResolvedSchema.of(
+                Column.physical("id", DataTypes.BIGINT().notNull()),
+                Column.physical("status", DataTypes.STRING().notNull())), schema, options(false))));
+    }
+
+    private static List<String> columnNames(List<ResolvedColumnMapping> mappings) {
+        return mappings.stream().map(ResolvedColumnMapping::columnName).collect(Collectors.toList());
     }
 
     @Test
@@ -306,6 +324,46 @@ class SchemaResolverTest {
         List<ResolvedColumnMapping> withoutJson = SchemaResolver.resolve(
                 schema, clickHouseSchema("id Int64, payload String"), options(false));
         assertFalse(SchemaResolver.targetsJsonColumn(withoutJson));
+    }
+
+    @Test
+    void projectKeepsOnlyTheTargetedColumnsInFlinkOrder() {
+        RowDataDataMapper mapper = RowDataDataMapper.of(
+                SchemaResolver.resolve(flinkSchema(), clickHouseSchema(CH_COLUMNS), options(false)));
+
+        List<ColumnBinding> bindings = mapper.project(Set.of("uid", "id")).bindings();
+
+        assertEquals(List.of("id", "uid"),
+                bindings.stream().map(b -> b.columnName).collect(Collectors.toList()));
+        assertEquals(List.of("Int64", "UUID"),
+                bindings.stream().map(b -> b.column.getOriginalTypeName()).collect(Collectors.toList()));
+    }
+
+    /** The omitted columns must not reach the payload at all — a null there is an explicit null. */
+    @Test
+    void projectLeavesTheOmittedColumnsOutOfThePayload() {
+        RowDataDataMapper mapper = RowDataDataMapper.of(
+                SchemaResolver.resolve(
+                        ResolvedSchema.of(
+                                Column.physical("id", DataTypes.BIGINT().notNull()),
+                                Column.physical("name", DataTypes.STRING())),
+                        clickHouseSchema("id Int64, name Nullable(String)"), options(false)))
+                .project(Set.of("id"));
+
+        Map<String, Object> map = new HashMap<>();
+        mapper.toMap(GenericRowData.of(1L, null), map);
+
+        assertEquals(Set.of("id"), map.keySet());
+    }
+
+    @Test
+    void projectRejectsAColumnListThatNamesNothingTheSinkWrites() {
+        RowDataDataMapper mapper = RowDataDataMapper.of(
+                SchemaResolver.resolve(flinkSchema(), clickHouseSchema(CH_COLUMNS), options(false)));
+
+        ValidationException e = assertThrows(ValidationException.class,
+                () -> mapper.project(Set.of("nope")));
+        assertTrue(e.getMessage().contains("nothing would be inserted"), e.getMessage());
     }
 
     @SuppressWarnings("unchecked")

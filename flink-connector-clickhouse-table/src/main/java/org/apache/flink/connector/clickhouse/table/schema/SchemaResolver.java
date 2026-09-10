@@ -19,6 +19,7 @@ import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -50,6 +51,7 @@ public final class SchemaResolver {
                                                       TableSchema clickHouseSchema,
                                                       SchemaResolverOptions options) {
         Map<String, ClickHouseColumn> clickHouseColumns = columnsByName(clickHouseSchema);
+        ServerComputedColumns serverComputed = ServerComputedColumns.of(flinkSchema, clickHouseSchema);
         String qualifiedTable = options.database + "." + options.table;
         TypeMappingOptions typeMapping = options.typeMapping();
 
@@ -66,11 +68,16 @@ public final class SchemaResolver {
             }
             // After the unknown-column skip: a dropped column never becomes a payload key.
             checkNotReservedName(field.getName());
+            // Skipped, not resolved: an INSERT column list may legally omit a server-computed
+            // column, so the sink rejects it once the statement is known.
+            if (serverComputed.contains(field.getName())) {
+                continue;
+            }
             mappings.add(resolveColumn(i, field, column, typeMapping));
         }
 
         warnOnOmittedColumnsWithoutDefaults(clickHouseSchema, mappedNames(mappings), qualifiedTable);
-        checkNotEmpty(mappings, qualifiedTable);
+        checkNotEmpty(mappings, serverComputed, qualifiedTable);
         return mappings;
     }
 
@@ -86,7 +93,6 @@ public final class SchemaResolver {
     private static ResolvedColumnMapping resolveColumn(int fieldIndex, RowType.RowField field,
                                                        ClickHouseColumn column,
                                                        TypeMappingOptions typeMapping) {
-        checkInsertable(field.getName(), column);
         ClickHouseColumn effective = unwrapSimpleAggregateFunction(column);
         ValueConverter converter = converterFor(field, column, typeMapping);
         checkNullability(field, column, effective);
@@ -117,33 +123,6 @@ public final class SchemaResolver {
                 "Column '%s': Flink type %s cannot be written to ClickHouse column '%s %s' — %s.",
                 field.getName(), field.getType().asSummaryString(),
                 column.getColumnName(), column.getOriginalTypeName(), e.getMessage()));
-    }
-
-    private static void checkInsertable(String name, ClickHouseColumn column) {
-        if (!isInsertTarget(column)) {
-            throw new ValidationException(String.format(
-                    "Column '%s': ClickHouse column '%s %s' is %s — %s. "
-                    + "Exclude the column from the Flink schema.",
-                    name, column.getColumnName(), column.getOriginalTypeName(),
-                    column.getDefaultValue(), notInsertableReason(column.getDefaultValue())));
-        }
-    }
-
-    /**
-     * MATERIALIZED and ALIAS columns are computed by the server. EPHEMERAL columns may be supplied
-     * by an INSERT, but only through an explicit column list, which the sink's
-     * {@code INSERT INTO t FORMAT RowBinaryWithNamesAndTypes} never sends — a header naming one
-     * is silently dropped, so it is rejected here rather than losing data.
-     */
-    private static boolean isInsertTarget(ClickHouseColumn column) {
-        return !column.hasDefault() || column.getDefaultValue() == null
-                || column.getDefaultValue() == ClickHouseColumn.DefaultValue.DEFAULT;
-    }
-
-    private static String notInsertableReason(ClickHouseColumn.DefaultValue kind) {
-        return kind == ClickHouseColumn.DefaultValue.EPHEMERAL
-                ? "the sink inserts without a column list, so the value would be silently dropped"
-                : "the server computes it, so nothing may be sent";
     }
 
     private static void checkNullability(RowType.RowField field, ClickHouseColumn column,
@@ -222,12 +201,16 @@ public final class SchemaResolver {
         return !unwrapSimpleAggregateFunction(column).isNullable();
     }
 
-    private static void checkNotEmpty(List<ResolvedColumnMapping> mappings, String qualifiedTable) {
-        if (mappings.isEmpty()) {
-            throw new ValidationException(String.format(
-                    "None of the Flink schema columns map to ClickHouse table %s — nothing to insert.",
-                    qualifiedTable));
+    private static void checkNotEmpty(List<ResolvedColumnMapping> mappings,
+                                      ServerComputedColumns serverComputed, String qualifiedTable) {
+        if (!mappings.isEmpty()) {
+            return;
         }
+        // Nothing is writable, so no INSERT column list can rescue this — name the real reason now.
+        serverComputed.checkNotWritten(Optional.empty(), false);
+        throw new ValidationException(String.format(
+                "None of the Flink schema columns map to ClickHouse table %s — nothing to insert.",
+                qualifiedTable));
     }
 
     private static ValidationException unknownFlinkColumn(String name,
@@ -245,11 +228,11 @@ public final class SchemaResolver {
     // ------------------------------------------------------------------------------------
 
     /** Only physical columns participate; computed/metadata columns never reach the sink. */
-    private static RowType physicalRowType(ResolvedSchema flinkSchema) {
+    static RowType physicalRowType(ResolvedSchema flinkSchema) {
         return (RowType) flinkSchema.toPhysicalRowDataType().getLogicalType();
     }
 
-    private static Map<String, ClickHouseColumn> columnsByName(TableSchema clickHouseSchema) {
+    static Map<String, ClickHouseColumn> columnsByName(TableSchema clickHouseSchema) {
         // LinkedHashMap keeps the table's column order for error messages.
         return clickHouseSchema.getColumns().stream().collect(Collectors.toMap(
                 ClickHouseColumn::getColumnName, c -> c,

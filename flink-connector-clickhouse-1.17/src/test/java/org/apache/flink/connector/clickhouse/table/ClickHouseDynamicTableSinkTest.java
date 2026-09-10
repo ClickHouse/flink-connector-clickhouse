@@ -8,6 +8,7 @@ import org.apache.flink.connector.clickhouse.sink.ClickHouseClientConfig;
 import org.apache.flink.connector.clickhouse.table.data.RowDataDataMapper;
 import org.apache.flink.connector.clickhouse.table.schema.SchemaResolver;
 import org.apache.flink.connector.clickhouse.table.schema.SchemaResolverOptions;
+import org.apache.flink.connector.clickhouse.table.schema.ServerComputedColumns;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.catalog.Column;
 import org.apache.flink.table.catalog.ResolvedSchema;
@@ -29,11 +30,14 @@ class ClickHouseDynamicTableSinkTest {
     private static ClickHouseDynamicTableSink sink() {
         ClickHouseClientConfig config = new ClickHouseClientConfig("http://localhost:1", "u", "", "db", "t",
                 Map.of(), Map.of(), false);
+        ResolvedSchema schema = ResolvedSchema.of(Column.physical("id", DataTypes.BIGINT().notNull()));
+        TableSchema clickHouseSchema = new TableSchema(ClickHouseColumn.parse("id Int64"));
         RowDataDataMapper mapper = RowDataDataMapper.of(SchemaResolver.resolve(
-                ResolvedSchema.of(Column.physical("id", DataTypes.BIGINT().notNull())),
-                new TableSchema(ClickHouseColumn.parse("id Int64")),
+                schema, clickHouseSchema,
                 new SchemaResolverOptions("db", "t", ZoneId.of("UTC"), false)));
-        return new ClickHouseDynamicTableSink(config, mapper, Configuration.fromMap(Map.of("database", "db", "table", "t")));
+        return new ClickHouseDynamicTableSink(config, mapper,
+                Configuration.fromMap(Map.of("database", "db", "table", "t")), schema,
+                ServerComputedColumns.of(schema, clickHouseSchema));
     }
 
     /** The planner copies the sink per INSERT of a statement set; the copies must not share the config. */

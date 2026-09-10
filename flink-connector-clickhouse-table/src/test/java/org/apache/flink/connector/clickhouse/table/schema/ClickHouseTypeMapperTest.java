@@ -224,7 +224,9 @@ class ClickHouseTypeMapperTest {
             case "Int16":   return (short) 7;
             case "Int32": case "UInt8": case "UInt16":  return 7;
             case "Int64": case "UInt32":                return 7L;
-            case "Int128": case "Int256": case "UInt64": case "UInt128": case "UInt256":
+            // a Flink integer into UInt64 stays a Long (DataWriter takes either); a DECIMAL needs the full range
+            case "UInt64":  return flinkType.startsWith("DECIMAL") ? BigInteger.valueOf(7) : 7L;
+            case "Int128": case "Int256": case "UInt128": case "UInt256":
                             return BigInteger.valueOf(7);
             case "Float32": return 7.5f;
             case "Float64": return 7.5d;
@@ -254,7 +256,7 @@ class ClickHouseTypeMapperTest {
                         out(Integer.MIN_VALUE - 1L, "Int32 range -2147483648..2147483647", Integer.MAX_VALUE + 1L, "Int32 range -2147483648..2147483647")),
                 probe("BIGINT", "UInt32", in(0L, 0L, 4294967295L, 4294967295L),
                         out(-1L, "UInt32 range 0..4294967295", 4294967296L, "UInt32 range 0..4294967295")),
-                probe("BIGINT", "UInt64", in(0L, BigInteger.ZERO, Long.MAX_VALUE, BigInteger.valueOf(Long.MAX_VALUE)),
+                probe("BIGINT", "UInt64", in(0L, 0L, Long.MAX_VALUE, Long.MAX_VALUE),
                         out(-1L, "UInt64 range 0..18446744073709551615")),
                 probe("BIGINT", "UInt256", in(Long.MAX_VALUE, BigInteger.valueOf(Long.MAX_VALUE)), out(-1L, "UInt256 range 0..")),
                 // 20 digits pass the planning precision check but reach past UInt64's maximum

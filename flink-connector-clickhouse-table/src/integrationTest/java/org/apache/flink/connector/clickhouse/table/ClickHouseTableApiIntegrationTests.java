@@ -663,6 +663,133 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals(0L, rows.get(0).getLong("tags_len"));
     }
 
+    /**
+     * A column list the statement does not fill must reach the server as a narrower header, not as
+     * the planner's padding nulls — those would overwrite the columns' DEFAULTs.
+     */
+    @Test
+    void partialInsertLeavesTheOmittedColumnsToTheServerDefault() throws Exception {
+        assumeTargetColumnsAreReported();
+        String table = "table_api_partial_insert";
+        createTable(table, "id Int64, note Nullable(String) DEFAULT 'unset', n Nullable(Int32) DEFAULT 42");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_partial", table, "id BIGINT NOT NULL, note STRING, n INT"));
+        env.executeSql("INSERT INTO ch_partial (id) VALUES (1), (2)").await();
+
+        List<GenericRecord> rows = readBack(
+                "id, ifNull(note, '<null>') AS note_s, ifNull(n, -1) AS n_v", table, "id", 2);
+        Assertions.assertEquals(2, rows.size());
+        Assertions.assertEquals("unset", rows.get(0).getString("note_s"));
+        Assertions.assertEquals(42, rows.get(0).getInteger("n_v"));
+        Assertions.assertEquals("unset", rows.get(1).getString("note_s"));
+        Assertions.assertEquals(42, rows.get(1).getInteger("n_v"));
+    }
+
+    /** The other half of the contract: without a column list a null is the user's value, not an omission. */
+    @Test
+    void insertWithoutAColumnListStillWritesAnExplicitNullOverTheDefault() throws Exception {
+        String table = "table_api_explicit_null";
+        createTable(table, "id Int64, note Nullable(String) DEFAULT 'unset'");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_explicit_null", table, "id BIGINT NOT NULL, note STRING"));
+        env.executeSql("INSERT INTO ch_explicit_null VALUES (1, CAST(NULL AS STRING))").await();
+
+        List<GenericRecord> rows = readBack("id, ifNull(note, '<null>') AS note_s", table, "id", 1);
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals("<null>", rows.get(0).getString("note_s"));
+    }
+
+    /**
+     * Pins what the column list's indices count: the declared columns, a computed one included.
+     * Counting physical columns instead would shift 'tag' onto 'note' here.
+     */
+    @Test
+    void partialInsertResolvesIndicesPastAComputedColumn() throws Exception {
+        assumeTargetColumnsAreReported();
+        String table = "table_api_partial_computed";
+        createTable(table, "id Int64, note Nullable(String) DEFAULT 'note-default', "
+                + "tag Nullable(String) DEFAULT 'tag-default'");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_partial_computed", table,
+                "id BIGINT NOT NULL, doubled AS id * 2, note STRING, tag STRING"));
+        env.executeSql("INSERT INTO ch_partial_computed (id, tag) VALUES (1, 'set')").await();
+
+        List<GenericRecord> rows = readBack("id, note, tag", table, "id", 1);
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals("note-default", rows.get(0).getString("note"));
+        Assertions.assertEquals("set", rows.get(0).getString("tag"));
+    }
+
+    /**
+     * A MATERIALIZED column may be declared as long as the statement leaves it to the server:
+     * planning cannot reject it, because only the INSERT's column list decides whether the sink
+     * would write it. Rejecting at resolution would make the column list unusable here.
+     *
+     * <p>The Flink column has to be nullable — the planner refuses to leave a NOT NULL column out
+     * of a column list. Its nullability never reaches the type matrix, because the column is
+     * skipped before it.
+     */
+    @Test
+    void partialInsertOmittingAMaterializedColumnLeavesItToTheServer() throws Exception {
+        assumeTargetColumnsAreReported();
+        String table = "table_api_partial_materialized";
+        createTable(table, "id Int64, mat Int64 MATERIALIZED id * 2");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_partial_mat", table, "id BIGINT NOT NULL, mat BIGINT"));
+        env.executeSql("INSERT INTO ch_partial_mat (id) VALUES (1), (2)").await();
+
+        List<GenericRecord> rows = readBack("id, mat", table, "id", 2);
+        Assertions.assertEquals(2, rows.size());
+        Assertions.assertEquals(2L, rows.get(0).getLong("mat"));
+        Assertions.assertEquals(4L, rows.get(1).getLong("mat"));
+    }
+
+    /**
+     * The other half of that contract: a column list that names the column is still an error, and
+     * the hint depends on whether a column list can reach the sink at all.
+     */
+    @Test
+    void anInsertColumnListNamingAMaterializedColumnIsRejected() throws Exception {
+        String table = "table_api_materialized_targeted";
+        createTable(table, "id Int64, mat Int64 MATERIALIZED id * 2");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_mat_targeted", table, "id BIGINT NOT NULL, mat BIGINT"));
+
+        assertFailsWith(() -> env.executeSql("INSERT INTO ch_mat_targeted (id, mat) VALUES (1, 9)"),
+                "is MATERIALIZED", "the server computes it",
+                TargetColumns.isSupported()
+                        ? "Drop the column from the INSERT column list."
+                        : "Exclude the column from the Flink schema.");
+    }
+
+    /** EPHEMERAL is the same story: legal to declare, as long as the statement omits it. */
+    @Test
+    void partialInsertOmittingAnEphemeralColumnLeavesItToTheServer() throws Exception {
+        assumeTargetColumnsAreReported();
+        String table = "table_api_partial_ephemeral";
+        createTable(table, "id Int64, payload String EPHEMERAL, norm String DEFAULT upper(payload)");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_partial_ephemeral", table, "id BIGINT NOT NULL, payload STRING"));
+        env.executeSql("INSERT INTO ch_partial_ephemeral (id) VALUES (1)").await();
+
+        // 'norm' is omitted too, so the server evaluates its DEFAULT over the ephemeral default ''.
+        List<GenericRecord> rows = readBack("id, norm", table, "id", 1);
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals("", rows.get(0).getString("norm"));
+    }
+
+    private static void assumeTargetColumnsAreReported() {
+        Assumptions.assumeTrue(TargetColumns.isSupported(),
+                "Flink 1.17 does not report the INSERT column list to the sink, so a partial "
+                + "insert there still writes the planner's padding nulls");
+    }
+
     @Test
     void statementSetInsertsIntoTheSameSinkTwice() throws Exception {
         String table = "table_api_stmt_set";
@@ -1108,7 +1235,7 @@ public class ClickHouseTableApiIntegrationTests {
     }
 
     @Test
-    void ephemeralColumnsAreRejectedAtPlanning() throws Exception {
+    void ephemeralColumnsAreRejectedWhenTheStatementWritesThem() throws Exception {
         String table = "table_api_ephemeral";
         createTable(table, "id Int64, payload String EPHEMERAL, norm String DEFAULT lower(payload)");
 
@@ -1116,8 +1243,9 @@ public class ClickHouseTableApiIntegrationTests {
         // The sink's INSERT carries no column list, so a header naming 'payload' would be dropped silently.
         env.executeSql(sinkDdl("ch_ephemeral", table, "id BIGINT NOT NULL, payload STRING NOT NULL"));
 
+        // No column list: every declared column is written, 'payload' included.
         assertFailsWith(() -> env.executeSql("INSERT INTO ch_ephemeral VALUES (1, 'X')"),
-                "is EPHEMERAL", "without a column list");
+                "is EPHEMERAL", "sends no column list");
     }
 
     // ------------------------------------------------------------------------------------

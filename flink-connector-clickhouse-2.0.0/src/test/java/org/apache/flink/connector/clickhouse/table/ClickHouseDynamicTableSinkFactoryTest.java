@@ -322,6 +322,27 @@ class ClickHouseDynamicTableSinkFactoryTest {
                 ClickHouseDynamicTableSinkFactory.INSERT_SERVER_SETTINGS.stream().sorted().collect(java.util.stream.Collectors.toList()));
     }
 
+    /**
+     * ClickHouseAsyncWriter pins ASYNC_OPERATIONS on its InsertSettings too, and client-v2 lets
+     * operation settings win. A client-level copy would govern the planning ping and DESCRIBE
+     * while every insert stayed async — the silent half-effect this guard exists to reject.
+     */
+    @Test void clientOptionsTheWriterPinsPerInsertAreRejected() {
+        for (String option : ClickHouseDynamicTableSinkFactory.INSERT_CLIENT_OPTIONS) {
+            ValidationException e = assertThrows(ValidationException.class,
+                    () -> ClickHouseDynamicTableSinkFactory.clientOptions(
+                            Map.of("clickhouse.client." + option, "false")));
+            assertTrue(e.getMessage().contains("'clickhouse.client." + option + "'"), e.getMessage());
+            assertTrue(e.getMessage().contains("every insert"), e.getMessage());
+            // And it is not advertised as settable by the unknown-key error either.
+            ValidationException unknown = assertThrows(ValidationException.class,
+                    () -> ClickHouseDynamicTableSinkFactory.clientOptions(
+                            Map.of("clickhouse.client.not_an_option", "1")));
+            assertFalse(unknown.getMessage().contains(option + ","), unknown.getMessage());
+        }
+        assertEquals(List.of("async"), List.copyOf(ClickHouseDynamicTableSinkFactory.INSERT_CLIENT_OPTIONS));
+    }
+
     private static Configuration planningOptions(String url) {
         return Configuration.fromMap(Map.of("url", url, "database", "db", "table", "t"));
     }

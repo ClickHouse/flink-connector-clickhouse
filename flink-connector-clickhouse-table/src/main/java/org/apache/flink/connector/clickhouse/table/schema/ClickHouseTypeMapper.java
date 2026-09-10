@@ -317,11 +317,11 @@ public final class ClickHouseTypeMapper {
     /** The Java type DataWriter's dispatch takes for each integer column, from any Flink integer. */
     private static ValueConverter toDataWriterType(ClickHouseDataType target) {
         switch (target) {
-            case Int8:                           return value -> (byte) ((Number) value).longValue();
-            case Int16:                          return value -> (short) ((Number) value).longValue();
-            case Int32: case UInt8: case UInt16: return value -> (int) ((Number) value).longValue();
-            case Int64: case UInt32:             return value -> ((Number) value).longValue();
-            default:                             return value -> BigInteger.valueOf(((Number) value).longValue());
+            case Int8:                            return value -> (byte) ((Number) value).longValue();
+            case Int16:                           return value -> (short) ((Number) value).longValue();
+            case Int32: case UInt8: case UInt16:  return value -> (int) ((Number) value).longValue();
+            case Int64: case UInt32: case UInt64: return value -> ((Number) value).longValue();
+            default:                              return value -> BigInteger.valueOf(((Number) value).longValue());
         }
     }
 
