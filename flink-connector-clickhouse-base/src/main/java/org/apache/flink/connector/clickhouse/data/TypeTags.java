@@ -5,6 +5,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -19,6 +20,13 @@ import java.util.UUID;
  * Tag-and-payload serialization for {@code Map<String, Object>} values used
  * inside {@link ClickHousePayload#getData()}. Tag values are documented in
  * the design spec §10c and must remain stable across releases.
+ *
+ * <p>Internal to the connector's checkpoint state serializer — public only so the version
+ * modules can reach it; not a supported API and free to change between releases.
+ *
+ * <p>Strings and map keys are int-length-prefixed UTF-8 (serializer entry marker V3+),
+ * so they are not capped at writeUTF's 64 KB; {@link #read(DataInputStream, int)} with
+ * {@link #V2} decodes the older writeUTF form. Zone IDs are bounded and stay writeUTF in both.
  */
 public final class TypeTags {
 
@@ -42,6 +50,14 @@ public final class TypeTags {
     static final byte MAP = 17;
     static final byte TUPLE = 18;
 
+    /** Entry format whose strings and map keys are writeUTF-encoded (capped at 64 KB). */
+    public static final int V2 = 2;
+    /** Current entry format: strings and map keys are int-length-prefixed UTF-8, unbounded. */
+    public static final int V3 = 3;
+
+    /** Corruption guard for length-prefixed string reads; matches the BYTES bound. */
+    private static final int MAX_STRING_BYTES = 256 * 1024 * 1024;
+
     private TypeTags() {}
 
     /** Writes one tagged value. Throws IOException with a clear key-naming hint if type isn't supported. */
@@ -64,7 +80,7 @@ public final class TypeTags {
             out.writeByte(BIG_DEC); out.writeInt(d.scale());
             out.writeInt(b.length); out.write(b); return;
         }
-        if (value instanceof String)         { out.writeByte(STRING);  out.writeUTF((String) value); return; }
+        if (value instanceof String)         { out.writeByte(STRING);  writeUtf8((String) value, out); return; }
         if (value instanceof byte[]) {
             byte[] b = (byte[]) value;
             out.writeByte(BYTES); out.writeInt(b.length); out.write(b); return;
@@ -105,7 +121,7 @@ public final class TypeTags {
             for (Map.Entry<?, ?> e : map.entrySet()) {
                 if (!(e.getKey() instanceof String))
                     throw new IOException("Map keys must be String, got: " + e.getKey().getClass());
-                out.writeUTF((String) e.getKey()); write(e.getValue(), out);
+                writeUtf8((String) e.getKey(), out); write(e.getValue(), out);
             } return;
         }
         if (value instanceof Object[]) {
@@ -117,8 +133,30 @@ public final class TypeTags {
             + " (allowed types: see design spec §7)");
     }
 
-    /** Reads one tagged value. */
-    public static Object read(DataInputStream in) throws IOException {
+    /** Unbounded UTF-8 with an int length prefix — writeUTF would cap it at 64 KB. */
+    public static void writeUtf8(String s, DataOutputStream out) throws IOException {
+        byte[] b = s.getBytes(StandardCharsets.UTF_8);
+        out.writeInt(b.length); out.write(b);
+    }
+
+    /** A string or map key: int-length-prefixed UTF-8 from {@link #V3}, {@code writeUTF} before. */
+    public static String readString(DataInputStream in, int entryVersion) throws IOException {
+        return entryVersion >= V3 ? readUtf8(in) : in.readUTF();
+    }
+
+    private static String readUtf8(DataInputStream in) throws IOException {
+        int len = in.readInt();
+        if (len < 0 || len > MAX_STRING_BYTES) throw new IOException("Implausible string length: " + len);
+        byte[] b = new byte[len];
+        in.readFully(b);
+        return new String(b, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Reads one tagged value written under the given entry format ({@link #V2} or
+     * {@link #V3}). V1 entries are raw bytes and never contain tagged values.
+     */
+    public static Object read(DataInputStream in, int entryVersion) throws IOException {
         byte tag = in.readByte();
         switch (tag) {
             case NULL:   return null;
@@ -144,7 +182,7 @@ public final class TypeTags {
                 in.readFully(b);
                 return new BigDecimal(new BigInteger(b), scale);
             }
-            case STRING: return in.readUTF();
+            case STRING: return readString(in, entryVersion);
             case BYTES: {
                 int len = in.readInt();
                 if (len < 0 || len > 256 * 1024 * 1024) throw new IOException("Implausible BYTES length: " + len);
@@ -166,21 +204,21 @@ public final class TypeTags {
                 int n = in.readInt();
                 if (n < 0 || n > 1_000_000) throw new IOException("Implausible LIST size: " + n);
                 List<Object> list = new ArrayList<>(n);
-                for (int i = 0; i < n; i++) list.add(read(in));
+                for (int i = 0; i < n; i++) list.add(read(in, entryVersion));
                 return list;
             }
             case MAP: {
                 int n = in.readInt();
                 if (n < 0 || n > 1_000_000) throw new IOException("Implausible MAP size: " + n);
                 Map<String, Object> m = new LinkedHashMap<>(n);
-                for (int i = 0; i < n; i++) m.put(in.readUTF(), read(in));
+                for (int i = 0; i < n; i++) m.put(readString(in, entryVersion), read(in, entryVersion));
                 return m;
             }
             case TUPLE: {
                 int n = in.readInt();
                 if (n < 0 || n > 1_000_000) throw new IOException("Implausible TUPLE size: " + n);
                 Object[] arr = new Object[n];
-                for (int i = 0; i < n; i++) arr[i] = read(in);
+                for (int i = 0; i < n; i++) arr[i] = read(in, entryVersion);
                 return arr;
             }
             default: throw new IOException("Unknown type tag: " + tag);
