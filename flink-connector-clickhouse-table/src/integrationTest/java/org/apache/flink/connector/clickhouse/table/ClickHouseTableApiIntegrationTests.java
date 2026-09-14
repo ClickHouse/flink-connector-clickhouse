@@ -580,6 +580,76 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals("(5,'z')", rows.get(0).getString("k_s"));
     }
 
+    @Test
+    void arraysAndMapsNestInsideEachOtherAndRoundTrip() throws Exception {
+        String table = "table_api_nested_composites";
+        createTable(table,
+                "id Int64, matrix Array(Array(Int32)), dicts Array(Map(String, Int32)), "
+                        + "by_key Map(String, Array(Int32)), deep Map(String, Map(String, Int32)), "
+                        + "wrapped Tuple(Array(Int32)), tupled_map Tuple(Map(String, Int32))");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_nested_composites", table,
+                "id BIGINT NOT NULL,"
+                        + "matrix ARRAY<ARRAY<INT NOT NULL> NOT NULL> NOT NULL,"
+                        + "dicts ARRAY<MAP<STRING, INT NOT NULL> NOT NULL> NOT NULL,"
+                        + "by_key MAP<STRING, ARRAY<INT NOT NULL> NOT NULL> NOT NULL,"
+                        + "deep MAP<STRING, MAP<STRING, INT NOT NULL> NOT NULL> NOT NULL,"
+                        + "wrapped ROW<a ARRAY<INT NOT NULL> NOT NULL> NOT NULL,"
+                        + "tupled_map ROW<a MAP<STRING, INT NOT NULL> NOT NULL> NOT NULL"));
+        env.executeSql("INSERT INTO ch_nested_composites VALUES "
+                + "(1, ARRAY[ARRAY[1, 2], ARRAY[3]], ARRAY[MAP['a', 1], MAP['b', 2]], "
+                + "MAP['k', ARRAY[1, 2]], MAP['k', MAP['n', 7]], "
+                + "ROW(ARRAY[1, 2]), ROW(MAP['a', 1]))").await();
+
+        List<GenericRecord> rows = readBack(
+                "id, toString(matrix) AS matrix_s, toString(dicts) AS dicts_s, "
+                        + "toString(by_key) AS by_key_s, toString(deep) AS deep_s, "
+                        + "toString(wrapped) AS wrapped_s, toString(tupled_map) AS tupled_map_s",
+                table, "id", 1);
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals("[[1,2],[3]]", rows.get(0).getString("matrix_s"));
+        Assertions.assertEquals("[{'a':1},{'b':2}]", rows.get(0).getString("dicts_s"));
+        Assertions.assertEquals("{'k':[1,2]}", rows.get(0).getString("by_key_s"));
+        Assertions.assertEquals("{'k':{'n':7}}", rows.get(0).getString("deep_s"));
+        Assertions.assertEquals("([1,2])", rows.get(0).getString("wrapped_s"));
+        Assertions.assertEquals("({'a':1})", rows.get(0).getString("tupled_map_s"));
+    }
+
+    /** LowCardinality is a flag on the column, not a data type, so every position must map to its inner type. */
+    @Test
+    void lowCardinalityRoundTripsInEveryPosition() throws Exception {
+        String table = "table_api_low_cardinality";
+        createTable(table,
+                "id Int64, plain LowCardinality(String), maybe LowCardinality(Nullable(String)), "
+                        + "tags Array(LowCardinality(String)), by_lc Map(LowCardinality(String), Int32), "
+                        + "lc_val Map(String, LowCardinality(String)), wrapped Tuple(LowCardinality(String))");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_low_cardinality", table,
+                "id BIGINT NOT NULL,"
+                        + "plain STRING NOT NULL,"
+                        + "maybe STRING,"
+                        + "tags ARRAY<STRING NOT NULL> NOT NULL,"
+                        + "by_lc MAP<STRING, INT NOT NULL> NOT NULL,"
+                        + "lc_val MAP<STRING, STRING NOT NULL> NOT NULL,"
+                        + "wrapped ROW<a STRING NOT NULL> NOT NULL"));
+        env.executeSql("INSERT INTO ch_low_cardinality VALUES "
+                + "(1, 'p', CAST(NULL AS STRING), ARRAY['x', 'y'], MAP['k', 1], MAP['k', 'v'], ROW('w'))").await();
+
+        List<GenericRecord> rows = readBack(
+                "id, plain, isNull(maybe) AS maybe_null, toString(tags) AS tags_s, "
+                        + "by_lc['k'] AS by_lc_k, lc_val['k'] AS lc_val_k, toString(wrapped) AS wrapped_s",
+                table, "id", 1);
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals("p", rows.get(0).getString("plain"));
+        Assertions.assertEquals(1, rows.get(0).getInteger("maybe_null"));
+        Assertions.assertEquals("['x','y']", rows.get(0).getString("tags_s"));
+        Assertions.assertEquals(1, rows.get(0).getInteger("by_lc_k"));
+        Assertions.assertEquals("v", rows.get(0).getString("lc_val_k"));
+        Assertions.assertEquals("('w')", rows.get(0).getString("wrapped_s"));
+    }
+
     /** Planning admits a nullable value into a NOT NULL nested field; the write must fail, not store zeros. */
     @Test
     void nullNestedValueFailsNamingTheColumnInsteadOfWritingZeros() throws Exception {
