@@ -260,11 +260,17 @@ class ClickHouseTypeMapperTest {
                 probe("BIGINT", "UInt64", in(0L, 0L, Long.MAX_VALUE, Long.MAX_VALUE),
                         out(-1L, "UInt64 range 0..18446744073709551615")),
                 probe("BIGINT", "UInt256", in(Long.MAX_VALUE, BigInteger.valueOf(Long.MAX_VALUE)), out(-1L, "UInt256 range 0..")),
+                probe("BIGINT", "UInt128", in(Long.MAX_VALUE, BigInteger.valueOf(Long.MAX_VALUE)), out(-1L, "UInt128 range 0..")),
                 // 20 digits pass the planning precision check but reach past UInt64's maximum
                 probe("DECIMAL(20,0)", "UInt64", in(decimal("18446744073709551615"), new BigInteger("18446744073709551615")),
                         out(decimal("99999999999999999999"), "UInt64 range", decimal("-1"), "unsigned type UInt64")),
                 probe("DECIMAL(19,0)", "Int64", in(decimal("9223372036854775807"), Long.MAX_VALUE, decimal("-9223372036854775808"), Long.MIN_VALUE),
                         out(decimal("9223372036854775808"), "Int64 range -9223372036854775808..9223372036854775807")),
+                // Flink's widest decimal is 38 digits, inside both ranges, so only a sign can fail
+                probe("DECIMAL(38,0)", "UInt128", in(decimal38(MAX_38_DIGITS), new BigInteger(MAX_38_DIGITS)),
+                        out(decimal38("-1"), "unsigned type UInt128")),
+                probe("DECIMAL(38,0)", "UInt256", in(decimal38(MAX_38_DIGITS), new BigInteger(MAX_38_DIGITS)),
+                        out(decimal38("-1"), "unsigned type UInt256")),
                 probe("DECIMAL(3,0)", "Int8", in(decimal("-128"), (byte) -128), out(decimal("128"), "Int8 range -128..127")),
                 probe("DECIMAL(3,0)", "UInt8", in(decimal("255"), 255),
                         out(decimal("-1"), "unsigned type UInt8", decimal("256"), "UInt8 range 0..255")),
@@ -285,7 +291,10 @@ class ClickHouseTypeMapperTest {
                         out(ts(1899, 12, 31, 23, 59, 0), "DateTime64 range", ts(9999, 12, 31, 0, 0, 0), "DateTime64 range")),
                 // inside the documented 2299 bound, but scale-9 ticks overflow Int64 after 2262-04-11
                 probe("TIMESTAMP(9)", "DateTime64(9)", in(ts(2262, 4, 11, 0, 0, 0), null),
-                        out(ts(2263, 1, 1, 0, 0, 0), "DateTime64 range")));
+                        out(ts(2263, 1, 1, 0, 0, 0), "DateTime64 range")),
+                // TIMESTAMP_LTZ is an instant, so the bound is the same one read in UTC rather than sink.timezone
+                probe("TIMESTAMP_LTZ(3)", "DateTime64(3)", in(ts(1900, 1, 1, 0, 0, 0), null, ts(2299, 12, 31, 23, 59, 59), null),
+                        out(ts(1899, 12, 31, 23, 59, 0), "DateTime64 range", ts(9999, 12, 31, 0, 0, 0), "DateTime64 range")));
     }
 
     @ParameterizedTest(name = "{0} -> {1}")
@@ -790,6 +799,13 @@ class ClickHouseTypeMapperTest {
 
     private static DecimalData decimal(String unscaled) {
         return DecimalData.fromBigDecimal(new BigDecimal(unscaled), 20, 0);
+    }
+
+    /** Flink's widest decimal precision, the only way to reach a 128- or 256-bit column. */
+    private static final String MAX_38_DIGITS = "99999999999999999999999999999999999999";
+
+    private static DecimalData decimal38(String unscaled) {
+        return DecimalData.fromBigDecimal(new BigDecimal(unscaled), 38, 0);
     }
 
     private static MultisetType multisetOfString() {

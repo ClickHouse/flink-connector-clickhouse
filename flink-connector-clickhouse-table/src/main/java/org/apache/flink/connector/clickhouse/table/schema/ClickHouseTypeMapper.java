@@ -189,12 +189,16 @@ public final class ClickHouseTypeMapper {
     /**
      * The client serializer can wire-encode SimpleAggregateFunction only as a top-level column;
      * inside a composite it has no case for it and every record would fail on the TaskManager.
+     * Fixed upstream by clickhouse-java#2937 (client-v2 0.10.0); this check can go once the
+     * client floor reaches it.
      */
     private static ClickHouseColumn rejectNestedSimpleAggregateFunction(ClickHouseColumn column,
                                                                         String position) {
         if (column.getDataType() == ClickHouseDataType.SimpleAggregateFunction) {
             throw TypeMappingException.targetUnsupported(String.format(
-                    "SimpleAggregateFunction is only writable as a top-level column; found as %s",
+                    "SimpleAggregateFunction is only writable as a top-level column; found as %s "
+                    + "(the client serializes it inside a composite only from client-v2 0.10.0, "
+                    + "see clickhouse-java#2937)",
                     position));
         }
         return column;
@@ -816,12 +820,16 @@ public final class ClickHouseTypeMapper {
     /**
      * Neither side may be nullable: the client's serializer never writes a nested value's
      * non-null marker, so a Nullable Map value or Tuple element cannot be written byte-exactly.
+     * Fixed upstream by clickhouse-java#2886 (client-v2 0.10.0); this check can go once the
+     * client floor reaches it.
      */
     private static void checkNestedNullability(LogicalType flinkType, ClickHouseColumn target,
                                                String targetElements, String flinkElement) {
         if (target.isNullable()) {
             throw TypeMappingException.mismatch(String.format(
-                    "Nullable %s are not supported by the sink's serializer — use a non-Nullable type",
+                    "Nullable %s are not supported by the sink's serializer — use a non-Nullable "
+                    + "type (the client writes a nested null marker only from client-v2 0.10.0, "
+                    + "see clickhouse-java#2886)",
                     targetElements));
         }
         if (flinkType.isNullable()) {
