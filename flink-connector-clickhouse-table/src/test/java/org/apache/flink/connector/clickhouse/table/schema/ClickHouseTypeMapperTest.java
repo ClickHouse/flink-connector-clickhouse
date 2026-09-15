@@ -55,6 +55,7 @@ import java.util.UUID;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -423,12 +424,66 @@ class ClickHouseTypeMapperTest {
         assertEquals(Map.of("a", 2L), converter.convert(new GenericMapData(counts)));
     }
 
+    /** A count is a non-negative int, so every integer column takes it, in the Java type DataWriter wants. */
     @Test
-    void multisetRequiresUInt64CountColumns() {
-        TypeMappingException e = assertThrows(TypeMappingException.class,
-                () -> ClickHouseTypeMapper.converterFor(
-                        multisetOfString(), col("Map(String, UInt32)"), LENIENT, "c"));
-        assertTrue(e.getMessage().contains("exactly UInt64"), e.getMessage());
+    void multisetWritesCountsIntoEveryIntegerColumn() {
+        Map<String, Object> expected = new LinkedHashMap<>();
+        expected.put("Int8", (byte) 2);
+        expected.put("Int16", (short) 2);
+        expected.put("Int32", 2);
+        expected.put("Int64", 2L);
+        expected.put("Int128", BigInteger.valueOf(2));
+        expected.put("Int256", BigInteger.valueOf(2));
+        expected.put("UInt8", 2);
+        expected.put("UInt16", 2);
+        expected.put("UInt32", 2L);
+        expected.put("UInt64", 2L);
+        expected.put("UInt128", BigInteger.valueOf(2));
+        expected.put("UInt256", BigInteger.valueOf(2));
+        expected.forEach((countType, count) -> {
+            ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                    multisetOfString(), col("Map(String, " + countType + ")"), LENIENT, "c");
+            Map<Object, Object> counts = new LinkedHashMap<>();
+            counts.put(StringData.fromString("a"), 2);
+            assertEquals(Map.of("a", count), converter.convert(new GenericMapData(counts)), countType);
+        });
+    }
+
+    /** Only a column narrower than an int can overflow, so only those defer a check to write time. */
+    @Test
+    void multisetCountsNarrowerThanAnIntAreRangeCheckedAndRejectedWhenStrict() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                multisetOfString(), col("Map(String, UInt8)"), LENIENT, "c");
+        Map<Object, Object> counts = new LinkedHashMap<>();
+        counts.put(StringData.fromString("a"), 256);
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> converter.convert(new GenericMapData(counts)));
+        assertTrue(e.getMessage().contains("MULTISET count 256 is outside the UInt8 count range 0..255"),
+                e.getMessage());
+
+        for (String narrow : new String[] {"Int8", "Int16", "UInt8", "UInt16"}) {
+            TypeMappingException strict = assertThrows(TypeMappingException.class,
+                    () -> ClickHouseTypeMapper.converterFor(
+                            multisetOfString(), col("Map(String, " + narrow + ")"), STRICT_NUMERIC, "c"),
+                    narrow);
+            assertTrue(strict.getMessage().contains("strict-numeric-mapping"), strict.getMessage());
+        }
+        // An int always fits from Int32/UInt32 up, so strict mode still admits those.
+        for (String wide : new String[] {"Int32", "UInt32", "Int64", "UInt64", "UInt256"}) {
+            assertDoesNotThrow(() -> ClickHouseTypeMapper.converterFor(
+                    multisetOfString(), col("Map(String, " + wide + ")"), STRICT_NUMERIC, "c"), wide);
+        }
+    }
+
+    @Test
+    void multisetRejectsNonIntegerAndNullableCountColumns() {
+        for (String countType : new String[] {"String", "Float64", "Nullable(UInt64)"}) {
+            TypeMappingException e = assertThrows(TypeMappingException.class,
+                    () -> ClickHouseTypeMapper.converterFor(
+                            multisetOfString(), col("Map(String, " + countType + ")"), LENIENT, "c"),
+                    countType);
+            assertTrue(e.getMessage().contains("non-Nullable integer Map value type"), e.getMessage());
+        }
     }
 
     @Test
@@ -644,6 +699,7 @@ class ClickHouseTypeMapperTest {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> converter.convert(new GenericMapData(counts)));
         assertTrue(e.getMessage().contains("MULTISET count -1"), e.getMessage());
+        assertTrue(e.getMessage().contains("UInt64"), e.getMessage());
     }
 
     @Test

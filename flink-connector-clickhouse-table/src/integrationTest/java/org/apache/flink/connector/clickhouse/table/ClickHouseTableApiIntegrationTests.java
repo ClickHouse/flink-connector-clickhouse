@@ -1425,9 +1425,9 @@ public class ClickHouseTableApiIntegrationTests {
 
     /** Flink SQL has no MULTISET literal, so this one pair needs COLLECT rather than the table above. */
     @Test
-    void multisetIntoANonUInt64MapValueIsRejectedAtPlanning() throws Exception {
+    void multisetIntoAnUnsupportedCountMapValueIsRejectedAtPlanning() throws Exception {
         String table = "table_api_multiset_reject";
-        createTable(table, "id Int64, tags Map(String, Int64)");
+        createTable(table, "id Int64, tags Map(String, String)");
 
         TableEnvironment env = TableEnvironment.create(EnvironmentSettings.inBatchMode());
         env.executeSql(sinkDdl("ch_multiset_reject", table,
@@ -1436,7 +1436,9 @@ public class ClickHouseTableApiIntegrationTests {
         assertFailsWith(() -> env.executeSql("INSERT INTO ch_multiset_reject "
                         + "SELECT CAST(id AS BIGINT), COLLECT(CAST(tag AS STRING)) "
                         + "FROM (VALUES (1, 'a')) AS t(id, tag) GROUP BY id"),
-                "Column 'tags'", "MULTISET counts require a Map value type of exactly UInt64, found Int64");
+                "Column 'tags'",
+                "MULTISET counts require a non-Nullable integer Map value type "
+                        + "(Int8..Int256, UInt8..UInt256), found String");
     }
 
     /**

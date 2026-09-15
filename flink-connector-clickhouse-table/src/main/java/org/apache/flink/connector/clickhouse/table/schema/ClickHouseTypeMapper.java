@@ -700,40 +700,59 @@ public final class ClickHouseTypeMapper {
         return buildPayloadMapConverter(keyType, keyConverter, valueType, valueConverter, columnPathText);
     }
 
-    /** MULTISET&lt;T&gt; is a map from T to a non-null int count, matched against {@code Map(T', UInt64)}. */
+    /**
+     * MULTISET&lt;T&gt; is a map from T to a non-null int count, matched against {@code Map(T', I)} for
+     * any integer I. A count is a non-negative Flink {@code int}, so every target from
+     * {@code Int32}/{@code UInt32} up holds the whole range; narrower ones are checked per record.
+     */
     private static ValueConverter buildMultisetConverter(LogicalType flinkType, ClickHouseColumn target,
                                                          TypeMappingOptions options, String columnPathText) {
-        requireTargetType(target, ClickHouseDataType.Map, flinkType, "Map(T, UInt64)");
-        checkMultisetCountTarget(target);
+        requireTargetType(target, ClickHouseDataType.Map, flinkType, "Map(T, Int8..Int256/UInt8..UInt256)");
+        ClickHouseDataType countTarget = checkMultisetCountTarget(target);
         LogicalType elementType = ((MultisetType) flinkType).getElementType();
         LogicalType countType = new IntType(false);
         ValueConverter keyConverter = buildMapKeyConverter(elementType, target.getKeyInfo(), options, columnPathText);
-        // DataWriter's UInt64 write path takes a Long; the count getter yields an Integer.
-        ValueConverter countConverter = buildMultisetCountConverter(columnPathText);
+        ValueConverter countConverter =
+                buildMultisetCountConverter(columnPathText, countTarget, options);
         return buildPayloadMapConverter(elementType, keyConverter, countType, countConverter, columnPathText);
     }
 
-    /** Counts are non-negative by definition; a corrupt negative count must not wrap into UInt64. */
-    private static ValueConverter buildMultisetCountConverter(String columnPathText) {
+    /**
+     * Counts are non-negative by definition, so unlike a signed INT they lose nothing to an unsigned
+     * target and only a target below {@code Integer.MAX_VALUE} needs the strict-mode rejection.
+     */
+    private static ValueConverter buildMultisetCountConverter(String columnPathText,
+                                                              ClickHouseDataType countTarget,
+                                                              TypeMappingOptions options) {
+        BigInteger targetMax = integerMax(countTarget);
+        boolean narrowerThanInt = targetMax.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) < 0;
+        long highest = narrowerThanInt ? targetMax.longValue() : Integer.MAX_VALUE;
+        String range = countTarget + " count range 0.." + highest;
+        if (narrowerThanInt && options.strictNumeric) {
+            throw strictNumericRejects("MULTISET counts outside the " + range);
+        }
+        ValueConverter toTarget = toDataWriterType(countTarget);
         return count -> {
             int value = (Integer) count;
-            if (value < 0) {
+            if (value < 0 || value > highest) {
                 throw new IllegalArgumentException(
                         "Column '" + columnPathText + "': MULTISET count " + value
-                        + " is negative and cannot be written to UInt64");
+                        + " is outside the " + range);
             }
-            return (long) value;
+            return toTarget.convert(value);
         };
     }
 
-    private static void checkMultisetCountTarget(ClickHouseColumn target) {
+    private static ClickHouseDataType checkMultisetCountTarget(ClickHouseColumn target) {
         ClickHouseColumn valueColumn = rejectNestedSimpleAggregateFunction(
                 target.getValueInfo(), "the MULTISET count value");
-        if (valueColumn.getDataType() != ClickHouseDataType.UInt64 || valueColumn.isNullable()) {
+        if (!INTEGER_TARGETS.contains(valueColumn.getDataType()) || valueColumn.isNullable()) {
             throw TypeMappingException.mismatch(String.format(
-                    "MULTISET counts require a Map value type of exactly UInt64, found %s",
+                    "MULTISET counts require a non-Nullable integer Map value type "
+                    + "(Int8..Int256, UInt8..UInt256), found %s",
                     target.getValueInfo().getOriginalTypeName()));
         }
+        return valueColumn.getDataType();
     }
 
     /** Shared by MAP and MULTISET: both arrive as {@code MapData} and target a ClickHouse {@code Map}. */

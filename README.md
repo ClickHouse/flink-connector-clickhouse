@@ -238,7 +238,7 @@ planning naming the column and both types.
 | `TIMESTAMP(p)` / `TIMESTAMP_LTZ(p)` | `DateTime` (`p = 0`), `DateTime64(s >= p)` | range-checked per record: `DateTime` 1970-01-01..2106-02-07, `DateTime64` 1900-01-01..2299-12-31 (2262-04-11 at scale 9). Flink's default `TIMESTAMP` is precision 6 — declare `TIMESTAMP(3)` for `DateTime64(3)`. `TIMESTAMP` is a wall clock in `sink.timezone`; `TIMESTAMP_LTZ` an instant |
 | `ARRAY<t>` | `Array(T)` | only `Array(Nullable(T))` can carry nested NULLs |
 | `MAP<k, v>` | `Map(K, V)` | string/integer/decimal keys except `UInt64`; values not `Nullable` |
-| `MULTISET<t>` | `Map(T, UInt64)` | counts become the values |
+| `MULTISET<t>` | `Map(T, I)` for any integer `I` | counts become the values; the value type must not be `Nullable`. A count is a non-negative `INT`, so `Int32`/`UInt32` and wider always fit; `Int8`, `Int16`, `UInt8`, `UInt16` are range-checked per record and rejected under `sink.strict-numeric-mapping` |
 | `ROW<...>` | `Tuple(...)` | positional — a ROW whose field names are a named Tuple's element names in another order is rejected at planning; fields/elements not nullable |
 
 Unsupported: `BINARY`/`VARBINARY`, `TIME`, `TIMESTAMP WITH TIME ZONE`, `INTERVAL`; ClickHouse
