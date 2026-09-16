@@ -181,6 +181,11 @@ public final class ClickHouseTypeMapper {
             case Time:
             case Time64:
                 return "see issue #91";
+            case Nested:
+                // Only reachable with flatten_nested = 0; the default expands it into Array columns.
+                return "an un-flattened Nested column is writable only from client-v2 0.11.0 "
+                        + "(see clickhouse-java#2936) — declare the column as Array(Tuple(...)), "
+                        + "which is what it stores";
             default:
                 return "no write path and no unambiguous Flink counterpart";
         }
@@ -189,7 +194,7 @@ public final class ClickHouseTypeMapper {
     /**
      * The client serializer can wire-encode SimpleAggregateFunction only as a top-level column;
      * inside a composite it has no case for it and every record would fail on the TaskManager.
-     * Fixed upstream by clickhouse-java#2937 (client-v2 0.10.0); this check can go once the
+     * Fixed upstream by clickhouse-java#2937 (client-v2 0.11.0); this check can go once the
      * client floor reaches it.
      */
     private static ClickHouseColumn rejectNestedSimpleAggregateFunction(ClickHouseColumn column,
@@ -197,7 +202,7 @@ public final class ClickHouseTypeMapper {
         if (column.getDataType() == ClickHouseDataType.SimpleAggregateFunction) {
             throw TypeMappingException.targetUnsupported(String.format(
                     "SimpleAggregateFunction is only writable as a top-level column; found as %s "
-                    + "(the client serializes it inside a composite only from client-v2 0.10.0, "
+                    + "(the client serializes it inside a composite only from client-v2 0.11.0, "
                     + "see clickhouse-java#2937)",
                     position));
         }
