@@ -122,6 +122,38 @@ class ClickHouseSinkStateTests {
         assertTrue(ex.getMessage().contains("Drain the previous sink before upgrading"));
     }
 
+    /** Regression for writeUTF's 64 KB cap: SQL VARCHAR values and MAP keys can exceed it. */
+    @Test void oversizedStringsAndMapKeysCheckpointSafely() throws IOException {
+        String longValue = "v".repeat(70_000);
+        String longKey = "k".repeat(70_000);
+        ClickHousePayload p = ClickHousePayload.ofEmpty();
+        p.getData().put("text_col", longValue);
+        Map<String, Object> mapCol = new LinkedHashMap<>();
+        mapCol.put(longKey, "x");
+        p.getData().put("map_col", mapCol);
+        p.setCachedBytes(new byte[]{1});
+
+        ClickHouseAsyncSinkSerializer ser = new ClickHouseAsyncSinkSerializer(false);
+        BufferedRequestState<ClickHousePayload> restored = roundTrip(ser, wrap(p));
+
+        ClickHousePayload r = restored.getBufferedRequestEntries().iterator().next().getRequestEntry();
+        assertEquals(longValue, r.getData().get("text_col"));
+        assertEquals(mapCol, r.getData().get("map_col"));
+    }
+
+    @Test void v2MapEntryRestores() throws IOException {
+        byte[] blob = synthesizeV2Blob();
+        ClickHouseAsyncSinkSerializer ser = new ClickHouseAsyncSinkSerializer(false);
+        BufferedRequestState<ClickHousePayload> restored = ser.deserialize(2, blob);
+
+        assertEquals(1, restored.getBufferedRequestEntries().size());
+        ClickHousePayload r = restored.getBufferedRequestEntries().iterator().next().getRequestEntry();
+        assertEquals("hello", r.getData().get("str_col"));
+        Map<String, Object> expectedMap = new LinkedHashMap<>();
+        expectedMap.put("ik", 42);
+        assertEquals(expectedMap, r.getData().get("map_col"));
+    }
+
     @Test void unsupportedValueTypeFailsAtSerialize() {
         ClickHousePayload p = ClickHousePayload.ofEmpty();
         p.getData().put("bad", new java.util.Date());
@@ -145,6 +177,29 @@ class ClickHouseSinkStateTests {
                 b.write(entryPayload);
             }
             out.writeLong(body.size());                  // per-entry size prefix
+            out.write(body.toByteArray());
+        }
+        return baos.toByteArray();
+    }
+
+    /** A V2 blob exactly as the released connector wrote it: ENTRY_MAP marker, writeUTF keys, tagged values. */
+    private static byte[] synthesizeV2Blob() throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (DataOutputStream out = new DataOutputStream(baos)) {
+            out.writeLong(-1L);                          // DATA_IDENTIFIER (parent constant)
+            out.writeInt(1);                             // one entry
+            ByteArrayOutputStream body = new ByteArrayOutputStream();
+            try (DataOutputStream b = new DataOutputStream(body)) {
+                b.writeInt(2);                           // ENTRY_MAP marker
+                b.writeInt(2);                           // two top-level keys
+                b.writeUTF("str_col");
+                b.writeByte(10); b.writeUTF("hello");    // STRING tag
+                b.writeUTF("map_col");
+                b.writeByte(17); b.writeInt(1);          // MAP tag, one entry, writeUTF key
+                b.writeUTF("ik");
+                b.writeByte(4); b.writeInt(42);          // INT tag
+            }
+            out.writeLong(body.size());
             out.write(body.toByteArray());
         }
         return baos.toByteArray();

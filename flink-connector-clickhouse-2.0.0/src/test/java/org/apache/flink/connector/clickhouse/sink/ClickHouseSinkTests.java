@@ -171,6 +171,9 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
     @Test
     void ProductNameTest() throws Exception {
+        // Mirrors build.gradle.kts: blank falls back to the default, or we would assert a version we did not build against.
+        String flinkVersionEnv = System.getenv("FLINK_2_VERSION");
+        String flinkVersion = flinkVersionEnv != null && !flinkVersionEnv.trim().isEmpty() ? flinkVersionEnv : "2.0.0";
         String tableName = "product_name_csv_covid";
         // create table
         String tableSql = "CREATE TABLE `" + getDatabase() + "`.`" + tableName + "` (" +
@@ -231,7 +234,7 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         // let's wait until data will be available in query log
         String startWith = String.format("Flink-ClickHouse-Sink/%s", ClickHouseSinkVersion.getVersion());
         String productName = ClickHouseServerForTests.extractProductName(ClickHouseServerForTests.getDatabase(), tableName, startWith);
-        String compareString = String.format("Flink-ClickHouse-Sink/%s (fv:flink/2.0.0, lv:scala/2.12)", ClickHouseSinkVersion.getVersion());
+        String compareString = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/2.12)", ClickHouseSinkVersion.getVersion(), flinkVersion);
         boolean isContains = productName.contains(compareString);
         Assertions.assertTrue(isContains, "Expected user agent to contain: " + compareString + " but got: " + productName);
     }
@@ -452,9 +455,11 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
 
     @Test
     void CheckClickHouseAlive() {
-        Assertions.assertThrows(RuntimeException.class, () -> {
-            new ClickHouseClientConfig(getServerURL(), getUsername() + "wrong_username", getPassword(), getDatabase(), "dummy");
-        });
+        ClickHouseClientConfig config = new ClickHouseClientConfig(getServerURL(), getUsername() + "wrong_username", getPassword(), getDatabase(), "dummy");
+        Assertions.assertThrows(RuntimeException.class, () -> ClickHouseAsyncSink.<String>builder()
+                .setElementConverter(new ClickHouseConvertor<>(String.class))
+                .setClickHouseClientConfig(config)
+                .build());
     }
 
     @Test
