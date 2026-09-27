@@ -53,8 +53,7 @@ dependencies {
 
     implementation(project(":flink-connector-clickhouse-base"))
     // ClickHouse Client Libraries
-    // Exclude the client's external lz4: the ':all' jar embeds it, and from client 0.10 the
-    // at.yawk.lz4 fork capability-clashes with Flink's org.lz4:lz4-java (#160).
+    // Exclude the client's external lz4: the ':all' jar embeds it.
     implementation("com.clickhouse:client-v2:${clickhouseVersion}:all") {
         exclude(group = "org.lz4", module = "lz4-java")
         exclude(group = "at.yawk.lz4", module = "lz4-java")

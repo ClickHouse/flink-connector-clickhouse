@@ -13,6 +13,7 @@ val flinkVersion by extra("1.18.0")
 //   ./gradlew test -Pclickhouse_client_v2_version=X.Y.Z-SNAPSHOT
 val clickhouseVersion by extra(providers.gradleProperty("clickhouse_client_v2_version").getOrElse("0.9.5"))
 val junitVersion by extra("5.8.2")
+val lz4Version by extra("1.12.0")
 
 fun isVersionFileExists(): Boolean = file(versionFile).exists()
 
@@ -40,7 +41,7 @@ subprojects {
     configurations.all {
         resolutionStrategy.dependencySubstitution {
             // org.lz4 ended at 1.8.0 (1.8.1 only relocates to the at.yawk.lz4 fork, where the CVE fixes live).
-            substitute(module("org.lz4:lz4-java")).using(module("at.yawk.lz4:lz4-java:1.12.0"))
+            substitute(module("org.lz4:lz4-java")).using(module("at.yawk.lz4:lz4-java:$lz4Version"))
         }
     }
 
