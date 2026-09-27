@@ -37,6 +37,13 @@ subprojects {
     apply(plugin = "java-library")
     apply(plugin = "maven-publish")
 
+    configurations.all {
+        resolutionStrategy.dependencySubstitution {
+            // org.lz4 ended at 1.8.0 (1.8.1 only relocates to the at.yawk.lz4 fork, where the CVE fixes live).
+            substitute(module("org.lz4:lz4-java")).using(module("at.yawk.lz4:lz4-java:1.12.0"))
+        }
+    }
+
     java {
         toolchain {
             languageVersion.set(JavaLanguageVersion.of(11))
