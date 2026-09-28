@@ -22,7 +22,7 @@ repositories {
 }
 
 extra.apply {
-    set("log4jVersion","2.25.4")
+    set("log4jVersion","2.25.5")
     set("testContainersVersion", "1.21.0")
     set("byteBuddyVersion", "1.17.5")
 }
@@ -39,8 +39,7 @@ dependencies {
     implementation("org.apache.logging.log4j:log4j-core:${project.extra["log4jVersion"]}")
 
     // ClickHouse Client Libraries
-    // Exclude the client's external lz4: the ':all' jar embeds it, and from client 0.10 the
-    // at.yawk.lz4 fork capability-clashes with Flink's org.lz4:lz4-java (#160).
+    // Exclude the client's external lz4: the ':all' jar embeds it.
     implementation("com.clickhouse:client-v2:${clickhouseVersion}:all") {
         exclude(group = "org.lz4", module = "lz4-java")
         exclude(group = "at.yawk.lz4", module = "lz4-java")
