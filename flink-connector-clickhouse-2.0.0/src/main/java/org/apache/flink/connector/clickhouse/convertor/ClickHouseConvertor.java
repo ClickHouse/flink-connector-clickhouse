@@ -88,7 +88,9 @@ public class ClickHouseConvertor<InputT>
 
     @Override
     public ClickHousePayload apply(InputT o, SinkWriter.Context context) {
-        if (o == null) return null;
+        if (o == null) {
+            throw new IllegalArgumentException("Input element must not be null");
+        }
         try {
             switch (type) {
                 case STRING:
