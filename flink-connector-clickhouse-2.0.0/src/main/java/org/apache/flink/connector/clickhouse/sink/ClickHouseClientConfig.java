@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -26,12 +27,14 @@ public class ClickHouseClientConfig implements Serializable {
 
     private static final int DEFAULT_MAX_RETRIES = 3;
 
+    /** The Flink API that built this config, sent as the product name's {@code api:} tag. */
+    public enum Api { DATASTREAM, TABLE }
+
     private final String url;
     private final String username;
     private final String password;
     private final String database;
     private final String tableName;
-    private final String fullProductName;
     private Boolean supportDefault = null;
     private final Map<String, String> options;
     private final Map<String, String> serverSettings;
@@ -39,6 +42,7 @@ public class ClickHouseClientConfig implements Serializable {
     private transient Client client = null;
     private RetryPolicy retryPolicy = RetryPolicy.forever();
     private BatchFailureStrategy batchFailureStrategy = BatchFailureStrategy.STOP_FLINK;
+    private Api api = Api.DATASTREAM;
 
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, boolean enableJsonSupportAsString) {
         this.url = url;
@@ -46,7 +50,6 @@ public class ClickHouseClientConfig implements Serializable {
         this.password = password;
         this.database = database;
         this.tableName = tableName;
-        this.fullProductName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s)", ClickHouseSinkVersion.getVersion(), EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion());
         this.options = new HashMap<>(Optional.ofNullable(options).orElseGet(HashMap::new));
         this.serverSettings = new HashMap<>(Optional.ofNullable(serverSettings).orElseGet(HashMap::new));
         this.enableJsonSupportAsString = enableJsonSupportAsString;
@@ -68,6 +71,7 @@ public class ClickHouseClientConfig implements Serializable {
         copy.setSupportDefault(supportDefault);
         copy.setRetryPolicy(retryPolicy);
         copy.setBatchFailureStrategy(batchFailureStrategy);
+        copy.setApi(api);
         return copy;
     }
 
@@ -113,7 +117,7 @@ public class ClickHouseClientConfig implements Serializable {
                 .setUsername(username)
                 .setPassword(password)
                 .setDefaultDatabase(database)
-                .setClientName(fullProductName)
+                .setClientName(productName())
                 .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true")
                 .setOptions(options);
 
@@ -124,6 +128,11 @@ public class ClickHouseClientConfig implements Serializable {
             clientBuilder.serverSetting(entry.getKey(), entry.getValue());
         }
         return clientBuilder.build();
+    }
+
+    private String productName() {
+        return String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s, api:%s)", ClickHouseSinkVersion.getVersion(),
+                EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion(), api.name().toLowerCase(Locale.ROOT));
     }
 
     public Client createClient(String database) {
@@ -179,5 +188,11 @@ public class ClickHouseClientConfig implements Serializable {
     }
 
     public Boolean getEnableJsonSupportAsString() { return  enableJsonSupportAsString; }
+
+    public Api getApi() { return api; }
+
+    public void setApi(Api api) {
+        this.api = Objects.requireNonNull(api, "api must not be null");
+    }
 
 }

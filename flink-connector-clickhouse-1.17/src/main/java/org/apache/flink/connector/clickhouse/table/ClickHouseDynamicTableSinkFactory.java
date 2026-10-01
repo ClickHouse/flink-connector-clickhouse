@@ -223,7 +223,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
     }
 
     /** {@code tableOptions} are the raw DDL options, needed for the prefix scan the typed {@code options} cannot do. */
-    private static ClickHouseClientConfig buildClientConfig(Map<String, String> tableOptions, ReadableConfig options) {
+    static ClickHouseClientConfig buildClientConfig(Map<String, String> tableOptions, ReadableConfig options) {
         Map<String, String> clientOptions = clientOptions(tableOptions);
         Map<String, String> serverSettings = serverSettings(tableOptions);
         checkServerSettingDefinedOnce(clientOptions, serverSettings);
@@ -239,6 +239,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         clientConfig.setRetryPolicy(toRetryPolicy(options.get(SINK_MAX_RETRIES)));
         clientConfig.setBatchFailureStrategy(
                 parseBatchFailureStrategy(options.get(SINK_BATCH_FAILURE_STRATEGY)));
+        clientConfig.setApi(ClickHouseClientConfig.Api.TABLE);
         return clientConfig;
     }
 

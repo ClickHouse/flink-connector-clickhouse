@@ -4,9 +4,11 @@ import com.clickhouse.client.api.Client;
 import com.clickhouse.client.api.ServerException;
 import com.clickhouse.client.api.query.GenericRecord;
 
+import org.apache.flink.connector.clickhouse.sink.ClickHouseSinkVersion;
 import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests;
 import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseTestHelpers;
 import org.apache.flink.core.execution.JobClient;
+import org.apache.flink.runtime.util.EnvironmentInformation;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.util.ExceptionUtils;
@@ -1061,6 +1063,21 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals(1, readBack("id", table, "id", 1).size());
         Assertions.assertTrue(insertsRecordedWithSetting(table, "max_insert_block_size", "777777") >= 1,
                 "no query_log INSERT into " + table + " carries max_insert_block_size=777777");
+    }
+
+    @Test
+    void insertsIdentifyThemselvesAsTheTableApi() throws Exception {
+        String table = "table_api_user_agent";
+        createTable(table, "id Int64");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_user_agent", table, "id BIGINT NOT NULL"));
+        env.executeSql("INSERT INTO ch_user_agent VALUES (1)").await();
+
+        String productName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s, api:table) ",
+                ClickHouseSinkVersion.getVersion(), EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion());
+        Assertions.assertTrue(finishedInserts(table, " AND startsWith(http_user_agent, '" + productName + "')", 1) >= 1,
+                "no query_log INSERT into " + table + " has a user agent starting with " + productName);
     }
 
     @Test

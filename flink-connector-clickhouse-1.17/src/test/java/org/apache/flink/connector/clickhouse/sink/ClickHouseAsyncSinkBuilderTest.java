@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/** The connectivity check build() runs, and the opt-out the Table API sink uses. */
 class ClickHouseAsyncSinkBuilderTest {
 
     /** Port 1 refuses at once, so the default ping fails after its fixed three attempts. */

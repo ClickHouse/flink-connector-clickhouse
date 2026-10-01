@@ -21,6 +21,19 @@ The connector must be in the local Maven repository first:
 mvn -q clean package
 ```
 
+## Create the target table
+
+The sink reads the table's schema when the job starts, so create it first.
+
+```sql
+CREATE TABLE sql_sink (
+    id     Int64,
+    name   Nullable(String),
+    amount Nullable(Decimal(10, 2)),
+    tags   Array(Nullable(String))
+) ENGINE = MergeTree ORDER BY id;
+```
+
 ## Run
 
 ```bash
@@ -31,15 +44,4 @@ flink run -c com.example.SqlSinkJob target/sql-1.0-SNAPSHOT.jar \
   -database default \
   -table sql_sink \
   -records 1000
-```
-
-The target table:
-
-```sql
-CREATE TABLE sql_sink (
-    id     Int64,
-    name   Nullable(String),
-    amount Nullable(Decimal(10, 2)),
-    tags   Array(Nullable(String))
-) ENGINE = MergeTree ORDER BY id;
 ```

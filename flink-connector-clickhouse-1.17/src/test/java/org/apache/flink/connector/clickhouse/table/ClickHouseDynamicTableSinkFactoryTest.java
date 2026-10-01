@@ -343,6 +343,12 @@ class ClickHouseDynamicTableSinkFactoryTest {
         assertEquals(List.of("async"), List.copyOf(ClickHouseDynamicTableSinkFactory.INSERT_CLIENT_OPTIONS));
     }
 
+    /** system.query_log tells SQL jobs from DataStream ones by this tag. */
+    @Test void clientConfigIsTaggedAsTheTableApi() {
+        assertEquals(ClickHouseClientConfig.Api.TABLE, ClickHouseDynamicTableSinkFactory.buildClientConfig(
+                Map.of(), planningOptions("http://localhost:1")).getApi());
+    }
+
     private static Configuration planningOptions(String url) {
         return Configuration.fromMap(Map.of("url", url, "database", "db", "table", "t"));
     }

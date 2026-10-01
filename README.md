@@ -26,7 +26,7 @@ Table of Contents
 This is a repo of ClickHouse official Apache Flink Connector supported by the ClickHouse team.
 The connector supports two main Apache Flink APIs: 
 - DataStream API
-- Table API / Flink SQL (sink only, insert-only changelog)
+- Table API / Flink SQL (inserts only, no updates or deletes)
 
 ## Supported Flink Versions
 
@@ -187,7 +187,7 @@ Connection options (required unless noted): `url`, `username`, `password` (defau
 | `sink.max-in-flight-requests` | `50` | `builder.setMaxInFlightRequests()` |
 | `sink.max-buffered-requests` | `10000` | `builder.setMaxBufferedRequests()` |
 | `sink.record.max-bytes` | `1mb` | `builder.setMaxRecordSizeInBytes()` |
-| `sink.parallelism` | (query parallelism) | `sinkTo(sink).setParallelism(n)` |
+| `sink.parallelism` | same as its input (usually the job's default parallelism) | `sinkTo(sink).setParallelism(n)` |
 
 **Reliability**
 
