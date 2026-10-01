@@ -29,7 +29,7 @@ val flinkVersion = System.getenv("FLINK_VERSION") ?: "1.17.2"
 
 extra.apply {
     set("flinkVersion", flinkVersion)
-    set("log4jVersion","2.25.4")
+    set("log4jVersion","2.25.5")
     set("testContainersVersion", "2.0.2")
     set("testContainersClickHouseVersion", "1.21.3")
     set("byteBuddyVersion", "1.17.5")
@@ -45,8 +45,6 @@ dependencies {
     implementation("net.bytebuddy:byte-buddy-agent:${project.extra["byteBuddyVersion"]}")
     // This dependency is used by the application.
     implementation(libs.guava)
-    implementation("org.scala-lang:scala-library:$scalaVersion")
-    implementation("org.scala-lang:scala-compiler:$scalaVersion")
     // logger
     implementation("org.apache.logging.log4j:log4j-slf4j-impl:${project.extra["log4jVersion"]}")
     implementation("org.apache.logging.log4j:log4j-api:${project.extra["log4jVersion"]}")
@@ -55,8 +53,7 @@ dependencies {
 
     implementation(project(":flink-connector-clickhouse-base"))
     // ClickHouse Client Libraries
-    // Exclude the client's external lz4: the ':all' jar embeds it, and from client 0.10 the
-    // at.yawk.lz4 fork capability-clashes with Flink's org.lz4:lz4-java (#160).
+    // Exclude the client's external lz4: the ':all' jar embeds it.
     implementation("com.clickhouse:client-v2:${clickhouseVersion}:all") {
         exclude(group = "org.lz4", module = "lz4-java")
         exclude(group = "at.yawk.lz4", module = "lz4-java")
@@ -87,6 +84,7 @@ dependencies {
     //
     testImplementation("org.testcontainers:testcontainers:${project.extra["testContainersVersion"]}")
     testImplementation("org.testcontainers:clickhouse:${project.extra["testContainersClickHouseVersion"]}")
+    testImplementation("org.scala-lang:scala-library:$scalaVersion")
     testImplementation("org.scalatest:scalatest_2.13:3.2.19")
     testImplementation("org.json:json:20230227")
     testRuntimeOnly("org.scalatestplus:junit-4-13_2.13:3.2.18.0")
