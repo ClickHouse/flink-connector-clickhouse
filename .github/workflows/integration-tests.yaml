@@ -43,6 +43,12 @@ jobs:
       - name: Generate Flink Covid App example 1.17+
         working-directory: ./examples/maven/flink-v1.7/covid
         run: mvn clean install
+      - name: Generate Flink SQL sink example 2.X
+        working-directory: ./examples/maven/flink-v2/sql
+        run: mvn clean install
+      - name: Generate Flink SQL sink example 1.17+
+        working-directory: ./examples/maven/flink-v1.7/sql
+        run: mvn clean install
       - name: Execute Gradle 'integration-test' task
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}

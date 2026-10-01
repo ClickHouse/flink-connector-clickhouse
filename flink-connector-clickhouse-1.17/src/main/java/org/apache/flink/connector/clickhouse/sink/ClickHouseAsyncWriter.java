@@ -197,8 +197,9 @@ public class ClickHouseAsyncWriter<InputT>
         }
         if (typedMode) {
             // Server-side default substitution for Nullable + null per design §9c.
-            insertSettings.serverSetting("input_format_null_as_default", "1");
-            insertSettings.serverSetting("input_format_defaults_for_omitted_fields", "1");
+            insertSettings.serverSetting(ConnectorServerSettings.INPUT_FORMAT_NULL_AS_DEFAULT, "1");
+            insertSettings.serverSetting(
+                    ConnectorServerSettings.INPUT_FORMAT_DEFAULTS_FOR_OMITTED_FIELDS, "1");
         }
 
         long writeStartTime = System.currentTimeMillis();
