@@ -1,3 +1,7 @@
+## Unreleased
+* Add Table API / Flink SQL sink support https://github.com/ClickHouse/flink-connector-clickhouse/pull/165
+* Checkpoint format V3: checkpoints taken by this version can't be restored by 0.2.0
+
 ## 0.2.0 — Map-based payload, RowBinaryWithNamesAndTypes
 
 ### Breaking changes
