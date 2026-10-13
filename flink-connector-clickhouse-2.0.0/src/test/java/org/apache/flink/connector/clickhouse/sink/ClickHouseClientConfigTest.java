@@ -61,7 +61,7 @@ class ClickHouseClientConfigTest {
     }
 
     private static String productName(String api) {
-        return String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s, api:%s)", ClickHouseSinkVersion.getVersion(),
+        return String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s; lv:scala/%s; api:%s)", ClickHouseSinkVersion.getVersion(),
                 EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion(), api);
     }
 
