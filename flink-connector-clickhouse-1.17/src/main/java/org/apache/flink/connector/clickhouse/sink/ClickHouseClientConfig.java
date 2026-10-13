@@ -131,7 +131,7 @@ public class ClickHouseClientConfig implements Serializable {
     }
 
     private String productName() {
-        return String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s, api:%s)", ClickHouseSinkVersion.getVersion(),
+        return String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s; lv:scala/%s; api:%s)", ClickHouseSinkVersion.getVersion(),
                 EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion(), api.name().toLowerCase(Locale.ROOT));
     }
 

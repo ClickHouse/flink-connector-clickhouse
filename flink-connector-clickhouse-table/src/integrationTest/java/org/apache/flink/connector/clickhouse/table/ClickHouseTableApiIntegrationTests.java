@@ -1074,7 +1074,7 @@ public class ClickHouseTableApiIntegrationTests {
         env.executeSql(sinkDdl("ch_user_agent", table, "id BIGINT NOT NULL"));
         env.executeSql("INSERT INTO ch_user_agent VALUES (1)").await();
 
-        String productName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s, api:table) ",
+        String productName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s; lv:scala/%s; api:table) ",
                 ClickHouseSinkVersion.getVersion(), EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion());
         Assertions.assertTrue(finishedInserts(table, " AND startsWith(http_user_agent, '" + productName + "')", 1) >= 1,
                 "no query_log INSERT into " + table + " has a user agent starting with " + productName);
