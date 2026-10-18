@@ -65,4 +65,8 @@ sourceSets {
 
 tasks.named<Test>("test") {
     System.getProperty("example.lang")?.let { systemProperty("example.lang", it) }
+    // DelegationTokenClusterTests copies this jar into Flink's lib/ on every container.
+    val tokenJar = project(":flink-connector-clickhouse-token").tasks.named<Jar>("jar")
+    dependsOn(tokenJar)
+    systemProperty("clickhouse.token.jar", tokenJar.get().archiveFile.get().asFile.absolutePath)
 }

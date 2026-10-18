@@ -58,6 +58,9 @@ dependencies {
     implementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     implementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
     implementation(project(":flink-connector-clickhouse-base"))
+    // Delegation tokens: deployed to Flink's lib/, never bundled into the shadow JAR.
+    compileOnly(project(":flink-connector-clickhouse-token"))
+    testImplementation(project(":flink-connector-clickhouse-token"))
 
     testImplementation("org.apache.flink:flink-connector-files:${project.extra["flinkVersion"]}")
     testImplementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")

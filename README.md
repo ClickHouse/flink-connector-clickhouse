@@ -233,6 +233,69 @@ Our Sink exposes additional metrics on top of Flink's existing metrics:
 | actualBytesPerBatchHistogram | Histogram of actual bytes per batch distribution | Histogram | ✅ |
 | actualTimeInBufferHistogram | Histogram of actual time in buffer before flush distribution | Histogram | ❌ |
 
+## Delegation tokens (short-lived JWTs for ClickHouse Cloud)
+
+Instead of putting a long-lived password into job code, the sink can authenticate to ClickHouse Cloud with
+short-lived JWTs obtained by [Flink's delegation token framework](https://nightlies.apache.org/flink/flink-docs-master/docs/deployment/security/security-delegation-token/).
+The JobManager holds your identity provider's client id and secret, requests an access token (OAuth2
+client-credentials grant), and Flink distributes and re-obtains it on every TaskManager.
+
+Requirements: ClickHouse Cloud **Enterprise**, service **26.4+**, and an identity provider (Entra ID, Okta,
+Auth0, Keycloak, …) with a machine-to-machine (client-credentials) app.
+
+1. **Identity provider:** create a client-credentials app. Its access token must be a JWT with a `kid` header,
+   RS256 (or ES256/384/512 on 26.8+), and the claims `exp`, `iat`, `iss`, `sub`, `aud` (`aud` a single string),
+   plus the ClickHouse roles in a claim (e.g. Entra app roles in `roles`).
+2. **Cloud console** (*Settings → Security → JWT authentication*, see
+   [JWT authentication setup](https://clickhouse.com/docs/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)):
+
+   | Field | Value |
+   |---|---|
+   | Issuer | the token's `iss` (Entra v2: `https://login.microsoftonline.com/<tenant>/v2.0`) |
+   | Audience | the token's `aud` |
+   | JWKS URL | your identity provider's keys URL (e.g. `…/discovery/v2.0/keys`, `…/.well-known/jwks.json`) |
+   | Roles claim | the claim holding roles (e.g. `roles`) |
+
+   The roles must exist on the service. Rights are `permission limit (the default user) ∩ roles/grants`;
+   anything beyond the `default` user's rights is silently dropped.
+3. **Flink:** copy `flink-connector-clickhouse-token-<version>.jar` into `lib/` on **every** JobManager and
+   TaskManager (same version everywhere), and configure:
+
+   ```yaml
+   security.delegation.token.provider.clickhouse.oauth.token-endpoint: https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token
+   security.delegation.token.provider.clickhouse.oauth.client-id: <client-id>
+   security.delegation.token.provider.clickhouse.oauth.client-secret: <secret>
+   security.delegation.token.provider.clickhouse.oauth.scope: api://<client-id>/.default   # optional
+   security.delegation.token.provider.clickhouse.oauth.audience: <api identifier>          # optional (Auth0-style)
+   # security.delegation.token.provider.clickhouse.oauth.allow-insecure-http: true         # optional, see notes
+   # security.delegation.token.provider.clickhouse.oauth.connect-timeout: 10s              # optional, default 10s
+   # security.delegation.token.provider.clickhouse.oauth.request-timeout: 30s              # optional, default 30s
+   # security.delegation.token.provider.clickhouse.oauth.retry-interval: 60s               # optional, default 60s
+   security.ssl.internal.enabled: true
+   ```
+4. **Job code:** `ClickHouseClientConfig.forDelegationToken("https://<service>:8443/", database, table)`.
+   No username or password. Plain `http://` is rejected.
+
+Notes:
+- Only the JobManager needs the client secret, and only the JobManager talks to the identity provider. TaskManagers
+  only receive short-lived JWTs.
+- The JobManager log warns if the identity provider's token is missing something ClickHouse Cloud requires.
+- The token endpoint must be `https://` because the client secret is sent to it. Plain `http://` is accepted for
+  `localhost`/`127.0.0.1`/`[::1]`, or for any host when `oauth.allow-insecure-http: true` is set (for example a
+  sidecar that terminates TLS). With that flag set, the JobManager logs a warning at every startup.
+  Don't put credentials or a `#fragment` in the endpoint URL.
+- `oauth.connect-timeout` bounds the TCP/TLS connect to the identity provider. `oauth.request-timeout` bounds the
+  whole token request, including reading the response body.
+- If the identity provider has a problem, the JobManager retries the request up to 4 times (1s/2s/4s apart) for
+  network errors, timeouts, HTTP 5xx and 429. It doesn't retry other 4xx errors such as `invalid_client`.
+  If it still fails, TaskManagers keep the last JWT, and the JobManager tries again every `oauth.retry-interval`
+  until the identity provider recovers. No `security.delegation.tokens.renewal.retry.backoff` tuning is needed
+  for the ClickHouse provider. During such an outage Flink also renews other providers' tokens (HDFS, S3) on
+  that interval.
+- Tokens apply to the whole Flink cluster: on a session cluster every job shares the same ClickHouse identity.
+- Keep `org.apache.flink.` in `classloader.parent-first-patterns.default` (Flink's default).
+- Self-managed / OSS ClickHouse doesn't support JWT; keep using username/password there.
+
 ## Limitations
 
 * Currently the sink does not support exactly-once semantics 
