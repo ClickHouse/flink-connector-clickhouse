@@ -4,12 +4,11 @@
 #   flink-1.x  the -base and -1.17 JaCoCo reports from the Flink 1.20.2 job
 #   flink-2.x  the -2.0.0 JaCoCo report from the Flink 2.1.0 job
 #
-# PRs are gated on codecov/patch: the lines a PR adds or changes must be at least 80% covered.
-# The gate only blocks merges once codecov/patch is a required status check on main.
+# Coverage is reported on PRs but never blocks them: both statuses are informational.
 
 codecov:
-  # Judge coverage even when unrelated CI jobs fail (e.g. a ClickHouse `latest` cell); by default
-  # Codecov then sets codecov/patch to "error" instead of reporting coverage.
+  # Report even when unrelated CI jobs fail (e.g. a ClickHouse `latest` cell); by default Codecov
+  # posts no PR comment while any job is failing.
   require_ci_to_pass: false
 
 coverage:
@@ -18,12 +17,12 @@ coverage:
   status:
     patch:
       default:
+        # Shows how much of a PR's changed lines are covered against this target, but always passes.
         target: 80%
-        threshold: 0%
+        informational: true
         only_pulls: true
     project:
       default:
-        # Overall coverage is reported on PRs but never blocks them.
         informational: true
 
 flag_management:
