@@ -1,0 +1,46 @@
+# Codecov configuration: https://docs.codecov.com/docs/codecovyml-reference
+#
+# Coverage is uploaded by two cells of .github/workflows/tests.yaml, both on ClickHouse 25.8:
+#   flink-1.x  the -base and -1.17 JaCoCo reports from the Flink 1.20.2 job
+#   flink-2.x  the -2.0.0 JaCoCo report from the Flink 2.1.0 job
+#
+# PRs are gated on codecov/patch: the lines a PR adds or changes must be at least 80% covered.
+# The gate only blocks merges once codecov/patch is a required status check on main.
+
+codecov:
+  # Judge coverage even when unrelated CI jobs fail (e.g. a ClickHouse `latest` cell); by default
+  # Codecov then sets codecov/patch to "error" instead of reporting coverage.
+  require_ci_to_pass: false
+
+coverage:
+  precision: 2
+  round: down
+  status:
+    patch:
+      default:
+        target: 80%
+        threshold: 0%
+        only_pulls: true
+    project:
+      default:
+        # Overall coverage is reported on PRs but never blocks them.
+        informational: true
+
+flag_management:
+  default_rules:
+    # Keep a flag's last coverage when its job didn't upload for a commit.
+    carryforward: true
+
+component_management:
+  individual_components:
+    - component_id: base
+      paths: ["flink-connector-clickhouse-base/**"]
+    - component_id: table
+      paths: ["flink-connector-clickhouse-table/**"]
+    - component_id: flink-1.x
+      paths: ["flink-connector-clickhouse-1.17/**"]
+    - component_id: flink-2.x
+      paths: ["flink-connector-clickhouse-2.0.0/**"]
+
+comment:
+  layout: "condensed_header, diff, flags, components, condensed_files"

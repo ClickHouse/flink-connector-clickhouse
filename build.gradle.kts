@@ -37,6 +37,7 @@ allprojects {
 subprojects {
     apply(plugin = "java-library")
     apply(plugin = "maven-publish")
+    apply(plugin = "jacoco")
 
     configurations.all {
         resolutionStrategy.dependencySubstitution {
@@ -66,6 +67,15 @@ subprojects {
             events("passed", "failed", "skipped")
             //showStandardStreams = true - , "standardOut", "standardError"
         }
+    }
+
+    // Coverage for Codecov: <module>:jacocoTestReport -> build/reports/jacoco/test/jacocoTestReport.xml
+    configure<JacocoPluginExtension> {
+        toolVersion = "0.8.15"
+    }
+
+    tasks.withType<JacocoReport>().configureEach {
+        reports.xml.required.set(true)
     }
 
     tasks.compileJava {

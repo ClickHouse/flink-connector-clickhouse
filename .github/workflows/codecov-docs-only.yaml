@@ -1,0 +1,39 @@
+name: Codecov (docs-only PRs)
+
+# tests.yaml skips PRs that only touch '**.md' or 'LICENSE' (paths-ignore), so Codecov never gets an
+# upload for them and the required codecov/patch check would wait forever. For those PRs, send Codecov
+# an empty upload so it posts passing statuses.
+on:
+  pull_request:
+    paths:
+      - '**.md'
+      - 'LICENSE'
+
+jobs:
+  empty-upload:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write # Codecov upload via OIDC, no token secret needed
+    steps:
+      - name: Check whether tests.yaml skips this PR
+        id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          other=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename' \
+            | grep -v -E '\.md$|^LICENSE$' || true)
+          if [ -z "$other" ]; then docs_only=true; else docs_only=false; fi
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: steps.changes.outputs.docs_only == 'true'
+      - name: Empty upload to Codecov
+        if: steps.changes.outputs.docs_only == 'true'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          use_oidc: true
+          run_command: empty-upload
+          force: true
+          fail_ci_if_error: true

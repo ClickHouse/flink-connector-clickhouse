@@ -158,6 +158,11 @@ listOf("check", "test", "runScalaTests", "shadowJar").forEach {
 tasks.compileJava { dependsOn(":flink-connector-clickhouse-table:compileJava") }
 tasks.compileTestJava { dependsOn(":flink-connector-clickhouse-table:compileTestJava") }
 
+// This module's tests also exercise -base: report its classes too (the -table sources are already part of main).
+tasks.jacocoTestReport {
+    sourceSets(project(":flink-connector-clickhouse-base").sourceSets.main.get())
+}
+
 tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("all")
     dependencies {
