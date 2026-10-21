@@ -217,10 +217,10 @@ public class ClickHouseSinkTests extends FlinkClusterTests {
         // let's wait until data will be available in query log
         String startWith = String.format("Flink-ClickHouse-Sink/%s", ClickHouseSinkVersion.getVersion());
         String productName = ClickHouseServerForTests.extractProductName(ClickHouseServerForTests.getDatabase(), tableName, startWith);
-        String compareString = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/2.12, api:datastream)", ClickHouseSinkVersion.getVersion(), flinkVersion);
-
-        boolean isContains = productName.contains(compareString);
-        Assertions.assertTrue(isContains, "Expected user agent to contain: " + compareString + " but got: " + productName);
+        String compareString = String.format("Flink-ClickHouse-Sink/%s clickhouse-java-v2/", ClickHouseSinkVersion.getVersion());
+        String metadata = String.format("(fv:flink/%s; api:datastream; lv:java/", flinkVersion);
+        Assertions.assertTrue(productName.startsWith(compareString), "Expected user agent to start with: " + compareString + " but got: " + productName);
+        Assertions.assertTrue(productName.contains(metadata), "Expected user agent to contain: " + metadata + " but got: " + productName);
     }
 
     /**

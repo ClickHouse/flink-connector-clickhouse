@@ -183,30 +183,11 @@ public final class ClickHouseTypeMapper {
                 return "see issue #91";
             case Nested:
                 // Only reachable with flatten_nested = 0; the default expands it into Array columns.
-                return "an un-flattened Nested column is writable only from client-v2 0.11.0 "
-                        + "(see clickhouse-java#2936) — declare the column as Array(Tuple(...)), "
-                        + "which is what it stores";
+                return "an un-flattened Nested column is not supported by the sink — declare the "
+                        + "column as Array(Tuple(...)), which is what it stores";
             default:
                 return "no write path and no unambiguous Flink counterpart";
         }
-    }
-
-    /**
-     * The client serializer can wire-encode SimpleAggregateFunction only as a top-level column;
-     * inside a composite it has no case for it and every record would fail on the TaskManager.
-     * Fixed upstream by clickhouse-java#2937 (client-v2 0.11.0); this check can go once the
-     * client floor reaches it.
-     */
-    private static ClickHouseColumn rejectNestedSimpleAggregateFunction(ClickHouseColumn column,
-                                                                        String position) {
-        if (column.getDataType() == ClickHouseDataType.SimpleAggregateFunction) {
-            throw TypeMappingException.targetUnsupported(String.format(
-                    "SimpleAggregateFunction is only writable as a top-level column; found as %s "
-                    + "(the client serializes it inside a composite only from client-v2 0.11.0, "
-                    + "see clickhouse-java#2937)",
-                    position));
-        }
-        return column;
     }
 
     // ------------------------------------------------------------------------------------
@@ -675,7 +656,7 @@ public final class ClickHouseTypeMapper {
                                                       TypeMappingOptions options, String columnPathText) {
         requireTargetType(target, ClickHouseDataType.Array, flinkType, "Array(T)");
         LogicalType elementType = ((ArrayType) flinkType).getElementType();
-        ClickHouseColumn elementColumn = target.getNestedColumns().get(0);
+        ClickHouseColumn elementColumn = unwrapSimpleAggregateFunction(target.getNestedColumns().get(0));
         checkArrayElementNullability(elementType, elementColumn);
 
         ArrayData.ElementGetter elementGetter = nullCheckingElementGetter(elementType);
@@ -686,7 +667,7 @@ public final class ClickHouseTypeMapper {
                 nullableElements, columnPathText);
     }
 
-    /** {@code Array(Nullable(T))} is the one nested shape that can carry nulls. */
+    /** A nullable Flink element needs {@code Array(Nullable(T))}. */
     private static void checkArrayElementNullability(LogicalType elementType,
                                                      ClickHouseColumn elementColumn) {
         if (elementType.isNullable() && !elementColumn.isNullable()) {
@@ -704,9 +685,11 @@ public final class ClickHouseTypeMapper {
         MapType mapType = (MapType) flinkType;
         LogicalType keyType = mapType.getKeyType();
         LogicalType valueType = mapType.getValueType();
+        ClickHouseColumn valueColumn = unwrapSimpleAggregateFunction(target.getValueInfo());
         ValueConverter keyConverter = buildMapKeyConverter(keyType, target.getKeyInfo(), options, columnPathText);
-        ValueConverter valueConverter = buildMapValueConverter(valueType, target.getValueInfo(), options, columnPathText);
-        return buildPayloadMapConverter(keyType, keyConverter, valueType, valueConverter, columnPathText);
+        ValueConverter valueConverter = buildMapValueConverter(valueType, valueColumn, options, columnPathText);
+        return buildPayloadMapConverter(keyType, keyConverter, valueType, valueConverter,
+                valueColumn.isNullable(), columnPathText);
     }
 
     /**
@@ -723,7 +706,7 @@ public final class ClickHouseTypeMapper {
         ValueConverter keyConverter = buildMapKeyConverter(elementType, target.getKeyInfo(), options, columnPathText);
         ValueConverter countConverter =
                 buildMultisetCountConverter(columnPathText, countTarget, options);
-        return buildPayloadMapConverter(elementType, keyConverter, countType, countConverter, columnPathText);
+        return buildPayloadMapConverter(elementType, keyConverter, countType, countConverter, false, columnPathText);
     }
 
     /**
@@ -753,8 +736,7 @@ public final class ClickHouseTypeMapper {
     }
 
     private static ClickHouseDataType checkMultisetCountTarget(ClickHouseColumn target) {
-        ClickHouseColumn valueColumn = rejectNestedSimpleAggregateFunction(
-                target.getValueInfo(), "the MULTISET count value");
+        ClickHouseColumn valueColumn = unwrapSimpleAggregateFunction(target.getValueInfo());
         if (!INTEGER_TARGETS.contains(valueColumn.getDataType()) || valueColumn.isNullable()) {
             throw TypeMappingException.mismatch(String.format(
                     "MULTISET counts require a non-Nullable integer Map value type "
@@ -767,11 +749,11 @@ public final class ClickHouseTypeMapper {
     /** Shared by MAP and MULTISET: both arrive as {@code MapData} and target a ClickHouse {@code Map}. */
     private static ValueConverter buildPayloadMapConverter(LogicalType keyType, ValueConverter keyConverter,
                                                       LogicalType valueType, ValueConverter valueConverter,
-                                                      String columnPathText) {
+                                                      boolean nullableValues, String columnPathText) {
         ArrayData.ElementGetter keyGetter = nullCheckingElementGetter(keyType);
         ArrayData.ElementGetter valueGetter = nullCheckingElementGetter(valueType);
         return value -> toPayloadMap((MapData) value, keyGetter, valueGetter,
-                keyConverter, valueConverter, columnPathText);
+                keyConverter, valueConverter, nullableValues, columnPathText);
     }
 
     /**
@@ -816,43 +798,30 @@ public final class ClickHouseTypeMapper {
 
     private static ValueConverter buildMapValueConverter(LogicalType valueType, ClickHouseColumn valueColumn,
                                                          TypeMappingOptions options, String columnPathText) {
-        checkNestedNullability(valueType, valueColumn,
-                "Map values (" + valueColumn.getOriginalTypeName() + ")",
-                "the Flink map value type " + valueType.asSummaryString());
+        checkNestedNullability(valueType, valueColumn, "the Flink map value type " + valueType.asSummaryString());
         return buildNestedConverter(valueType, valueColumn, options, columnPathText + " value", "map value");
     }
 
-    /**
-     * Neither side may be nullable: the client's serializer never writes a nested value's
-     * non-null marker, so a Nullable Map value or Tuple element cannot be written byte-exactly.
-     * Fixed upstream by clickhouse-java#2886 (client-v2 0.10.0); this check can go once the
-     * client floor reaches it.
-     */
-    private static void checkNestedNullability(LogicalType flinkType, ClickHouseColumn target,
-                                               String targetElements, String flinkElement) {
-        if (target.isNullable()) {
+    /** A nullable Flink map value or ROW field needs a Nullable element; a NOT NULL one may target either. */
+    private static void checkNestedNullability(LogicalType flinkType, ClickHouseColumn target, String flinkElement) {
+        if (flinkType.isNullable() && !target.isNullable()) {
             throw TypeMappingException.mismatch(String.format(
-                    "Nullable %s are not supported by the sink's serializer — use a non-Nullable "
-                    + "type (the client writes a nested null marker only from client-v2 0.10.0, "
-                    + "see clickhouse-java#2886)",
-                    targetElements));
-        }
-        if (flinkType.isNullable()) {
-            throw TypeMappingException.mismatch(String.format(
-                    "%s is nullable but the ClickHouse type %s is not Nullable — declare it NOT NULL",
-                    flinkElement, target.getOriginalTypeName()));
+                    "%s is nullable but the ClickHouse type %s is not Nullable — declare it NOT NULL%s",
+                    flinkElement, target.getOriginalTypeName(),
+                    nullableWrapperHint(target, " or make the ClickHouse type Nullable")));
         }
     }
 
     /**
      * Converts every entry of a {@code MAP}/{@code MULTISET} into the string-keyed {@code Map} the
-     * payload carries. Nulls have nowhere to go here, so they fail naming the column.
+     * payload carries. A null key, or a null value without a Nullable value type, fails naming the column.
      */
     private static Map<String, Object> toPayloadMap(MapData map,
                                                         ArrayData.ElementGetter keyGetter,
                                                         ArrayData.ElementGetter valueGetter,
                                                         ValueConverter keyConverter,
                                                         ValueConverter valueConverter,
+                                                        boolean nullableValues,
                                                         String columnPathText) {
         ArrayData keys = map.keyArray();
         ArrayData values = map.valueArray();
@@ -866,12 +835,12 @@ public final class ClickHouseTypeMapper {
                         "Column '" + columnPathText + "': null map key cannot be written to ClickHouse");
             }
             Object value = valueGetter.getElementOrNull(values, i);
-            if (value == null) {
+            if (value == null && !nullableValues) {
                 throw new IllegalArgumentException(
                         "Column '" + columnPathText + "': null map value cannot be written to a non-Nullable "
                         + "ClickHouse Map value type");
             }
-            result.put((String) keyConverter.convert(key), valueConverter.convert(value));
+            result.put((String) keyConverter.convert(key), value == null ? null : valueConverter.convert(value));
         }
         return result;
     }
@@ -912,12 +881,15 @@ public final class ClickHouseTypeMapper {
 
         RowData.FieldGetter[] fieldGetters = new RowData.FieldGetter[rowType.getFieldCount()];
         ValueConverter[] fieldConverters = new ValueConverter[rowType.getFieldCount()];
+        boolean[] nullableElements = new boolean[rowType.getFieldCount()];
         for (int i = 0; i < rowType.getFieldCount(); i++) {
             RowType.RowField field = rowType.getFields().get(i);
+            ClickHouseColumn element = unwrapSimpleAggregateFunction(elements.get(i));
             fieldGetters[i] = nullCheckingFieldGetter(field.getType(), i);
-            fieldConverters[i] = buildRowFieldConverter(field, elements.get(i), i, options, columnPathText);
+            fieldConverters[i] = buildRowFieldConverter(field, element, options, columnPathText);
+            nullableElements[i] = element.isNullable();
         }
-        return value -> toPayloadTuple((RowData) value, fieldGetters, fieldConverters, columnPathText);
+        return value -> toPayloadTuple((RowData) value, fieldGetters, fieldConverters, nullableElements, columnPathText);
     }
 
     private static void checkRowFieldCountMatchesTuple(RowType rowType, List<ClickHouseColumn> elements) {
@@ -947,26 +919,28 @@ public final class ClickHouseTypeMapper {
     }
 
     private static ValueConverter buildRowFieldConverter(RowType.RowField field, ClickHouseColumn element,
-                                                         int position, TypeMappingOptions options, String columnPathText) {
-        checkNestedNullability(field.getType(), element,
-                String.format("Tuple elements (%s at position %d)", element.getOriginalTypeName(), position + 1),
-                "the Flink ROW field '" + field.getName() + "'");
+                                                         TypeMappingOptions options, String columnPathText) {
+        checkNestedNullability(field.getType(), element, "the Flink ROW field '" + field.getName() + "'");
         return buildNestedConverter(field.getType(), element, options,
                 columnPathText + "." + field.getName(), "ROW field '" + field.getName() + "'");
     }
 
-    /** Converts every field of a {@code ROW} into the {@code Object[]} tuple the payload carries. */
+    /** Converts every field of a {@code ROW} into the {@code Object[]} tuple the payload carries; a null field needs a Nullable element. */
     private static Object[] toPayloadTuple(RowData row, RowData.FieldGetter[] getters,
-                                            ValueConverter[] converters, String columnPathText) {
+                                            ValueConverter[] converters, boolean[] nullableElements,
+                                            String columnPathText) {
         Object[] result = new Object[getters.length];
         for (int i = 0; i < getters.length; i++) {
             Object field = getters[i].getFieldOrNull(row);
             if (field == null) {
-                throw new IllegalArgumentException(
-                        "Column '" + columnPathText + "': null ROW field " + (i + 1)
-                        + " cannot be written to a non-Nullable Tuple element");
+                if (!nullableElements[i]) {
+                    throw new IllegalArgumentException(
+                            "Column '" + columnPathText + "': null ROW field " + (i + 1)
+                            + " cannot be written to a non-Nullable Tuple element");
+                }
+            } else {
+                result[i] = converters[i].convert(field);
             }
-            result[i] = converters[i].convert(field);
         }
         return result;
     }
@@ -999,8 +973,6 @@ public final class ClickHouseTypeMapper {
     /** Recurses into a nested pair, prefixing mismatch reasons with the structural context. */
     private static ValueConverter buildNestedConverter(LogicalType flinkType, ClickHouseColumn column,
                                                        TypeMappingOptions options, String columnPathText, String context) {
-        // Every composite recursion passes here, so nested SAF can never reach converterFor's unwrap.
-        rejectNestedSimpleAggregateFunction(column, context);
         try {
             return converterFor(flinkType, column, options, columnPathText);
         } catch (TypeMappingException e) {
