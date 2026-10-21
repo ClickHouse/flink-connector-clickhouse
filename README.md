@@ -428,6 +428,8 @@ Notes:
 - Tokens apply to the whole Flink cluster: on a session cluster every job shares the same ClickHouse identity.
 - Keep `org.apache.flink.` in `classloader.parent-first-patterns.default` (Flink's default).
 - Self-managed / OSS ClickHouse doesn't support JWT; keep using username/password there.
+- Delegation tokens are supported by the DataStream sink (`ClickHouseClientConfig.forDelegationToken`).
+  Table API / SQL sinks use username/password.
 
 ## Limitations
 

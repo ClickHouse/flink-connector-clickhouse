@@ -30,7 +30,7 @@ OSS ClickHouse rejects JWT (`"JWT is available only in ClickHouse Cloud"`; `Bear
 - **Per-job credentials on session clusters.** Delegation tokens apply to the whole cluster by design.
 - **Interactive flows** (device code, the built-in Cloud `--login` authenticator).
 - **Doing the identity-provider exchange inside client-v2.** client-v2 stays a token consumer. The exchange runs on the JobManager only, so the client secret never reaches TaskManagers.
-- **A Table API / SQL option.** There's no table module in the repo.
+- **Table API / SQL sinks.** Delegation tokens are supported by the DataStream sink only. The Table API sink (added on `main` in #165) runs a `DESCRIBE` while planning, on a process that has no ClickHouse JWT, so `ClickHouseClientConfig.createPlanningClient()` rejects token mode. Supporting it needs a table option (e.g. `'auth' = 'delegation-token'`) and a way to plan without a token (or to deliver one to the planner). Table API / SQL sinks keep username/password.
 
 The wire format (§6.3) has a version byte, so other token kinds can be added later.
 
