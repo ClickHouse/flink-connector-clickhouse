@@ -12,6 +12,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -162,6 +163,40 @@ class ClickHouseClientConfigDelegationTokenTests {
         config.setDelegationTokenWaitTimeout(Duration.ofMillis(200));
         IllegalStateException e = assertThrows(IllegalStateException.class, config::createClient);
         assertTrue(e.getMessage().contains("expired at"), e.getMessage());
+    }
+
+    @Test
+    void verifyConnectivitySkipsTheCheckForDelegationTokens() {
+        // ClickHouseAsyncSinkBuilder.build() calls this on the job driver, which never has a token.
+        ClickHouseClientConfig config = ClickHouseClientConfig.forDelegationToken(UNREACHABLE_URL, "db", "events");
+        long start = System.nanoTime();
+        config.verifyConnectivity();
+        assertTrue(Duration.ofNanos(System.nanoTime() - start).toMillis() < 1000, "must not try to connect");
+    }
+
+    @Test
+    void copyPreservesDelegationTokenMode() {
+        ClickHouseClientConfig config = ClickHouseClientConfig.forDelegationToken(UNREACHABLE_URL, "db", "events");
+        config.setOptions(Map.of("socket_timeout", "1234"));
+        config.setDelegationTokenWaitTimeout(Duration.ofMillis(200));
+        ClickHouseClientConfig copy = config.copy();
+
+        assertTrue(copy.isDelegationTokenMode(), "a copy must not fall back to password auth");
+        long start = System.nanoTime();
+        assertThrows(IllegalStateException.class, copy::createClient, "no token published: the copy waits, then fails");
+        assertTrue(Duration.ofNanos(System.nanoTime() - start).toMillis() < 5000, "the 200ms wait timeout was copied");
+
+        publish("eyJ.jwt1.sig");
+        assertEquals("1234", copy.createClient().getConfiguration().get("socket_timeout"), "options were copied");
+        assertEquals("eyJ.jwt1.sig", copy.getAppliedCredentials().getJwt());
+    }
+
+    @Test
+    void createPlanningClientRejectsDelegationTokens() {
+        ClickHouseClientConfig config = ClickHouseClientConfig.forDelegationToken(UNREACHABLE_URL, "db", "events");
+        UnsupportedOperationException e = assertThrows(UnsupportedOperationException.class,
+                () -> config.createPlanningClient(Map.of()));
+        assertTrue(e.getMessage().contains("Table API"), e.getMessage());
     }
 
     @Test

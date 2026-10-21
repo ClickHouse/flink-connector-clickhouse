@@ -306,4 +306,80 @@ public class FlinkTests {
             cluster.tearDown();
         }
     }
+
+    private String sqlJar(String root, String exampleSubFolder) {
+        return String.format("%s/examples/maven/%s/sql/target/sql-1.0-SNAPSHOT.jar",
+                root, exampleSubFolder);
+    }
+
+    /**
+     * Runs a Flink SQL job against the published connector jar on a real cluster.
+     *
+     * <p>The job names no connector class: {@code 'connector' = 'clickhouse'} resolves only
+     * through the {@code org.apache.flink.table.factories.Factory} service file in the shaded
+     * artifact. The in-process Table API tests run off the test classpath and would still pass
+     * if that service file, or the {@code -table} classes, went missing from the jar — this is
+     * the only test that would catch it.
+     *
+     * <p>Skipped when running in Scala mode — the sql example is Java-only.
+     */
+    @Test
+    void testTableApiSqlJob() throws Exception {
+        if (exampleLang == ExampleLang.SCALA) return;
+
+        String root = getRoot();
+        String exampleSubFolder = exampleSubFolder(flinkVersion);
+        String jarPath = sqlJar(root, exampleSubFolder);
+
+        File jar = new File(jarPath);
+        if (!jar.exists()) {
+            System.out.println("Skipping testTableApiSqlJob — example JAR not built. "
+                    + "Run mvn -q clean package in examples/maven/" + exampleSubFolder + "/sql");
+            return;
+        }
+
+        String tableName = "sql_sink";
+        String clickHouseURL = ClickHouseServerForTests.getURLForCluster();
+        String username = ClickHouseServerForTests.getUsername();
+        String password = ClickHouseServerForTests.getPassword();
+        String database = ClickHouseServerForTests.getDatabase();
+
+        ClickHouseServerForTests.executeSql(
+                String.format("DROP TABLE IF EXISTS `%s`.`%s`", database, tableName));
+        ClickHouseServerForTests.executeSql(String.format(
+                "CREATE TABLE `%s`.`%s` (id Int64, name Nullable(String), "
+                        + "amount Nullable(Decimal(10, 2)), tags Array(Nullable(String))) "
+                        + "ENGINE = MergeTree ORDER BY id", database, tableName));
+
+        int expectedRows = 1000;
+        Cluster cluster = new Cluster.Builder()
+                .withTaskManagers(1)
+                .withNetwork(ClickHouseServerForTests.getNetwork())
+                .withFlinkVersion(flinkVersion)
+                .build();
+
+        try {
+            String jarId = cluster.uploadJar(jarPath);
+            String jobId = cluster.runJob(jarId, "com.example.SqlSinkJob", 1,
+                    "-url", clickHouseURL,
+                    "-username", username,
+                    "-password", password,
+                    "-database", database,
+                    "-table", tableName,
+                    "-records", String.valueOf(expectedRows));
+            Assertions.assertNotNull(jobId, "SQL job submission should succeed");
+
+            int rows = 0;
+            for (int i = 0; i < 60; i++) {
+                Thread.sleep(1000);
+                rows = ClickHouseServerForTests.countRows(tableName);
+                if (rows == expectedRows) break;
+            }
+            Assertions.assertEquals(expectedRows, rows,
+                    "The SQL job must resolve 'connector' = 'clickhouse' from the jar's service "
+                            + "file and write every row");
+        } finally {
+            cluster.tearDown();
+        }
+    }
 }

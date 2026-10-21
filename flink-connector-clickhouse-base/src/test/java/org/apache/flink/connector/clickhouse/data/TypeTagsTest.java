@@ -33,7 +33,7 @@ class TypeTagsTest {
             TypeTags.write(value, out);
         }
         try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(baos.toByteArray()))) {
-            return TypeTags.read(in);
+            return TypeTags.read(in, TypeTags.V3);
         }
     }
 
@@ -109,6 +109,39 @@ class TypeTagsTest {
         Map<String, Object> outer = new LinkedHashMap<>();
         outer.put("nested", inner);
         assertEquals(outer, roundTrip(outer));
+    }
+
+    @Test void stringAboveWriteUtfLimitRoundTrips() throws IOException {
+        String v = "é🌍".repeat(15_000) + "tail"; // ~90k UTF-8 bytes, well past writeUTF's 64 KB cap
+        assertEquals(v, roundTrip(v));
+    }
+
+    @Test void mapKeyAboveWriteUtfLimitRoundTrips() throws IOException {
+        Map<String, Object> v = new LinkedHashMap<>();
+        v.put("k".repeat(70_000), "value");
+        assertEquals(v, roundTrip(v));
+    }
+
+    /** Pins the V3 string byte format: tag, int length, UTF-8 bytes. */
+    @Test void stringByteFormat() throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (DataOutputStream out = new DataOutputStream(baos)) {
+            TypeTags.write("abc", out);
+        }
+        assertArrayEquals(new byte[]{TypeTags.STRING, 0, 0, 0, 3, 'a', 'b', 'c'}, baos.toByteArray());
+    }
+
+    /** V2 entries (writeUTF strings and map keys) must keep decoding for checkpoint restores. */
+    @Test void readV2DecodesWriteUtfStringsAndMapKeys() throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (DataOutputStream out = new DataOutputStream(baos)) {
+            out.writeByte(TypeTags.MAP); out.writeInt(2);
+            out.writeUTF("num"); out.writeByte(TypeTags.INT); out.writeInt(42);
+            out.writeUTF("str"); out.writeByte(TypeTags.STRING); out.writeUTF("hello");
+        }
+        try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(baos.toByteArray()))) {
+            assertEquals(Map.of("num", 42, "str", "hello"), TypeTags.read(in, TypeTags.V2));
+        }
     }
 
     @Test void unsupportedTypeFailsClearly() {

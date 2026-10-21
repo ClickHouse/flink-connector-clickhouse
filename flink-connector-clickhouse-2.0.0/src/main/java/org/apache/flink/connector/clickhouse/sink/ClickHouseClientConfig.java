@@ -15,29 +15,41 @@ import java.io.Serializable;
 import java.net.URI;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+/**
+ * Connection settings for the sink, serialized to the task managers. Constructing one never
+ * touches the network: {@link ClickHouseAsyncSinkBuilder#build()} verifies connectivity on the
+ * job driver via {@link #verifyConnectivity()}, while the Table API factory relies on its
+ * planning-time DESCRIBE through {@link #createPlanningClient(Map)} failing instead.
+ * Delegation-token configs ({@link #forDelegationToken}) skip the driver-side check: the job
+ * driver never receives tokens, so the first connection happens on the task managers.
+ */
 public class ClickHouseClientConfig implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseClientConfig.class);
     private static final long serialVersionUID = 1L;
 
     private static final int DEFAULT_MAX_RETRIES = 3;
 
+    /** The Flink API that built this config, sent as the product name's {@code api:} tag. */
+    public enum Api { DATASTREAM, TABLE }
+
     private final String url;
     private final String username;
     private final String password;
     private final String database;
     private final String tableName;
-    private final String fullProductName;
     private Boolean supportDefault = null;
     private final Map<String, String> options;
     private final Map<String, String> serverSettings;
-    private boolean enableJsonSupportAsString = true;
+    private boolean enableJsonSupportAsString;
     private transient Client client = null;
     private RetryPolicy retryPolicy = RetryPolicy.forever();
     private BatchFailureStrategy batchFailureStrategy = BatchFailureStrategy.STOP_FLINK;
+    private Api api = Api.DATASTREAM;
     private AuthMode authMode = AuthMode.PASSWORD;
     private Duration delegationTokenWaitTimeout = Duration.ofSeconds(60);
     private transient ResolvedCredentials appliedCredentials = null;
@@ -53,31 +65,10 @@ public class ClickHouseClientConfig implements Serializable {
         this.password = password;
         this.database = database;
         this.tableName = tableName;
-        this.fullProductName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s)", ClickHouseSinkVersion.getVersion(), EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion());
         this.options = new HashMap<>(Optional.ofNullable(options).orElseGet(HashMap::new));
         this.serverSettings = new HashMap<>(Optional.ofNullable(serverSettings).orElseGet(HashMap::new));
-        this.enableJsonSupportAsString =  enableJsonSupportAsString;
-        LOG.info("ClickHouseClientConfig: url={}, user={}, password={}, database={}", url, username,
-                password == null ? "null" : "x".repeat(password.length()), database);
-        Client clientTmp = initClient(database);
-
-        boolean isServerAlive = false;
-        for (int i = 0; i < retryPolicy.getValueOrDefault(DEFAULT_MAX_RETRIES) && !isServerAlive; i++) {
-            isServerAlive = clientTmp.ping();
-            if (!isServerAlive) {
-                LOG.warn(
-                        "Ping failed; will retry up to {} times in {} seconds.",
-                        retryPolicy.getValueOrDefault(DEFAULT_MAX_RETRIES), 1);
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException ignored) {
-
-                }
-            }
-        }
-        if (!isServerAlive) {
-            throw new RuntimeException("ClickHouse server is noy accessible. Please check your configuration or ClickHouse server.");
-        }
+        this.enableJsonSupportAsString = enableJsonSupportAsString;
+        LOG.info("ClickHouseClientConfig: url={}, user={}, password=******, database={}", url, username, database);
     }
 
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName) {
@@ -94,11 +85,10 @@ public class ClickHouseClientConfig implements Serializable {
         this.password = null;
         this.database = database;
         this.tableName = tableName;
-        this.fullProductName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s)", ClickHouseSinkVersion.getVersion(), EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion());
         this.options = new HashMap<>();
         this.serverSettings = new HashMap<>();
+        this.enableJsonSupportAsString = false; // same default as the 5-arg password constructor
         this.authMode = authMode;
-        // No ping here: this runs where the job graph is built, which never receives delegation tokens.
         LOG.info("ClickHouseClientConfig: url={}, auth=delegation-token (JWT), database={}", url, database);
     }
 
@@ -126,23 +116,97 @@ public class ClickHouseClientConfig implements Serializable {
                 + "); plain http:// is only allowed for loopback test endpoints");
     }
 
-    private Client initClient(String database) {
-        Client.Builder clientBuilder = new Client.Builder()
-                .addEndpoint(url)
+    /** Deep copy for DynamicTableSink#copy(); the cached client is not shared. */
+    public ClickHouseClientConfig copy() {
+        ClickHouseClientConfig copy = authMode == AuthMode.DELEGATION_TOKEN
+                ? new ClickHouseClientConfig(url, database, tableName, AuthMode.DELEGATION_TOKEN)
+                : new ClickHouseClientConfig(url, username, password, database, tableName, options, serverSettings,
+                        enableJsonSupportAsString);
+        if (authMode == AuthMode.DELEGATION_TOKEN) {
+            copy.setOptions(options);
+            copy.setServerSettings(serverSettings);
+            copy.setEnableJsonSupportAsString(enableJsonSupportAsString);
+        }
+        copy.setDelegationTokenWaitTimeout(delegationTokenWaitTimeout);
+        copy.setSupportDefault(supportDefault);
+        copy.setRetryPolicy(retryPolicy);
+        copy.setBatchFailureStrategy(batchFailureStrategy);
+        copy.setApi(api);
+        return copy;
+    }
+
+    /**
+     * Pings up to {@link #DEFAULT_MAX_RETRIES} times, 1s apart, on a probe client closed either
+     * way — a fixed bound, independent of the retry policy, which governs batch retries. An
+     * interrupt during the retry sleep is re-asserted and fails with its own message; one that
+     * lands inside client-v2's {@code ping()} is swallowed there (it returns false with the flag
+     * cleared) and counts as a failed attempt.
+     */
+    public void verifyConnectivity() {
+        if (authMode == AuthMode.DELEGATION_TOKEN) {
+            LOG.info("Skipping the connectivity check for delegation-token auth: the job driver has no token; "
+                    + "the first connection happens on the task managers");
+            return;
+        }
+        try (Client probe = initClient(database, Map.of())) {
+            boolean isServerAlive = false;
+            for (int i = 0; i < DEFAULT_MAX_RETRIES && !isServerAlive; i++) {
+                isServerAlive = probe.ping();
+                if (!isServerAlive && i < DEFAULT_MAX_RETRIES - 1) {
+                    LOG.warn("Ping failed; will retry up to {} times in {} seconds.", DEFAULT_MAX_RETRIES, 1);
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException("Interrupted while checking ClickHouse connectivity.", e);
+                    }
+                }
+            }
+            if (!isServerAlive) {
+                throw new RuntimeException("ClickHouse server is not accessible. Please check your configuration or ClickHouse server.");
+            }
+        }
+    }
+
+    /**
+     * A fresh, uncached client for planning; the caller closes it. The extra server settings
+     * reach this client only, never the serialized runtime config.
+     */
+    public Client createPlanningClient(Map<String, String> planningServerSettings) {
+        if (authMode == AuthMode.DELEGATION_TOKEN) {
+            throw new UnsupportedOperationException("Table API planning does not support delegation-token auth: "
+                    + "the planner has no ClickHouse JWT. Use username/password for Table API sinks.");
+        }
+        return initClient(database, planningServerSettings);
+    }
+
+    private Client initClient(String database, Map<String, String> extraServerSettings) {
+        Client.Builder clientBuilder = new Client.Builder().addEndpoint(url);
+        if (authMode != AuthMode.DELEGATION_TOKEN) {
+            // Before setOptions, as always: auth keys in options still override these.
+            clientBuilder.setUsername(username).setPassword(password);
+        }
+        clientBuilder
                 .setDefaultDatabase(database)
-                .setClientName(fullProductName)
+                .setClientName(productName())
                 .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true")
                 .setOptions(options);
         if (authMode == AuthMode.DELEGATION_TOKEN) {
             clientBuilder.useBearerTokenAuth(appliedCredentials.getJwt());
-        } else {
-            clientBuilder.setUsername(username).setPassword(password);
         }
 
         for (Map.Entry<String, String> entry : serverSettings.entrySet()) {
             clientBuilder.serverSetting(entry.getKey(), entry.getValue());
         }
+        for (Map.Entry<String, String> entry : extraServerSettings.entrySet()) {
+            clientBuilder.serverSetting(entry.getKey(), entry.getValue());
+        }
         return clientBuilder.build();
+    }
+
+    private String productName() {
+        return String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s, api:%s)", ClickHouseSinkVersion.getVersion(),
+                EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion(), api.name().toLowerCase(Locale.ROOT));
     }
 
     public Client createClient(String database) {
@@ -155,7 +219,7 @@ public class ClickHouseClientConfig implements Serializable {
                     throw new IllegalStateException("Interrupted while waiting for ClickHouse delegation token", e);
                 }
             }
-            this.client = initClient(database);
+            this.client = initClient(database, Map.of());
         }
         return client;
     }
@@ -268,5 +332,11 @@ public class ClickHouseClientConfig implements Serializable {
     }
 
     public Boolean getEnableJsonSupportAsString() { return  enableJsonSupportAsString; }
+
+    public Api getApi() { return api; }
+
+    public void setApi(Api api) {
+        this.api = Objects.requireNonNull(api, "api must not be null");
+    }
 
 }

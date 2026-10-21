@@ -73,6 +73,12 @@ class DataWriterDispatchTest {
         assertTrue(r.length >= 5);
     }
 
+    @Test void dispatchNullableFixedStringWritesFullWidth() throws IOException {
+        // Sizing must come from getPrecision(): getEstimatedLength() is 1 for Nullable(FixedString(n)).
+        byte[] r = serialize("12345", ClickHouseColumn.of("c", "Nullable(FixedString(5))"));
+        assertArrayEquals(new byte[]{0, '1', '2', '3', '4', '5'}, r);
+    }
+
     @Test void dispatchUUID() throws IOException {
         byte[] r = serialize(UUID.randomUUID(), ClickHouseColumn.of("c", "UUID"));
         assertTrue(r.length >= 16);
@@ -98,6 +104,18 @@ class DataWriterDispatchTest {
                 ClickHouseColumn.of("", "String"));
         byte[] r = serialize(Arrays.asList("a", "b"), col);
         assertTrue(r.length > 0);
+    }
+
+    // Object[] is the tuple shape the Table API mapper produces (toPayloadTuple).
+    @Test void dispatchTupleFromObjectArray() throws IOException {
+        byte[] r = serialize(new Object[]{42, "ab"}, ClickHouseColumn.of("c", "Tuple(Int32, String)"));
+        assertArrayEquals(new byte[]{42, 0, 0, 0, 2, 'a', 'b'}, r);
+    }
+
+    @Test void dispatchArrayNullableElementWritesNullMarker() throws IOException {
+        byte[] r = serialize(Arrays.asList(7, null), ClickHouseColumn.of("c", "Array(Nullable(Int32))"));
+        // varint count, then per element: null marker byte (+ value when non-null).
+        assertArrayEquals(new byte[]{2, 0, 7, 0, 0, 0, 1}, r);
     }
 
     @Test void dispatchBoolean() throws IOException {

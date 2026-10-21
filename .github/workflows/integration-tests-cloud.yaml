@@ -67,6 +67,12 @@ jobs:
       - name: Generate Flink Covid App example 1.17+
         working-directory: ./examples/maven/flink-v1.7/covid
         run: mvn clean install
+      - name: Generate Flink SQL sink example 2.X
+        working-directory: ./examples/maven/flink-v2/sql
+        run: mvn clean install
+      - name: Generate Flink SQL sink example 1.17+
+        working-directory: ./examples/maven/flink-v1.7/sql
+        run: mvn clean install
       - name: Generate delegation-token example 2.X
         working-directory: ./examples/maven/flink-v2/delegation-token
         run: mvn clean install
