@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -117,8 +118,10 @@ public class ClickHouseClientConfig implements Serializable {
                 .setUsername(username)
                 .setPassword(password)
                 .setDefaultDatabase(database)
-                .setClientName(productName())
+                .setClientName(productName(), clientMetadata())
                 .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true")
+                // Unknown client keys only WARN; a user copy of this key wins.
+                .setOption(ClientConfigProperties.IGNORE_UNKNOWN_CONFIG_KEY, "true")
                 .setOptions(options);
 
         for (Map.Entry<String, String> entry : serverSettings.entrySet()) {
@@ -131,8 +134,15 @@ public class ClickHouseClientConfig implements Serializable {
     }
 
     private String productName() {
-        return String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s, api:%s)", ClickHouseSinkVersion.getVersion(),
-                EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion(), api.name().toLowerCase(Locale.ROOT));
+        return "Flink-ClickHouse-Sink/" + ClickHouseSinkVersion.getVersion();
+    }
+
+    /** Goes into the User-Agent comment group ahead of the client's own lv, os and hc entries. */
+    private Map<String, String> clientMetadata() {
+        Map<String, String> metadata = new LinkedHashMap<>();
+        metadata.put("fv", "flink/" + EnvironmentInformation.getVersion());
+        metadata.put("api", api.name().toLowerCase(Locale.ROOT));
+        return metadata;
     }
 
     public Client createClient(String database) {

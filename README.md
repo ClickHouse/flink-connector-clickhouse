@@ -32,13 +32,13 @@ The connector supports two main Apache Flink APIs:
 
 | Version | Dependency                       | ClickHouse Client Version | Required Java |
 |---------|----------------------------------|---------------------------|---------------|
-| latest  | flink-connector-clickhouse-2.0.0 | 0.9.5                     | Java 17+      |
-| 2.0.1   | flink-connector-clickhouse-2.0.0 | 0.9.5                     | Java 17+      |
-| 2.0.0   | flink-connector-clickhouse-2.0.0 | 0.9.5                     | Java 17+      |
-| 1.20.2  | flink-connector-clickhouse-1.17  | 0.9.5                     | Java 11+      |
-| 1.19.3  | flink-connector-clickhouse-1.17  | 0.9.5                     | Java 11+      |
-| 1.18.1  | flink-connector-clickhouse-1.17  | 0.9.5                     | Java 11+      |
-| 1.17.2  | flink-connector-clickhouse-1.17  | 0.9.5                     | Java 11+      |
+| latest  | flink-connector-clickhouse-2.0.0 | 0.11.0                    | Java 17+      |
+| 2.0.1   | flink-connector-clickhouse-2.0.0 | 0.11.0                    | Java 17+      |
+| 2.0.0   | flink-connector-clickhouse-2.0.0 | 0.11.0                    | Java 17+      |
+| 1.20.2  | flink-connector-clickhouse-1.17  | 0.11.0                    | Java 11+      |
+| 1.19.3  | flink-connector-clickhouse-1.17  | 0.11.0                    | Java 11+      |
+| 1.18.1  | flink-connector-clickhouse-1.17  | 0.11.0                    | Java 11+      |
+| 1.17.2  | flink-connector-clickhouse-1.17  | 0.11.0                    | Java 11+      |
 
 ## Installation
 
@@ -236,10 +236,10 @@ planning naming the column and both types.
 | `CHAR` / `VARCHAR` / `STRING` | `String`, `FixedString(n)`, `UUID`, `JSON` | `FixedString` length checked in UTF-8 bytes per record, whatever the declared Flink length (Flink does not enforce it by default); `UUID` text checked per record |
 | `DATE` | `Date`, `Date32` | range-checked per record: `Date` 1970-01-01..2149-06-06, `Date32` 1900-01-01..2299-12-31 |
 | `TIMESTAMP(p)` / `TIMESTAMP_LTZ(p)` | `DateTime` (`p = 0`), `DateTime64(s >= p)` | range-checked per record: `DateTime` 1970-01-01..2106-02-07, `DateTime64` 1900-01-01..2299-12-31 (2262-04-11 at scale 9). Flink's default `TIMESTAMP` is precision 6 — declare `TIMESTAMP(3)` for `DateTime64(3)`. `TIMESTAMP` is a wall clock in `sink.timezone`; `TIMESTAMP_LTZ` an instant |
-| `ARRAY<t>` | `Array(T)` | only `Array(Nullable(T))` can carry nested NULLs |
-| `MAP<k, v>` | `Map(K, V)` | string/integer/decimal keys except `UInt64`; values not `Nullable` |
+| `ARRAY<t>` | `Array(T)` | nullable elements need `Array(Nullable(T))` |
+| `MAP<k, v>` | `Map(K, V)` | string/integer/decimal keys except `UInt64`; nullable values need `Map(K, Nullable(V))` |
 | `MULTISET<t>` | `Map(T, I)` for any integer `I` | counts become the values; the value type must not be `Nullable`. A count is a non-negative `INT`, so `Int32`/`UInt32` and wider always fit; `Int8`, `Int16`, `UInt8`, `UInt16` are range-checked per record and rejected under `sink.strict-numeric-mapping` |
-| `ROW<...>` | `Tuple(...)` | positional — a ROW whose field names are a named Tuple's element names in another order is rejected at planning; fields/elements not nullable |
+| `ROW<...>` | `Tuple(...)` | positional — a ROW whose field names are a named Tuple's element names in another order is rejected at planning; nullable fields need `Nullable` elements |
 
 Unsupported: `BINARY`/`VARBINARY`, `TIME`, `TIMESTAMP WITH TIME ZONE`, `INTERVAL`; ClickHouse
 `Enum` (#43), `Variant` (#60), `Time` (#91), `IPv4/6`, `Dynamic`, geo — exclude such columns
@@ -247,7 +247,7 @@ and let server defaults fill them.
 
 Everywhere: nullable Flink columns need `Nullable(...)` targets — except `Nullable(UInt8/16/32/64)`,
 blocked until issue #144 — and composites must be `NOT NULL`. `LowCardinality` is transparent;
-`SimpleAggregateFunction(f, T)` matches as `T`, top-level only.
+`SimpleAggregateFunction(f, T)` matches as `T`.
 
 Notes for SQL users:
 - Operator names are planner-generated (e.g. `Sink: ch_events[3]`), which affects metric

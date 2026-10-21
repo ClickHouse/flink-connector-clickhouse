@@ -223,28 +223,19 @@ class SchemaResolverTest {
                 e.getMessage());
     }
 
+    /** The insert header keeps the wrapper; only the matching sheds it. */
     @Test
-    void nestedSimpleAggregateFunctionIsRejectedAtPlanning() {
-        // client-v2 has no serializer case for SAF inside a composite; accepted schemas would
-        // fail on the first record, so planning rejects them.
-        ValidationException array = assertThrows(ValidationException.class, () ->
-                SchemaResolver.resolve(
-                        ResolvedSchema.of(Column.physical("v",
-                                DataTypes.ARRAY(DataTypes.BIGINT().notNull()).notNull())),
-                        clickHouseSchema("v Array(SimpleAggregateFunction(max, Int64))"),
-                        options(false)));
-        assertTrue(array.getMessage().contains("only writable as a top-level column"),
-                array.getMessage());
-        assertTrue(array.getMessage().contains("array element"), array.getMessage());
-
-        ValidationException map = assertThrows(ValidationException.class, () ->
-                SchemaResolver.resolve(
-                        ResolvedSchema.of(Column.physical("m",
-                                DataTypes.MAP(DataTypes.STRING().notNull(),
-                                        DataTypes.BIGINT().notNull()).notNull())),
-                        clickHouseSchema("m Map(String, SimpleAggregateFunction(max, Int64))"),
-                        options(false)));
-        assertTrue(map.getMessage().contains("map value"), map.getMessage());
+    void nestedSimpleAggregateFunctionResolvesAsItsInnerType() {
+        List<ResolvedColumnMapping> mappings = SchemaResolver.resolve(
+                ResolvedSchema.of(
+                        Column.physical("v", DataTypes.ARRAY(DataTypes.BIGINT().notNull()).notNull()),
+                        Column.physical("m", DataTypes.MAP(DataTypes.STRING().notNull(),
+                                DataTypes.BIGINT().notNull()).notNull())),
+                clickHouseSchema("v Array(SimpleAggregateFunction(max, Int64)), "
+                        + "m Map(String, SimpleAggregateFunction(max, Int64))"),
+                options(false));
+        assertEquals(List.of("Array(SimpleAggregateFunction(max, Int64))", "Map(String, SimpleAggregateFunction(max, Int64))"),
+                mappings.stream().map(ResolvedColumnMapping::typeExpression).collect(Collectors.toList()));
     }
 
     @Test

@@ -12,7 +12,7 @@ plugins {
 
 val scalaVersion = "2.13.12"
 val sinkVersion: String by rootProject.extra
-val clickhouseVersion: String by rootProject.extra // Temporary until we have a Java Client release
+val clickhouseVersion: String by rootProject.extra
 
 repositories {
     // Use Maven Central for resolving dependencies.

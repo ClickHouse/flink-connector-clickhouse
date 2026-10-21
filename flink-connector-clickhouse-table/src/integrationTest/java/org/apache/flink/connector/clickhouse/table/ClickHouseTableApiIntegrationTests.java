@@ -688,6 +688,62 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals(20L, rows.get(1).getLong("total_v"));
     }
 
+    /** The wrapper is transparent in every position; the inner type's nullability is what counts. */
+    @Test
+    void simpleAggregateFunctionInsideCompositesAcceptsTheInnerType() throws Exception {
+        String table = "table_api_nested_simple_agg";
+        createTable(table, "id Int64, highs Array(SimpleAggregateFunction(max, Int64)), "
+                + "last_by_key Map(String, SimpleAggregateFunction(anyLast, Nullable(String))), "
+                + "pair Tuple(SimpleAggregateFunction(max, Int64), SimpleAggregateFunction(anyLast, String))");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_nested_simple_agg", table,
+                "id BIGINT NOT NULL,"
+                        + "highs ARRAY<BIGINT NOT NULL> NOT NULL,"
+                        + "last_by_key MAP<STRING, STRING> NOT NULL,"
+                        + "pair ROW<a BIGINT NOT NULL, b STRING NOT NULL> NOT NULL"));
+        env.executeSql("INSERT INTO ch_nested_simple_agg VALUES "
+                + "(1, ARRAY[CAST(1 AS BIGINT), CAST(2 AS BIGINT)], MAP['k', 'v', 'n', CAST(NULL AS STRING)], "
+                + "ROW(CAST(3 AS BIGINT), 'x'))").await();
+
+        List<GenericRecord> rows = readBack(
+                "id, toString(highs) AS highs_s, toString(mapSort(last_by_key)) AS last_s, toString(pair) AS pair_s",
+                table, "id", 1);
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals("[1,2]", rows.get(0).getString("highs_s"));
+        Assertions.assertEquals("{'k':'v','n':NULL}", rows.get(0).getString("last_s"));
+        Assertions.assertEquals("(3,'x')", rows.get(0).getString("pair_s"));
+    }
+
+    @Test
+    void nullableMapValuesAndTupleElementsRoundTrip() throws Exception {
+        String table = "table_api_nullable_nested";
+        createTable(table, "id Int64, scores Map(String, Nullable(Int32)), "
+                + "pair Tuple(Nullable(Int32), Nullable(String)), pairs Array(Tuple(Nullable(Int32), String))");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_nullable_nested", table,
+                "id BIGINT NOT NULL,"
+                        + "scores MAP<STRING, INT> NOT NULL,"
+                        + "pair ROW<a INT, b STRING> NOT NULL,"
+                        + "pairs ARRAY<ROW<a INT, b STRING NOT NULL> NOT NULL> NOT NULL"));
+        env.executeSql("INSERT INTO ch_nullable_nested VALUES "
+                + "(1, MAP['a', 1, 'b', CAST(NULL AS INT)], ROW(CAST(NULL AS INT), 'x'), "
+                + "ARRAY[ROW(CAST(NULL AS INT), 'p'), ROW(2, 'q')]), "
+                + "(2, MAP['c', 3], ROW(4, CAST(NULL AS STRING)), ARRAY[ROW(5, 'r')])").await();
+
+        List<GenericRecord> rows = readBack(
+                "id, toString(mapSort(scores)) AS scores_s, toString(pair) AS pair_s, toString(pairs) AS pairs_s",
+                table, "id", 2);
+        Assertions.assertEquals(2, rows.size());
+        Assertions.assertEquals("{'a':1,'b':NULL}", rows.get(0).getString("scores_s"));
+        Assertions.assertEquals("(NULL,'x')", rows.get(0).getString("pair_s"));
+        Assertions.assertEquals("[(NULL,'p'),(2,'q')]", rows.get(0).getString("pairs_s"));
+        Assertions.assertEquals("{'c':3}", rows.get(1).getString("scores_s"));
+        Assertions.assertEquals("(4,NULL)", rows.get(1).getString("pair_s"));
+        Assertions.assertEquals("[(5,'r')]", rows.get(1).getString("pairs_s"));
+    }
+
     @Test
     void updatingSourceIsRejectedAtPlanningAsInsertOnly() throws Exception {
         String table = "table_api_insert_only";
@@ -1074,10 +1130,11 @@ public class ClickHouseTableApiIntegrationTests {
         env.executeSql(sinkDdl("ch_user_agent", table, "id BIGINT NOT NULL"));
         env.executeSql("INSERT INTO ch_user_agent VALUES (1)").await();
 
-        String productName = String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s, api:table) ",
-                ClickHouseSinkVersion.getVersion(), EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion());
-        Assertions.assertTrue(finishedInserts(table, " AND startsWith(http_user_agent, '" + productName + "')", 1) >= 1,
-                "no query_log INSERT into " + table + " has a user agent starting with " + productName);
+        String userAgent = String.format("Flink-ClickHouse-Sink/%s clickhouse-java-v2/", ClickHouseSinkVersion.getVersion());
+        String metadata = String.format("(fv:flink/%s; api:table; lv:java/", EnvironmentInformation.getVersion());
+        Assertions.assertTrue(finishedInserts(table, " AND startsWith(http_user_agent, '" + userAgent
+                + "') AND position(http_user_agent, '" + metadata + "') > 0", 1) >= 1,
+                "no query_log INSERT into " + table + " has a user agent starting with " + userAgent + " and carrying " + metadata);
     }
 
     @Test
@@ -1376,8 +1433,6 @@ public class ClickHouseTableApiIntegrationTests {
             // --- ClickHouse targets the sink has no write path for
             {"Enum8('a' = 1, 'b' = 2)", "STRING NOT NULL", "'a'", "",
              "is not yet supported by the sink~issue #43"},
-            {"Array(SimpleAggregateFunction(sum, Int64))", "ARRAY<BIGINT NOT NULL> NOT NULL",
-             "ARRAY[CAST(1 AS BIGINT)]", "", "SimpleAggregateFunction is only writable as a top-level column"},
             // --- Decimal: the four ways a Decimal source can fail to fit
             {"Decimal(10, 2)", "DECIMAL(10, 4) NOT NULL", "CAST('1.2345' AS DECIMAL(10, 4))", "",
              "Column 'c'~scale 4 exceeds the column's scale 2"},
