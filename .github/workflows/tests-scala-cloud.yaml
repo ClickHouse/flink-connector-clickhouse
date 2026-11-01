@@ -61,8 +61,8 @@ jobs:
       - name: Execute Gradle 'test' task
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
-          CLICKHOUSE_CLOUD_HOST: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}
-          CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}
+          CLICKHOUSE_CLOUD_HOST: ${{ secrets.CONNECTORS_TEAM_TESTS_CLOUD_HOST }}
+          CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.CONNECTORS_TEAM_TESTS_CLOUD_PASSWORD }}
           FLINK_VERSION: ${{ matrix.flink }}
         run: ./gradlew :flink-connector-clickhouse-1.17:runScalaTests
   test-flink-2:
@@ -89,8 +89,8 @@ jobs:
       - name: Execute Gradle 'test' task
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
-          CLICKHOUSE_CLOUD_HOST: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}
-          CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}
+          CLICKHOUSE_CLOUD_HOST: ${{ secrets.CONNECTORS_TEAM_TESTS_CLOUD_HOST }}
+          CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.CONNECTORS_TEAM_TESTS_CLOUD_PASSWORD }}
         run: ./gradlew :flink-connector-clickhouse-2.0.0:runScalaTests
 
   remove-label:
