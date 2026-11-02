@@ -413,7 +413,7 @@ class ClickHouseTypeMapperTest {
         assertEquals(41, converter.convert(41));
     }
 
-    /** The wrapper is shed at every nesting, so the inner type's nullability is what the position matches. */
+    /** Needs client-v2 0.11.0+ (clickhouse-java#2937); the wrapper is shed at every nesting, so the inner type's nullability is what the position matches. */
     @Test
     void simpleAggregateFunctionIsTransparentInsideComposites() {
         ValueConverter array = ClickHouseTypeMapper.converterFor(
@@ -575,6 +575,7 @@ class ClickHouseTypeMapperTest {
         assertEquals("ROW has 1 fields but the Tuple has 2 elements", e.getMessage());
     }
 
+    /** Needs client-v2 0.10.0+, which writes the null marker of a Nullable Tuple element (clickhouse-java#2886). */
     @Test
     void nullableTupleElementsTakeNullsAndNonNullableOnesRejectANullableField() {
         TypeMappingException flinkSide = assertThrows(TypeMappingException.class,
@@ -591,6 +592,7 @@ class ClickHouseTypeMapperTest {
         assertArrayEquals(new Object[]{1, 2}, (Object[]) nullable.convert(GenericRowData.of(1, 2)));
     }
 
+    /** Needs client-v2 0.10.0+, which writes the null marker of a Nullable Map value (clickhouse-java#2886). */
     @Test
     void nullableMapValuesTakeNullsAndNonNullableOnesRejectANullableValueType() {
         VarCharType key = new VarCharType(false, VarCharType.MAX_LENGTH);

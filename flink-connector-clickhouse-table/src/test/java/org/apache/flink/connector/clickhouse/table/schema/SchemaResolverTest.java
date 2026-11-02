@@ -223,7 +223,7 @@ class SchemaResolverTest {
                 e.getMessage());
     }
 
-    /** The insert header keeps the wrapper; only the matching sheds it. */
+    /** Needs client-v2 0.11.0+ (clickhouse-java#2937); the insert header keeps the wrapper, only the matching sheds it. */
     @Test
     void nestedSimpleAggregateFunctionResolvesAsItsInnerType() {
         List<ResolvedColumnMapping> mappings = SchemaResolver.resolve(

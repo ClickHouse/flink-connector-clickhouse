@@ -970,7 +970,7 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    /** Recurses into a nested pair, prefixing mismatch reasons with the structural context. */
+    /** Recurses into a nested pair, prefixing mismatch reasons with the structural context; nested SimpleAggregateFunction and Nullable elements rely on client-v2 0.11.0+ (clickhouse-java#2937, #2886). */
     private static ValueConverter buildNestedConverter(LogicalType flinkType, ClickHouseColumn column,
                                                        TypeMappingOptions options, String columnPathText, String context) {
         try {

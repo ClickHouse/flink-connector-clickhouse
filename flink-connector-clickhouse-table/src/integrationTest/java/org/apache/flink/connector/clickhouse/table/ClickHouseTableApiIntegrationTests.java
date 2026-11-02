@@ -688,7 +688,7 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals(20L, rows.get(1).getLong("total_v"));
     }
 
-    /** The wrapper is transparent in every position; the inner type's nullability is what counts. */
+    /** Needs client-v2 0.11.0+, which serializes SimpleAggregateFunction inside composites (clickhouse-java#2937); the inner type's nullability is what counts. */
     @Test
     void simpleAggregateFunctionInsideCompositesAcceptsTheInnerType() throws Exception {
         String table = "table_api_nested_simple_agg";
@@ -715,6 +715,7 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals("(3,'x')", rows.get(0).getString("pair_s"));
     }
 
+    /** Needs client-v2 0.10.0+, which writes the null marker of a Nullable Map value or Tuple element (clickhouse-java#2886). */
     @Test
     void nullableMapValuesAndTupleElementsRoundTrip() throws Exception {
         String table = "table_api_nullable_nested";
