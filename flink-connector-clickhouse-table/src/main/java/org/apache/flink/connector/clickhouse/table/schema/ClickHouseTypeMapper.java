@@ -182,7 +182,8 @@ public final class ClickHouseTypeMapper {
             case Time64:
                 return "see issue #91";
             case Nested:
-                // Only reachable with flatten_nested = 0; the default expands it into Array columns.
+                // Only reachable with flatten_nested = 0 (the default expands it into Array columns); client-v2
+                // 0.11.0 can write it (clickhouse-java#2936) but the sink has no ARRAY<ROW> pairing for it yet.
                 return "an un-flattened Nested column is not supported by the sink — declare the "
                         + "column as Array(Tuple(...)), which is what it stores";
             default:
@@ -789,6 +790,13 @@ public final class ClickHouseTypeMapper {
                     + "are checkpointed as strings and the client serializer restores them with a "
                     + "signed-long parse, which fails for the upper half of the UInt64 range; "
                     + "use an Int64 or UInt128 key column instead");
+        }
+        if (keyColumn.getDataType() == ClickHouseDataType.SimpleAggregateFunction) {
+            throw TypeMappingException.mismatch(String.format(
+                    "ClickHouse Map keys of type SimpleAggregateFunction are not supported by the sink — "
+                    + "the client serializer unwraps SimpleAggregateFunction everywhere except in a Map "
+                    + "key; use a plain %s key column instead",
+                    unwrapSimpleAggregateFunction(keyColumn).getOriginalTypeName()));
         }
         throw TypeMappingException.mismatch(String.format(
                 "ClickHouse Map key type %s is not supported by the sink — map keys are "

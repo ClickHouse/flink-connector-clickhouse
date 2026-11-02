@@ -751,6 +751,18 @@ class ClickHouseTypeMapperTest {
     }
 
     @Test
+    void simpleAggregateFunctionMapKeysAreRejectedAtPlanning() {
+        // client-v2's serializeMapData sends keys through serializePrimitiveData, which has no SAF case.
+        MapType mapType = new MapType(false,
+                new VarCharType(false, VarCharType.MAX_LENGTH), new IntType(false));
+        TypeMappingException e = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(
+                        mapType, col("Map(SimpleAggregateFunction(max, String), Int32)"), LENIENT, "c"));
+        assertTrue(e.getMessage().contains("Map keys of type SimpleAggregateFunction"), e.getMessage());
+        assertTrue(e.getMessage().contains("use a plain String key column"), e.getMessage());
+    }
+
+    @Test
     void uInt128MapKeysStayAccepted() {
         // UInt128 keys use client-v2's BigInteger parse — the full range round-trips.
         MapType mapType = new MapType(false,

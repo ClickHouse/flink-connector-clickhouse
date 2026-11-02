@@ -120,7 +120,7 @@ public class ClickHouseClientConfig implements Serializable {
                 .setDefaultDatabase(database)
                 .setClientName(productName(), clientMetadata())
                 .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true")
-                // Unknown client keys only WARN; a user copy of this key wins.
+                // Unknown client keys only WARN; a DataStream setOptions copy of this key wins, the Table API validates keys itself.
                 .setOption(ClientConfigProperties.IGNORE_UNKNOWN_CONFIG_KEY, "true")
                 .setOptions(options);
 
