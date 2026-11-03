@@ -11,7 +11,7 @@ val sinkVersion by extra(getProjectVersion())
 val flinkVersion by extra("1.18.0")
 // Overridable so CI (nightly-java-client.yml) can swap in a locally built client:
 //   ./gradlew test -Pclickhouse_client_v2_version=X.Y.Z-SNAPSHOT
-val clickhouseVersion by extra(providers.gradleProperty("clickhouse_client_v2_version").getOrElse("0.9.5"))
+val clickhouseVersion by extra(providers.gradleProperty("clickhouse_client_v2_version").getOrElse("0.11.0"))
 val junitVersion by extra("5.8.2")
 val lz4Version by extra("1.12.0")
 

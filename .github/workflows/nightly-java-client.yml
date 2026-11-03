@@ -6,7 +6,7 @@
 #   - Automatically every night at 04:00 UTC against clickhouse-java 'main'.
 #   - Manually via the Actions UI ("Run workflow") or the CLI, pinning any ref:
 #       gh workflow run nightly-java-client.yml                                  # main
-#       gh workflow run nightly-java-client.yml -f clickhouse_java_ref=v0.9.5    # a tag
+#       gh workflow run nightly-java-client.yml -f clickhouse_java_ref=v0.11.0   # a tag
 #       gh workflow run nightly-java-client.yml -f clickhouse_java_ref=a3ccce4   # a commit (short OK)
 #     'clickhouse_java_ref' accepts a branch, tag, or commit SHA; short SHAs are expanded via the
 #     GitHub API (see the build step). The build log prints the exact commit under test.
@@ -168,7 +168,7 @@ jobs:
             -Pclickhouse_client_v2_version="$CLIENT_VERSION" | tee insight.txt
           # Anchored to the selected-component header line ('coordinate' alone or with a
           # '(selection reason)' suffix). A requested-but-downgraded edge such as
-          # 'com.clickhouse:client-v2:X-SNAPSHOT -> 0.9.5' must NOT count as success.
+          # 'com.clickhouse:client-v2:X-SNAPSHOT -> 0.11.0' must NOT count as success.
           if ! grep -Eq "^com\.clickhouse:client-v2:$CLIENT_VERSION( \(.*\))?$" insight.txt; then
             echo "client-v2 $CLIENT_VERSION was not the SELECTED version on testRuntimeClasspath." >&2
             exit 1

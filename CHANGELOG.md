@@ -1,5 +1,9 @@
 ## Unreleased
 * Add Table API / Flink SQL sink support https://github.com/ClickHouse/flink-connector-clickhouse/pull/165
+* Upgrade the ClickHouse Java client (client-v2) to 0.11.0 — restores schema introspection on ClickHouse 26.8+ and compressed reads on 26.9+
+* The User-Agent follows the ClickHouse client format, `Flink-ClickHouse-Sink/<version> clickhouse-java-v2/<version> (fv:flink/<version>; api:datastream|table; lv:java/<jvm>; os:<os>; hc:<http client>)`; the Scala version tag is dropped
+* Server error 159 (`TIMEOUT_EXCEEDED`) is no longer classified as retryable (client-v2 0.11.0), so such a batch follows the batch failure strategy instead of being retried
+* Table API: Nullable Map values and Tuple elements, and SimpleAggregateFunction inside composites, are accepted now that the client writes them
 * Checkpoint format V3: checkpoints taken by this version can't be restored by 0.2.0
 
 ## 0.2.0 — Map-based payload, RowBinaryWithNamesAndTypes
