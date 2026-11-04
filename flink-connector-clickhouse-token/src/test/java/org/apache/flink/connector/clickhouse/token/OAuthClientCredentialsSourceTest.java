@@ -191,16 +191,21 @@ class OAuthClientCredentialsSourceTest {
     }
 
     @Test
-    void errorBodyEchoingTheSecretIsRedactedAndTruncated() {
-        StringBuilder huge = new StringBuilder("{\"error\":\"invalid_request\",\"echo\":\"client_secret=" + SECRET + "\",\"page\":\"");
+    void errorBodyIsNeverPartOfTheMessage() {
+        // A provider or proxy that echoes the request would put the secret in the body, literally or
+        // JSON-escaped; the message must carry only the endpoint and the status, whatever the body holds.
+        StringBuilder huge = new StringBuilder("{\"error\":\"invalid_request\",\"echo\":\"client_secret="
+                + SECRET + "\",\"escaped\":\"\\\"" + SECRET + "\\\"\",\"page\":\"");
         for (int i = 0; i < 5_000; i++) {
             huge.append('x');
         }
         stub.respond(400, huge.append("\"}").toString());
         IOException e = assertThrows(IOException.class, () -> source(null, null).obtain());
         assertFalse(e.getMessage().contains(SECRET), e.getMessage());
-        assertTrue(e.getMessage().contains("****"), e.getMessage());
-        assertTrue(e.getMessage().length() < 1_000, "message length " + e.getMessage().length());
+        assertFalse(e.getMessage().contains("invalid_request"), e.getMessage());
+        assertFalse(e.getMessage().contains("xxxx"), e.getMessage());
+        assertTrue(e.getMessage().contains("HTTP 400"), e.getMessage());
+        assertTrue(e.getMessage().length() < 300, "message length " + e.getMessage().length());
     }
 
     @Test

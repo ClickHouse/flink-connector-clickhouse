@@ -45,7 +45,6 @@ final class OAuthClientCredentialsSource {
     private static final List<String> CLOUD_REQUIRED_CLAIMS = Arrays.asList("exp", "iat", "iss", "sub", "aud");
     static final long MIN_LIFETIME_MILLIS = 10_000;
     static final int MAX_RESPONSE_BYTES = 1024 * 1024;
-    private static final int MAX_ERROR_BODY_CHARS = 500;
     /** Attempts per obtain() for transient failures (I/O errors, timeouts, HTTP 5xx and 429). */
     static final int MAX_ATTEMPTS = 4;
 
@@ -114,8 +113,10 @@ final class OAuthClientCredentialsSource {
         HttpResponse<String> response = send(request);
         String body = response.body();
         if (response.statusCode() != 200) {
+            // The body is deliberately not included: an identity provider or proxy may echo the request,
+            // client secret included, and no redaction of arbitrary text is airtight.
             String message = "OAuth token request to " + ProviderConfig.displayable(tokenEndpoint)
-                    + " failed with HTTP " + response.statusCode() + ": " + sanitize(body);
+                    + " failed with HTTP " + response.statusCode();
             boolean transientStatus = response.statusCode() >= 500 || response.statusCode() == 429;
             throw transientStatus ? new TransientFailure(message, null) : new IOException(message);
         }
@@ -267,16 +268,6 @@ final class OAuthClientCredentialsSource {
         ResponseTooLargeException(String message) {
             super(message);
         }
-    }
-
-    /** Error bodies go into exception messages and logs: never the client secret, never unbounded. */
-    private String sanitize(String body) {
-        String text = body.trim();
-        if (!clientSecret.isEmpty()) {
-            text = text.replace(clientSecret, "****")
-                    .replace(URLEncoder.encode(clientSecret, StandardCharsets.UTF_8), "****");
-        }
-        return text.length() <= MAX_ERROR_BODY_CHARS ? text : text.substring(0, MAX_ERROR_BODY_CHARS) + "…";
     }
 
     private long validUntilMillis(JsonNode expiresIn, String jwt) throws IOException {
