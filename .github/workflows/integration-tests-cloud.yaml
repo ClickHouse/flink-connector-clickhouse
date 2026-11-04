@@ -87,6 +87,8 @@ jobs:
           CLICKHOUSE_CLOUD_OAUTH_CLIENT_ID: ${{ secrets.FLINK_DT_CLIENT_ID }}
           CLICKHOUSE_CLOUD_OAUTH_CLIENT_SECRET: ${{ secrets.FLINK_DT_CLIENT_SECRET }}
           CLICKHOUSE_CLOUD_OAUTH_AUDIENCE: ${{ secrets.FLINK_DT_AUDIENCE }}
+          # Unused with Auth0 (audience sets the token target); needed if the tenant moves to Entra or Okta.
+          CLICKHOUSE_CLOUD_OAUTH_SCOPE: ${{ secrets.FLINK_DT_SCOPE }}
           # ClickHouse service credentials 
           CLICKHOUSE_CLOUD_HOST: ${{ secrets.CONNECTORS_TEAM_TESTS_CLOUD_HOST }}
           CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.CONNECTORS_TEAM_TESTS_CLOUD_PASSWORD }}
