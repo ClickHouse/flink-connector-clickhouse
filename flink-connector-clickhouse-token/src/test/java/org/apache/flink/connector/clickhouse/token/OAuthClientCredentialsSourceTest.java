@@ -77,6 +77,31 @@ class OAuthClientCredentialsSourceTest {
     }
 
     @Test
+    void expiresInCountsFromTheRequestStartNotFromTheResponse() throws Exception {
+        // A slow identity provider: 25s pass between sending the request and reading the reply.
+        MutableClock clock = new MutableClock(Instant.ofEpochSecond(1_000_000L));
+        stub.onRequest = () -> clock.advance(Duration.ofSeconds(25));
+        stub.respond(200, "{\"access_token\":\"eyJ.payload.sig\",\"expires_in\":60}");
+        OAuthClientCredentialsSource source = new OAuthClientCredentialsSource(stub.uri("/oauth2/token"), "flink",
+                SECRET, null, null, Duration.ofSeconds(30), Duration.ZERO, HttpClient.newHttpClient(), clock);
+
+        // expires_in is relative to issuance, which happened no later than the request went out.
+        assertEquals((1_000_000L + 60L) * 1000L, source.obtain().getValidUntilMillis());
+    }
+
+    @Test
+    void aTokenThatExpiredDuringASlowResponseIsRejected() {
+        MutableClock clock = new MutableClock(Instant.ofEpochSecond(1_000_000L));
+        stub.onRequest = () -> clock.advance(Duration.ofSeconds(25));
+        stub.respond(200, "{\"access_token\":\"eyJ.payload.sig\",\"expires_in\":20}");
+        OAuthClientCredentialsSource source = new OAuthClientCredentialsSource(stub.uri("/oauth2/token"), "flink",
+                SECRET, null, null, Duration.ofSeconds(30), Duration.ZERO, HttpClient.newHttpClient(), clock);
+
+        IOException e = assertThrows(IOException.class, source::obtain);
+        assertTrue(e.getMessage().contains("minimum"), e.getMessage());
+    }
+
+    @Test
     void fallsBackToJwtExpClaim() throws Exception {
         String jwt = unsignedJwt("{\"alg\":\"RS256\"}", "{\"exp\":1700000000,\"sub\":\"x\"}");
         stub.respond(200, "{\"access_token\":\"" + jwt + "\"}");

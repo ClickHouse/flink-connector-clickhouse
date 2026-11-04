@@ -110,6 +110,9 @@ final class OAuthClientCredentialsSource {
                 .header("Accept", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(form.toString(), StandardCharsets.UTF_8))
                 .build();
+        // expires_in is relative to issuance, which is no later than this; counting from the response
+        // would credit a slow identity provider's latency to the token's lifetime.
+        long requestedAt = clock.millis();
         HttpResponse<String> response = send(request);
         String body = response.body();
         if (response.statusCode() != 200) {
@@ -129,7 +132,7 @@ final class OAuthClientCredentialsSource {
             throw new IOException("OAuth token response has no access_token");
         }
         String jwt = token.asText();
-        long validUntil = validUntilMillis(json.get("expires_in"), jwt);
+        long validUntil = validUntilMillis(json.get("expires_in"), jwt, requestedAt);
         long lifetimeMillis = validUntil - clock.millis();
         if (lifetimeMillis < MIN_LIFETIME_MILLIS) {
             // Flink schedules the next obtain at ratio * remaining lifetime; a non-positive value
@@ -270,7 +273,7 @@ final class OAuthClientCredentialsSource {
         }
     }
 
-    private long validUntilMillis(JsonNode expiresIn, String jwt) throws IOException {
+    private long validUntilMillis(JsonNode expiresIn, String jwt, long requestedAt) throws IOException {
         if (expiresIn == null || expiresIn.isNull()) {
             return expiryFromJwt(jwt);
         }
@@ -287,7 +290,7 @@ final class OAuthClientCredentialsSource {
             throw new IOException("OAuth token response has an expires_in that is not a number");
         }
         try {
-            return Math.addExact(clock.millis(), toMillisExact(seconds));
+            return Math.addExact(requestedAt, toMillisExact(seconds));
         } catch (ArithmeticException e) {
             throw new IOException("OAuth token response has expires_in out of range: " + expiresIn);
         }

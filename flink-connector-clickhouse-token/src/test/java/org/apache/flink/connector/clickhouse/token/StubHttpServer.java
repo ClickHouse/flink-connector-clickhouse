@@ -27,6 +27,8 @@ final class StubHttpServer implements AutoCloseable {
     private final CountDownLatch closed = new CountDownLatch(1);
     private final ConcurrentLinkedQueue<Object[]> queued = new ConcurrentLinkedQueue<>();
     final AtomicInteger requests = new AtomicInteger();
+    /** Runs on the server thread when a request arrives, before the response (e.g. to move a test clock). */
+    volatile Runnable onRequest = () -> { };
 
     StubHttpServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -63,6 +65,7 @@ final class StubHttpServer implements AutoCloseable {
         lastContentType = exchange.getRequestHeaders().getFirst("Content-Type");
         lastPath = exchange.getRequestURI().getPath();
         requests.incrementAndGet();
+        onRequest.run();
         Object[] next = queued.poll();
         int status = next != null ? (Integer) next[0] : this.status;
         byte[] out = (next != null ? (String) next[1] : responseBody).getBytes(StandardCharsets.UTF_8);
