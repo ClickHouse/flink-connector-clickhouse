@@ -1,4 +1,4 @@
-# Dependabot version updates for every dependency ecosystem in this repo.
+# Dependabot version updates for the project's dependencies (connector build and examples).
 # Options: https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
 #
 # The ignore rules below skip only minor and major updates, so patch releases
@@ -64,15 +64,3 @@ updates:
       # Examples are built for Scala 2.12.
       - dependency-name: "org.scala-lang:*"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
-
-  # Actions used in .github/workflows.
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    cooldown:
-      default-days: 7
-    groups:
-      github-actions:
-        patterns: ["*"]
