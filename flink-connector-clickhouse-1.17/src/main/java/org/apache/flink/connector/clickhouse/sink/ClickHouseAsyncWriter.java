@@ -20,6 +20,7 @@ import org.apache.flink.connector.clickhouse.convertor.ColumnBinding;
 import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
 import org.apache.flink.connector.clickhouse.exception.DataCorruptionException;
 import org.apache.flink.connector.clickhouse.exception.FlinkWriteException;
+import org.apache.flink.connector.clickhouse.auth.ResolvedCredentials;
 import org.apache.flink.connector.clickhouse.exception.RetriableException;
 import org.apache.flink.connector.clickhouse.sink.writer.ExtendedAsyncSinkWriter;
 import org.apache.flink.metrics.Counter;
@@ -173,6 +174,9 @@ public class ClickHouseAsyncWriter<InputT>
         }
 
         Client chClient = this.clickHouseClientConfig.createClient();
+        this.clickHouseClientConfig.refreshCredentialsIfChanged();
+        // The JWT this batch is sent with (null in password mode); decides whether an auth failure is retried.
+        final ResolvedCredentials usedCredentials = this.clickHouseClientConfig.getAppliedCredentials();
         String tableName = clickHouseClientConfig.getTableName();
 
         final ClickHouseFormat format;
@@ -223,7 +227,7 @@ public class ClickHouseAsyncWriter<InputT>
             }, format, insertSettings);
             response.whenComplete((insertResponse, throwable) -> {
                 if (throwable != null) {
-                    handleFailedRequest(requestEntries, requestToRetry, throwable, writeStartTime);
+                    handleFailedRequest(requestEntries, requestToRetry, throwable, writeStartTime, usedCredentials);
                 } else {
                     handleSuccessfulRequest(requestToRetry, insertResponse, writeStartTime);
                 }
@@ -247,18 +251,29 @@ public class ClickHouseAsyncWriter<InputT>
                 response.getWrittenRows(), response.getServerTime(),
                 response.getWrittenBytes(), response.getQueryId(),
                 writeEndTime - writeStartTime);
+        clickHouseClientConfig.onWriteSuccess();
         requestToRetry.accept(Collections.emptyList());
     }
 
     private void handleFailedRequest(List<ClickHousePayload> requestEntries,
                                      Consumer<List<ClickHousePayload>> requestToRetry,
-                                     Throwable error, long writeStartTime) {
+                                     Throwable error, long writeStartTime,
+                                     ResolvedCredentials usedCredentials) {
         LOG.error("Error while processing ClickHouse request", error);
         long writeEndTime = System.currentTimeMillis();
         this.writeFailureLatencyHistogram.update(writeEndTime - writeStartTime);
         try {
-            Utils.handleException(error);
+            Utils.handleException(error, clickHouseClientConfig.isDelegationTokenMode());
         } catch (RetriableException e) {
+            if (clickHouseClientConfig.isDelegationTokenMode() && Utils.isAuthenticationFailure(error)
+                    && !clickHouseClientConfig.onAuthFailure(usedCredentials)) {
+                FlinkWriteException fatal = new FlinkWriteException("ClickHouse rejected the delegation token JWT "
+                        + "repeatedly and no newer token arrived; check the identity provider app and the Cloud JWT "
+                        + "provider (issuer, audience, JWKS URL, roles claim)", error);
+                LOG.warn("Fatal — stop retrying, fail the Flink job", fatal);
+                getFatalExceptionCons().accept(fatal);
+                return;
+            }
             LOG.info("Retriable exception occurred while processing request. ", e);
             if (requestEntries != null && !requestEntries.isEmpty()) {
                 ClickHousePayload firstElement = requestEntries.get(0);

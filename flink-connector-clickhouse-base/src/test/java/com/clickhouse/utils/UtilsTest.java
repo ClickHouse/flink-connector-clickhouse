@@ -1,11 +1,13 @@
 package com.clickhouse.utils;
 
+import com.clickhouse.client.api.ServerException;
 import org.apache.flink.connector.clickhouse.exception.FlinkWriteException;
 import org.apache.flink.connector.clickhouse.exception.RetriableException;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class UtilsTest {
@@ -63,5 +65,38 @@ class UtilsTest {
     @Test void wrappedInsertFailedIsRetriable() {
         RuntimeException wrapper = new RuntimeException(ioException("Insert failed: timeout"));
         assertThrows(RetriableException.class, () -> Utils.handleException(wrapper));
+    }
+
+    @Test void authenticationFailedIsRetriableInDelegationTokenMode() {
+        assertThrows(RetriableException.class,
+                () -> Utils.handleException(new ServerException(516, "Authentication failed", 403, "q1"), true));
+    }
+
+    @Test void userExpiredIsRetriableInDelegationTokenMode() {
+        assertThrows(RetriableException.class,
+                () -> Utils.handleException(new ServerException(720, "User expired", 403, "q1"), true));
+    }
+
+    @Test void authenticationFailedStaysFatalInPasswordMode() {
+        FlinkWriteException e1 = assertThrows(FlinkWriteException.class,
+                () -> Utils.handleException(new ServerException(516, "Authentication failed", 403, "q1"), false));
+        assertFalse(e1 instanceof RetriableException);
+        FlinkWriteException e2 = assertThrows(FlinkWriteException.class,
+                () -> Utils.handleException(new ServerException(516, "Authentication failed", 403, "q1")));
+        assertFalse(e2 instanceof RetriableException);
+    }
+
+    @Test void authenticationFailureClassification() {
+        org.junit.jupiter.api.Assertions.assertTrue(Utils.isAuthenticationFailure(new ServerException(516, "auth", 403, "q1")));
+        org.junit.jupiter.api.Assertions.assertTrue(Utils.isAuthenticationFailure(
+                new RuntimeException(new ServerException(720, "expired", 403, "q1"))));
+        assertFalse(Utils.isAuthenticationFailure(new ServerException(497, "denied", 403, "q1")));
+        assertFalse(Utils.isAuthenticationFailure(ioException("Read timed out after 5000ms")));
+    }
+
+    @Test void accessDeniedStaysFatalInDelegationTokenMode() {
+        FlinkWriteException e = assertThrows(FlinkWriteException.class,
+                () -> Utils.handleException(new ServerException(497, "Not enough privileges", 403, "q1"), true));
+        assertFalse(e instanceof RetriableException);
     }
 }

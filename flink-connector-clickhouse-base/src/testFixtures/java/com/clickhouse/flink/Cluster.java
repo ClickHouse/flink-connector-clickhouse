@@ -16,7 +16,10 @@ import org.testcontainers.utility.MountableFile;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class Cluster {
 
@@ -40,6 +43,8 @@ public class Cluster {
         private String targetPath;
         private Network network;
         private String sharedStateHostPath;
+        private final List<String> libJars = new ArrayList<>();
+        private final Map<String, String> flinkProperties = new LinkedHashMap<>();
 
         public Builder() {
             taskManagers = 1;
@@ -84,12 +89,25 @@ public class Cluster {
             return this;
         }
 
+        /** Copies a jar into /opt/flink/lib/ on the JobManager and every TaskManager (e.g. the delegation token jar). */
+        public Builder withLibJar(String hostPath) {
+            this.libJars.add(hostPath);
+            return this;
+        }
+
+        /** Extra Flink configuration, appended to FLINK_PROPERTIES on every container. */
+        public Builder withFlinkProperty(String key, String value) {
+            this.flinkProperties.put(key, value);
+            return this;
+        }
+
         public Cluster build() {
             // when we are not specifying a network we should create one
             if (network == null) {
                 network = Network.newNetwork();
             }
-            Cluster cluster = new Cluster(flinkVersion, taskManagers, sourcePath, dataFilename, targetPath, network, sharedStateHostPath);
+            Cluster cluster = new Cluster(flinkVersion, taskManagers, sourcePath, dataFilename, targetPath, network,
+                    sharedStateHostPath, libJars, flinkProperties);
             return cluster;
         }
 
@@ -100,6 +118,13 @@ public class Cluster {
     }
 
     public Cluster(String flinkVersion, int taskManagers, String sourcePath, String dataFilename, String targetPath, Network network, String sharedStateHostPath) {
+        this(flinkVersion, taskManagers, sourcePath, dataFilename, targetPath, network, sharedStateHostPath,
+                Collections.emptyList(), Collections.emptyMap());
+    }
+
+    public Cluster(String flinkVersion, int taskManagers, String sourcePath, String dataFilename, String targetPath,
+                   Network network, String sharedStateHostPath, List<String> libJars,
+                   Map<String, String> extraFlinkProperties) {
         boolean hasDataFile = sourcePath != null;
         MountableFile mountableFile = hasDataFile ? MountableFile.forHostPath(sourcePath + dataFilename) : null;
         String dataFileInContainer = hasDataFile ? String.format("%s/%s", targetPath, dataFilename) : null;
@@ -115,6 +140,7 @@ public class Cluster {
             flinkProps.append("\nstate.checkpoints.dir: file://").append(CONTAINER_STATE_DIR).append("/checkpoints");
             flinkProps.append("\nstate.savepoints.dir: file://").append(CONTAINER_SAVEPOINT_DIR);
         }
+        extraFlinkProperties.forEach((key, value) -> flinkProps.append('\n').append(key).append(": ").append(value));
         String flinkPropsValue = flinkProps.toString();
 
         containerJobManager = new GenericContainer<>(FLINK_IMAGE)
@@ -130,6 +156,7 @@ public class Cluster {
         if (sharedStateHostPath != null) {
             containerJobManager.withFileSystemBind(sharedStateHostPath, CONTAINER_STATE_DIR);
         }
+        copyLibJars(containerJobManager, libJars);
         for (int i = 0; i < taskManagers; i++) {
             GenericContainer<?> containerTaskManager = new GenericContainer<>(FLINK_IMAGE)
                     .withCommand("taskmanager")
@@ -142,6 +169,7 @@ public class Cluster {
             if (sharedStateHostPath != null) {
                 containerTaskManager.withFileSystemBind(sharedStateHostPath, CONTAINER_STATE_DIR);
             }
+            copyLibJars(containerTaskManager, libJars);
             containerTaskManagerList.add(containerTaskManager);
         }
 
@@ -152,6 +180,12 @@ public class Cluster {
             containerTaskManagerList.get(i).start();
         }
         // TODO: add strategy for wait
+    }
+
+    private static void copyLibJars(GenericContainer<?> container, List<String> libJars) {
+        for (String jar : libJars) {
+            container.withCopyFileToContainer(MountableFile.forHostPath(jar), "/opt/flink/lib/" + new File(jar).getName());
+        }
     }
 
     public int getDashboardPort() {

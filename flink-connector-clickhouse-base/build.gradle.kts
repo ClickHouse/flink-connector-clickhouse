@@ -45,6 +45,10 @@ dependencies {
         exclude(group = "at.yawk.lz4", module = "lz4-java")
     }
 
+    // Delegation tokens: compile against the token module but never bundle it (it is deployed to Flink's lib/).
+    compileOnly(project(":flink-connector-clickhouse-token"))
+    testImplementation(project(":flink-connector-clickhouse-token"))
+
     // For testing
     testFixturesImplementation("com.clickhouse:client-v2:${clickhouseVersion}:all") {
         exclude(group = "org.lz4", module = "lz4-java")
