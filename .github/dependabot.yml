@@ -1,4 +1,4 @@
-# Dependabot version updates for the project's dependencies (connector build and examples).
+# Dependabot version updates for the connector's own build. Examples are out of scope.
 # Options: https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
 #
 # The ignore rules below skip only minor and major updates, so patch releases
@@ -27,40 +27,5 @@ updates:
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
       # Tests are built for Scala 2.13 (scalatest_2.13). A Scala minor or major
       # version change breaks binary compatibility.
-      - dependency-name: "org.scala-lang:*"
-        update-types: ["version-update:semver-minor", "version-update:semver-major"]
-
-  # Maven examples, one standalone project per directory.
-  - package-ecosystem: "maven"
-    directories:
-      - "/examples/maven/*/*"
-    schedule:
-      interval: "monthly"
-    cooldown:
-      default-days: 7
-    groups:
-      maven-examples:
-        patterns: ["*"]
-    ignore:
-      # flink-v1.7 examples stay on Flink 1.17, flink-v2 examples on the Flink
-      # version the -2.0.0 module targets.
-      - dependency-name: "org.apache.flink:*"
-        update-types: ["version-update:semver-minor", "version-update:semver-major"]
-
-  # sbt examples, one standalone project per directory.
-  - package-ecosystem: "sbt"
-    directories:
-      - "/examples/sbt/*/*"
-    schedule:
-      interval: "monthly"
-    cooldown:
-      default-days: 7
-    groups:
-      sbt-examples:
-        patterns: ["*"]
-    ignore:
-      - dependency-name: "org.apache.flink:*"
-        update-types: ["version-update:semver-minor", "version-update:semver-major"]
-      # Examples are built for Scala 2.12.
       - dependency-name: "org.scala-lang:*"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
