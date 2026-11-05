@@ -226,7 +226,8 @@ class ClickHouseDynamicTableSinkFactoryTest {
     /** client-v2 wraps every failed DESCRIBE in a constant message; the server's reason must surface. */
     @Test void introspectionErrorsSurfaceTheServerReason() {
         ServerException server = new ServerException(60,
-                "Code: 60. DB::Exception: Table db.evnts does not exist. (UNKNOWN_TABLE)");
+                "Code: 60. DB::Exception: Table db.evnts does not exist. (UNKNOWN_TABLE)",
+                500, "test-query-id");
         assertEquals(server.getMessage(), ClickHouseDynamicTableSinkFactory.rootMessage(
                 new ClientException("Failed to get table schema", server)));
         assertEquals("Connection refused", ClickHouseDynamicTableSinkFactory.rootMessage(
