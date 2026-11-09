@@ -35,6 +35,7 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
@@ -135,7 +136,10 @@ public class ClickHouseAsyncWriter<InputT>
                         .setMaxTimeInBufferMS(maxTimeInBufferMS)
                         .setMaxRecordSizeInBytes(maxRecordSizeInBytes);
         if (clickHouseClientConfig.getRateLimitingStrategySupplier() != null) {
-            builder.setRateLimitingStrategy(clickHouseClientConfig.getRateLimitingStrategySupplier().get());
+            builder.setRateLimitingStrategy(
+                    Objects.requireNonNull(
+                            clickHouseClientConfig.getRateLimitingStrategySupplier().get(),
+                            "rateLimitingStrategySupplier returned null"));
         }
         return builder.build();
     }

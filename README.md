@@ -368,6 +368,9 @@ A supplier is required (rather than a strategy instance) because `RateLimitingSt
 `Serializable` — the `SerializableSupplier` is what gets shipped to task managers, and each writer calls
 `get()` locally to construct its own strategy instance.
 
+Note: once a strategy is supplied, the sink's `maxInFlightRequests` no longer applies (only the default
+strategy enforces it). Set any in-flight limit on your strategy instead, as in the example above.
+
 ### Sink Metrics
 
 Our Sink exposes additional metrics on top of Flink's existing metrics:

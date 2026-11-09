@@ -76,6 +76,7 @@ public class ClickHouseClientConfig implements Serializable {
         copy.setRetryPolicy(retryPolicy);
         copy.setBatchFailureStrategy(batchFailureStrategy);
         copy.setApi(api);
+        copy.setRateLimitingStrategySupplier(rateLimitingStrategySupplier);
         return copy;
     }
 
@@ -223,6 +224,10 @@ public class ClickHouseClientConfig implements Serializable {
      * {@link RateLimitingStrategy} is not {@link Serializable} — the supplier is what gets
      * shipped to task managers, and each writer calls {@code get()} locally to construct its own
      * strategy instance.
+     *
+     * <p>Note: once a strategy is supplied, the sink's {@code maxInFlightRequests} no longer
+     * applies; only the default strategy enforces it. Configure any in-flight limit on the
+     * supplied strategy itself.
      */
     public void setRateLimitingStrategySupplier(
             SerializableSupplier<RateLimitingStrategy> rateLimitingStrategySupplier) {
