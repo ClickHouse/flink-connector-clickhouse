@@ -74,6 +74,13 @@ subprojects {
         toolVersion = "0.8.15"
     }
 
+    // Calcite 1.29 (Flink 1.17) asserts on JaCoCo's synthetic $jacocoInit in its metadata handlers, so only our own classes get probes.
+    tasks.withType<Test>().configureEach {
+        extensions.configure<JacocoTaskExtension> {
+            includes = listOf("org.apache.flink.connector.clickhouse.*", "com.clickhouse.config.*", "com.clickhouse.utils.*")
+        }
+    }
+
     tasks.withType<JacocoReport>().configureEach {
         reports.xml.required.set(true)
     }
