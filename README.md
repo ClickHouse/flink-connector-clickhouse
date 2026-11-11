@@ -238,16 +238,17 @@ planning naming the column and both types.
 | `TIMESTAMP(p)` / `TIMESTAMP_LTZ(p)` | `DateTime` (`p = 0`), `DateTime64(s >= p)` | range-checked per record: `DateTime` 1970-01-01..2106-02-07, `DateTime64` 1900-01-01..2299-12-31 (2262-04-11 at scale 9). Flink's default `TIMESTAMP` is precision 6 — declare `TIMESTAMP(3)` for `DateTime64(3)`. `TIMESTAMP` is a wall clock in `sink.timezone`; `TIMESTAMP_LTZ` an instant |
 | `ARRAY<t>` | `Array(T)` | nullable elements need `Array(Nullable(T))` |
 | `MAP<k, v>` | `Map(K, V)` | string/integer/decimal keys except `UInt64`; nullable values need `Map(K, Nullable(V))` |
-| `MULTISET<t>` | `Map(T, I)` for any integer `I` | counts become the values; the value type must not be `Nullable`. A count is a non-negative `INT`, so `Int32`/`UInt32` and wider always fit; `Int8`, `Int16`, `UInt8`, `UInt16` are range-checked per record and rejected under `sink.strict-numeric-mapping` |
+| `MULTISET<t>` | `Map(T, I)` for any integer `I` | counts become the values; `I` may be `Nullable`. A count is a non-negative `INT`, so `Int32`/`UInt32` and wider always fit; `Int8`, `Int16`, `UInt8`, `UInt16` are range-checked per record and rejected under `sink.strict-numeric-mapping` |
 | `ROW<...>` | `Tuple(...)` | positional — a ROW whose field names are a named Tuple's element names in another order is rejected at planning; nullable fields need `Nullable` elements |
 
 Unsupported: `BINARY`/`VARBINARY`, `TIME`, `TIMESTAMP WITH TIME ZONE`, `INTERVAL`; ClickHouse
 `Enum` (#43), `Variant` (#60), `Time` (#91), `IPv4/6`, `Dynamic`, geo — exclude such columns
 and let server defaults fill them.
 
-Everywhere: nullable Flink columns need `Nullable(...)` targets — except `Nullable(UInt8/16/32/64)`,
-blocked until issue #144 — and composites must be `NOT NULL`. `LowCardinality` is transparent;
-`SimpleAggregateFunction(f, T)` matches as `T`, except as a `Map` key.
+Everywhere: nullable Flink columns need `Nullable(...)` targets — except top-level
+`Nullable(UInt8/16/32/64)` columns, blocked until issue #144 — and composites must be `NOT NULL`
+(a nested `ROW` may be nullable against ClickHouse's experimental `Nullable(Tuple(...))`).
+`LowCardinality` is transparent; `SimpleAggregateFunction(f, T)` matches as `T`, except as a `Map` key.
 
 Notes for SQL users:
 - Operator names are planner-generated (e.g. `Sink: ch_events[3]`), which affects metric

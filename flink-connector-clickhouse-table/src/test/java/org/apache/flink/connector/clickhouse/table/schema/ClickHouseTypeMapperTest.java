@@ -499,13 +499,26 @@ class ClickHouseTypeMapperTest {
     }
 
     @Test
-    void multisetRejectsNonIntegerAndNullableCountColumns() {
-        for (String countType : new String[] {"String", "Float64", "Nullable(UInt64)"}) {
+    void multisetRejectsNonIntegerCountColumns() {
+        for (String countType : new String[] {"String", "Float64", "Nullable(String)"}) {
             TypeMappingException e = assertThrows(TypeMappingException.class,
                     () -> ClickHouseTypeMapper.converterFor(
                             multisetOfString(), col("Map(String, " + countType + ")"), LENIENT, "c"),
                     countType);
-            assertTrue(e.getMessage().contains("non-Nullable integer Map value type"), e.getMessage());
+            assertTrue(e.getMessage().contains("integer Map value type"), e.getMessage());
+        }
+    }
+
+    /** A count is never null, so a Nullable or SimpleAggregateFunction count column takes it as its inner integer. */
+    @Test
+    void multisetWritesCountsIntoNullableAndSimpleAggregateFunctionColumns() {
+        for (String countType : new String[] {"Nullable(UInt64)", "SimpleAggregateFunction(sum, UInt64)",
+                "SimpleAggregateFunction(anyLast, Nullable(UInt64))"}) {
+            ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                    multisetOfString(), col("Map(String, " + countType + ")"), LENIENT, "c");
+            Map<Object, Object> counts = new LinkedHashMap<>();
+            counts.put(StringData.fromString("a"), 2);
+            assertEquals(Map.of("a", 2L), converter.convert(new GenericMapData(counts)), countType);
         }
     }
 
@@ -613,6 +626,26 @@ class ClickHouseTypeMapperTest {
         expected.put("a", 1);
         expected.put("b", null);
         assertEquals(expected, nullable.convert(new GenericMapData(entries)));
+    }
+
+    /** ClickHouse's experimental Nullable(Tuple) takes a null ROW as a Map value or a Tuple element. */
+    @Test
+    void nullableTuplesInsideMapsAndTuplesTakeNullRows() {
+        RowType nullableRow = new RowType(true, rowOf(new IntType(false)).getFields());
+        VarCharType key = new VarCharType(false, VarCharType.MAX_LENGTH);
+
+        ValueConverter map = ClickHouseTypeMapper.converterFor(
+                new MapType(false, key, nullableRow), col("Map(String, Nullable(Tuple(Int32)))"), LENIENT, "c");
+        Map<Object, Object> entries = new LinkedHashMap<>();
+        entries.put(StringData.fromString("a"), null);
+        entries.put(StringData.fromString("b"), GenericRowData.of(1));
+        Map<?, ?> payload = (Map<?, ?>) map.convert(new GenericMapData(entries));
+        assertTrue(payload.containsKey("a") && payload.get("a") == null, payload.toString());
+        assertArrayEquals(new Object[]{1}, (Object[]) payload.get("b"));
+
+        ValueConverter row = ClickHouseTypeMapper.converterFor(
+                rowOf(nullableRow, new IntType(false)), col("Tuple(Nullable(Tuple(Int32)), Int32)"), LENIENT, "c");
+        assertArrayEquals(new Object[]{null, 7}, (Object[]) row.convert(GenericRowData.of(null, 7)));
     }
 
     /** Binding is positional; the same names in another order is almost certainly a mistake. */
@@ -760,6 +793,14 @@ class ClickHouseTypeMapperTest {
                         mapType, col("Map(SimpleAggregateFunction(max, String), Int32)"), LENIENT, "c"));
         assertTrue(e.getMessage().contains("Map keys of type SimpleAggregateFunction"), e.getMessage());
         assertTrue(e.getMessage().contains("use a plain String key column"), e.getMessage());
+
+        // UInt64 is rejected as a key too, so the message must not suggest it.
+        TypeMappingException unsupportedInner = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(
+                        mapType, col("Map(SimpleAggregateFunction(max, UInt64), Int32)"), LENIENT, "c"));
+        assertTrue(unsupportedInner.getMessage().contains("Map keys of type SimpleAggregateFunction"),
+                unsupportedInner.getMessage());
+        assertFalse(unsupportedInner.getMessage().contains("use a plain"), unsupportedInner.getMessage());
     }
 
     @Test

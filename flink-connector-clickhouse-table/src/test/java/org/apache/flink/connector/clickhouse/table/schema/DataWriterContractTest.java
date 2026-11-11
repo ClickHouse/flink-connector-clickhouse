@@ -5,12 +5,19 @@ import com.clickhouse.data.ClickHouseDataType;
 import com.clickhouse.data.format.BinaryStreamUtils;
 import com.clickhouse.utils.writer.DataWriter;
 
+import org.apache.flink.connector.clickhouse.data.TypeTags;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -119,7 +126,68 @@ class DataWriterContractTest {
         assertEquals(BinaryStreamUtils.DATETIME64_MAX, ClickHouseTypeMapper.DATETIME64_MAX_EPOCH_SECOND);
     }
 
+    /** The mapper admits Nullable Map values and Tuple elements because the client writes their null marker (clickhouse-java#2886). */
+    @Test
+    void nestedNullableValuesCarryANullMarker() throws IOException {
+        assertArrayEquals(bytes(2, 1, 'a', 0, 1, 0, 0, 0, 1, 'b', 1),
+                serialize(scoresWithANull(), column("Map(String, Nullable(Int32))")));
+        assertArrayEquals(bytes(1, 0, 1, 'x'),
+                serialize(new Object[]{null, "x"}, column("Tuple(Nullable(Int32), Nullable(String))")));
+        assertArrayEquals(bytes(1, 1, 'a', 1),
+                serialize(Collections.singletonMap("a", null), column("Map(String, Nullable(Tuple(Int32)))")));
+    }
+
+    /** The mapper matches SimpleAggregateFunction inside composites on its inner type because the client writes it as that type (clickhouse-java#2937). */
+    @Test
+    void simpleAggregateFunctionInsideCompositesWritesAsItsInnerType() throws IOException {
+        assertArrayEquals(bytes(2, 0, 41, 0, 0, 0, 1),
+                serialize(Arrays.asList(41, null), column("Array(SimpleAggregateFunction(anyLast, Nullable(Int32)))")));
+        assertArrayEquals(bytes(1, 3, 0, 0, 0, 0, 0, 0, 0),
+                serialize(new Object[]{null, 3L}, column(
+                        "Tuple(SimpleAggregateFunction(anyLast, Nullable(String)), SimpleAggregateFunction(max, Int64))")));
+        assertArrayEquals(bytes(1, 1, 'a', 2, 0, 0, 0, 0, 0, 0, 0),
+                serialize(Map.of("a", 2L), column("Map(String, SimpleAggregateFunction(sum, Int64))")));
+    }
+
+    /** Canary for the mapper's SimpleAggregateFunction Map-key rejection: when this fails, the client writes such keys and the rejection can go. */
+    @Test
+    void simpleAggregateFunctionMapKeysStayUnwritable() {
+        assertThrows(UnsupportedOperationException.class,
+                () -> serialize(Map.of("k", 1), column("Map(SimpleAggregateFunction(max, String), Int32)")));
+    }
+
+    /** A restored payload skips the mapper, so nested nulls must come back from the checkpoint encoding byte-identical. */
+    @Test
+    void nestedNullsRestoreFromACheckpointToTheSameBytes() throws IOException {
+        assertRestoresToTheSameBytes(scoresWithANull(), "Map(String, Nullable(Int32))");
+        assertRestoresToTheSameBytes(new Object[]{null, "x"}, "Tuple(Nullable(Int32), Nullable(String))");
+        assertRestoresToTheSameBytes(Arrays.asList(41, null), "Array(SimpleAggregateFunction(anyLast, Nullable(Int32)))");
+    }
+
     // ------------------------------------------------------------------------------------
+
+    private static void assertRestoresToTheSameBytes(Object value, String typeExpression) throws IOException {
+        ByteArrayOutputStream checkpoint = new ByteArrayOutputStream();
+        TypeTags.write(value, new DataOutputStream(checkpoint));
+        Object restored = TypeTags.read(
+                new DataInputStream(new ByteArrayInputStream(checkpoint.toByteArray())), TypeTags.V3);
+        assertArrayEquals(serialize(value, column(typeExpression)), serialize(restored, column(typeExpression)));
+    }
+
+    private static Map<String, Object> scoresWithANull() {
+        Map<String, Object> scores = new LinkedHashMap<>();
+        scores.put("a", 1);
+        scores.put("b", null);
+        return scores;
+    }
+
+    private static byte[] bytes(int... values) {
+        byte[] bytes = new byte[values.length];
+        for (int i = 0; i < values.length; i++) {
+            bytes[i] = (byte) values[i];
+        }
+        return bytes;
+    }
 
     private static final Object PROBE = new Object();
 

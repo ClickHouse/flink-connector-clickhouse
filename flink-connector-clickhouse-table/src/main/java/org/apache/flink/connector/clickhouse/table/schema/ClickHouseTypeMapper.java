@@ -738,9 +738,9 @@ public final class ClickHouseTypeMapper {
 
     private static ClickHouseDataType checkMultisetCountTarget(ClickHouseColumn target) {
         ClickHouseColumn valueColumn = unwrapSimpleAggregateFunction(target.getValueInfo());
-        if (!INTEGER_TARGETS.contains(valueColumn.getDataType()) || valueColumn.isNullable()) {
+        if (!INTEGER_TARGETS.contains(valueColumn.getDataType())) {
             throw TypeMappingException.mismatch(String.format(
-                    "MULTISET counts require a non-Nullable integer Map value type "
+                    "MULTISET counts require an integer Map value type "
                     + "(Int8..Int256, UInt8..UInt256), found %s",
                     target.getValueInfo().getOriginalTypeName()));
         }
@@ -792,11 +792,13 @@ public final class ClickHouseTypeMapper {
                     + "use an Int64 or UInt128 key column instead");
         }
         if (keyColumn.getDataType() == ClickHouseDataType.SimpleAggregateFunction) {
+            ClickHouseColumn inner = unwrapSimpleAggregateFunction(keyColumn);
             throw TypeMappingException.mismatch(String.format(
                     "ClickHouse Map keys of type SimpleAggregateFunction are not supported by the sink — "
-                    + "the client serializer unwraps SimpleAggregateFunction everywhere except in a Map "
-                    + "key; use a plain %s key column instead",
-                    unwrapSimpleAggregateFunction(keyColumn).getOriginalTypeName()));
+                    + "the client serializer unwraps SimpleAggregateFunction everywhere except in a Map key%s",
+                    STRING_RESTORABLE_MAP_KEY_TARGETS.contains(inner.getDataType())
+                            ? "; use a plain " + inner.getOriginalTypeName() + " key column instead"
+                            : ""));
         }
         throw TypeMappingException.mismatch(String.format(
                 "ClickHouse Map key type %s is not supported by the sink — map keys are "
