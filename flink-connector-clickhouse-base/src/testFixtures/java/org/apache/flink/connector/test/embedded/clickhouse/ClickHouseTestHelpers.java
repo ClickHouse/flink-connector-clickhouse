@@ -36,11 +36,15 @@ public class ClickHouseTestHelpers {
     }
 
     public static Client getClient(String host, int port, boolean ssl, String username, String password) {
-        return new Client.Builder().addEndpoint(Protocol.HTTP, host, port, ssl)
+        Client.Builder builder = new Client.Builder().addEndpoint(Protocol.HTTP, host, port, ssl)
                                    .setUsername(username)
                                    .setPassword(password)
-                                   .setConnectTimeout(TIMEOUT_VALUE, TIMEOUT_UNIT.toChronoUnit())
-                                   .build();
+                                   .setConnectTimeout(TIMEOUT_VALUE, TIMEOUT_UNIT.toChronoUnit());
+        if (isCloud()) {
+            // Cloud reads are eventually consistent across replicas; this makes a SELECT right after an INSERT see it.
+            builder.serverSetting("select_sequential_consistency", "1");
+        }
+        return builder.build();
     }
 
     public static boolean ping(String host, int port, boolean ssl, String username, String password) {
