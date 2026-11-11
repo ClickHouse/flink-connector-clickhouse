@@ -192,7 +192,7 @@ class ClickHouseDynamicTableSinkFactoryTest {
                         "clickhouse.client.http_header_X-Trace", "abc", "clickhouse.client.clickhouse_setting_max_threads", "2")));
     }
 
-    /** client-v2 only WARN-logs unknown keys, so a typo would be accepted at planning and ignored at runtime. */
+    /** The client is built with unknown keys ignored, so a typo must fail here, with the supported keys listed. */
     @Test void clientPassthroughRejectsUnknownKeysListingTheSupportedOnes() {
         ValidationException ex = assertThrows(ValidationException.class,
                 () -> ClickHouseDynamicTableSinkFactory.clientOptions(Map.of("clickhouse.client.connect_timeout", "1000")));
@@ -226,7 +226,7 @@ class ClickHouseDynamicTableSinkFactoryTest {
     /** client-v2 wraps every failed DESCRIBE in a constant message; the server's reason must surface. */
     @Test void introspectionErrorsSurfaceTheServerReason() {
         ServerException server = new ServerException(60,
-                "Code: 60. DB::Exception: Table db.evnts does not exist. (UNKNOWN_TABLE)");
+                "Code: 60. DB::Exception: Table db.evnts does not exist. (UNKNOWN_TABLE)", 404, "");
         assertEquals(server.getMessage(), ClickHouseDynamicTableSinkFactory.rootMessage(
                 new ClientException("Failed to get table schema", server)));
         assertEquals("Connection refused", ClickHouseDynamicTableSinkFactory.rootMessage(

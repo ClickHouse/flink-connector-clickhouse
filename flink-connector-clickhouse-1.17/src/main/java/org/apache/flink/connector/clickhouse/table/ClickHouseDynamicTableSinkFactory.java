@@ -350,7 +350,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
         }
     }
 
-    /** The client-v2 passthrough; the client only WARN-logs unknown keys, so they are rejected here. */
+    /** The client-v2 passthrough; the client is built with unknown keys ignored, so a typo is caught here, naming the supported keys. */
     static Map<String, String> clientOptions(Map<String, String> tableOptions) {
         Map<String, String> options = prefixedOptions(tableOptions, CLIENT_OPTIONS_PREFIX);
         options.keySet().forEach(ClickHouseDynamicTableSinkFactory::checkClientOptionKey);
