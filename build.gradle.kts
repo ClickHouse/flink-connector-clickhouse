@@ -11,7 +11,7 @@ val sinkVersion by extra(getProjectVersion())
 val flinkVersion by extra("1.18.0")
 // Overridable so CI (nightly-java-client.yml) can swap in a locally built client:
 //   ./gradlew test -Pclickhouse_client_v2_version=X.Y.Z-SNAPSHOT
-val clickhouseVersion by extra(providers.gradleProperty("clickhouse_client_v2_version").getOrElse("0.9.5"))
+val clickhouseVersion by extra(providers.gradleProperty("clickhouse_client_v2_version").getOrElse("0.11.1"))
 val junitVersion by extra("5.8.2")
 val lz4Version by extra("1.12.0")
 
@@ -72,6 +72,13 @@ subprojects {
     // Coverage for Codecov: <module>:jacocoTestReport -> build/reports/jacoco/test/jacocoTestReport.xml
     configure<JacocoPluginExtension> {
         toolVersion = "0.8.15"
+    }
+
+    // Calcite 1.29 (Flink 1.17) asserts on JaCoCo's synthetic $jacocoInit in its metadata handlers, so only our own classes get probes.
+    tasks.withType<Test>().configureEach {
+        extensions.configure<JacocoTaskExtension> {
+            includes = listOf("org.apache.flink.connector.clickhouse.*", "com.clickhouse.config.*", "com.clickhouse.utils.*")
+        }
     }
 
     tasks.withType<JacocoReport>().configureEach {
