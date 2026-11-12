@@ -3,7 +3,7 @@ plugins {
     java
     signing
     id("com.gradleup.nmcp") version "0.0.8"
-    id("com.gradleup.shadow") version "9.0.2"
+    id("com.gradleup.shadow") version "9.6.1"
 }
 
 val versionFile by extra("version.txt")

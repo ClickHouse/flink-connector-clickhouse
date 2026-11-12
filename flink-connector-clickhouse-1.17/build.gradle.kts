@@ -14,10 +14,10 @@ plugins {
     signing
     `java-test-fixtures`
     id("com.gradleup.nmcp") version "0.0.8"
-    id("com.gradleup.shadow") version "9.0.2"
+    id("com.gradleup.shadow") version "9.6.1"
 }
 
-val scalaVersion = "2.13.12"
+val scalaVersion = "2.13.18"
 val sinkVersion: String by rootProject.extra
 val clickhouseVersion: String by rootProject.extra
 
@@ -85,9 +85,9 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers:${project.extra["testContainersVersion"]}")
     testImplementation("org.testcontainers:clickhouse:${project.extra["testContainersClickHouseVersion"]}")
     testImplementation("org.scala-lang:scala-library:$scalaVersion")
-    testImplementation("org.scalatest:scalatest_2.13:3.2.19")
+    testImplementation("org.scalatest:scalatest_2.13:3.2.20")
     testImplementation("org.json:json:20230227")
-    testRuntimeOnly("org.scalatestplus:junit-4-13_2.13:3.2.18.0")
+    testRuntimeOnly("org.scalatestplus:junit-4-13_2.13:3.2.20.0")
 }
 
 sourceSets {
