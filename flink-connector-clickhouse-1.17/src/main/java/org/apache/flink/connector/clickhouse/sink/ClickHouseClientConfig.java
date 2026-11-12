@@ -15,6 +15,7 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -190,8 +191,10 @@ public class ClickHouseClientConfig implements Serializable {
         }
         clientBuilder
                 .setDefaultDatabase(database)
-                .setClientName(productName())
+                .setClientName(productName(), clientMetadata())
                 .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true")
+                // Unknown client keys only WARN; a DataStream setOptions copy of this key wins, the Table API validates keys itself.
+                .setOption(ClientConfigProperties.IGNORE_UNKNOWN_CONFIG_KEY, "true")
                 .setOptions(options);
         if (authMode == AuthMode.DELEGATION_TOKEN) {
             clientBuilder.useBearerTokenAuth(delegationTokenAuth.getAppliedCredentials().getJwt());
@@ -207,8 +210,15 @@ public class ClickHouseClientConfig implements Serializable {
     }
 
     private String productName() {
-        return String.format("Flink-ClickHouse-Sink/%s (fv:flink/%s, lv:scala/%s, api:%s)", ClickHouseSinkVersion.getVersion(),
-                EnvironmentInformation.getVersion(), EnvironmentInformation.getScalaVersion(), api.name().toLowerCase(Locale.ROOT));
+        return "Flink-ClickHouse-Sink/" + ClickHouseSinkVersion.getVersion();
+    }
+
+    /** Goes into the User-Agent comment group ahead of the client's own lv, os and hc entries. */
+    private Map<String, String> clientMetadata() {
+        Map<String, String> metadata = new LinkedHashMap<>();
+        metadata.put("fv", "flink/" + EnvironmentInformation.getVersion());
+        metadata.put("api", api.name().toLowerCase(Locale.ROOT));
+        return metadata;
     }
 
     public Client createClient(String database) {

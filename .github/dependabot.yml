@@ -1,0 +1,31 @@
+# Dependabot version updates for the connector's own build. Examples are out of scope.
+# Options: https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+#
+# The ignore rules below skip only minor and major updates, so patch releases
+# (including security fixes) still get PRs.
+
+version: 2
+updates:
+  # Connector build: root Gradle project with all modules from settings.gradle.kts,
+  # plus Gradle plugins and the Gradle wrapper.
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    groups:
+      gradle-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Flink versions set the supported range (1.17.2 floor in -1.17 and -table,
+      # 2.0.0 default in -2.0.0). Move them on purpose, not through Dependabot.
+      - dependency-name: "org.apache.flink:*"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # Tests are built for Scala 2.13 (scalatest_2.13). A Scala minor or major
+      # version change breaks binary compatibility.
+      - dependency-name: "org.scala-lang:*"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
