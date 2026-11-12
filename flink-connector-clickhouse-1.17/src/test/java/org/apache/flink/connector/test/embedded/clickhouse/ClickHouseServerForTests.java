@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.testcontainers.clickhouse.ClickHouseContainer;
 
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 
 public class ClickHouseServerForTests {
@@ -31,7 +32,7 @@ public class ClickHouseServerForTests {
             LOG.info("Init ClickHouse Cloud Configuration");
             host = System.getenv("CLICKHOUSE_CLOUD_HOST");
             port = Integer.parseInt(ClickHouseTestHelpers.HTTPS_PORT);
-            database = String.format("flink_connector_test_%s", System.currentTimeMillis());
+            database = String.format("flink_connector_test_%s_%s", System.currentTimeMillis(), UUID.randomUUID().toString().substring(0, 8));
             username = ClickHouseTestHelpers.USERNAME_DEFAULT;
             password = System.getenv("CLICKHOUSE_CLOUD_PASSWORD");
         } else {
