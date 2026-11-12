@@ -69,8 +69,20 @@ public class ClickHouseServerForTests {
     }
 
     public static void tearDown() {
+        dropCloudDatabase();
         if (db != null) {
             db.stop();
+        }
+    }
+
+    private static void dropCloudDatabase() {
+        if (!isCloud || database == null) {
+            return;
+        }
+        try {
+            executeSql(String.format("DROP DATABASE IF EXISTS `%s`", database));
+        } catch (Exception e) {
+            LOG.warn("Failed to drop database {}", database, e);
         }
     }
 
