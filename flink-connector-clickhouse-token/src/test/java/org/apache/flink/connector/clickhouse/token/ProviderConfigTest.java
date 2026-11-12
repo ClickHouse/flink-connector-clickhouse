@@ -236,6 +236,29 @@ class ProviderConfigTest {
     }
 
     @Test
+    void clientAuthMethodDefaultsToPostAndAcceptsBasic() {
+        assertEquals(ProviderConfig.ClientAuthMethod.CLIENT_SECRET_POST, ProviderConfig.parse(oauth()).getClientAuthMethod());
+        Map<String, String> m = oauth();
+        m.put(PREFIX + "oauth.client-auth-method", " Client_Secret_Basic ");
+        assertEquals(ProviderConfig.ClientAuthMethod.CLIENT_SECRET_BASIC, ProviderConfig.parse(m).getClientAuthMethod());
+    }
+
+    @Test
+    void unknownClientAuthMethodIsRejected() {
+        Map<String, String> m = oauth();
+        m.put(PREFIX + "oauth.client-auth-method", "private_key_jwt");
+        IllegalConfigurationException e = assertThrows(IllegalConfigurationException.class, () -> ProviderConfig.parse(m));
+        assertTrue(e.getMessage().contains("client_secret_basic"), e.getMessage());
+    }
+
+    @Test
+    void renewalRatioHonoursFlinksDeprecatedKey() {
+        Map<String, String> m = oauth();
+        m.put("security.kerberos.tokens.renewal.time-ratio", "0.4");
+        assertEquals(0.4, ProviderConfig.parse(m).getRenewalRatio());
+    }
+
+    @Test
     void renewalRatioIsReadFromFlinkConfiguration() {
         assertEquals(0.75, ProviderConfig.parse(oauth()).getRenewalRatio());
         Map<String, String> m = oauth();

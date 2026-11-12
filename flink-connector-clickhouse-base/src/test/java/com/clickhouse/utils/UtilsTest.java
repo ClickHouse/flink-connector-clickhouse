@@ -94,6 +94,18 @@ class UtilsTest {
         assertFalse(Utils.isAuthenticationFailure(ioException("Read timed out after 5000ms")));
     }
 
+    @Test void bareHttp401Or403IsAnAuthenticationFailure() {
+        // No X-ClickHouse-Exception-Code header (e.g. a proxy): client-v2 reports code 0 with the HTTP status.
+        org.junit.jupiter.api.Assertions.assertTrue(Utils.isAuthenticationFailure(new ServerException(0, "Unauthorized", 401, "q1")));
+        org.junit.jupiter.api.Assertions.assertTrue(Utils.isAuthenticationFailure(new ServerException(0, "Forbidden", 403, "q1")));
+        assertFalse(Utils.isAuthenticationFailure(new ServerException(0, "Bad Gateway", 502, "q1")));
+        assertThrows(RetriableException.class,
+                () -> Utils.handleException(new ServerException(0, "Unauthorized", 401, "q1"), true));
+        FlinkWriteException e = assertThrows(FlinkWriteException.class,
+                () -> Utils.handleException(new ServerException(0, "Unauthorized", 401, "q1"), false));
+        assertFalse(e instanceof RetriableException);
+    }
+
     @Test void accessDeniedStaysFatalInDelegationTokenMode() {
         FlinkWriteException e = assertThrows(FlinkWriteException.class,
                 () -> Utils.handleException(new ServerException(497, "Not enough privileges", 403, "q1"), true));

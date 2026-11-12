@@ -52,20 +52,25 @@ public class Utils {
         handleException(e, false);
     }
 
-    /** True if the failure is ClickHouse rejecting the credentials (516 AUTHENTICATION_FAILED, 720 USER_EXPIRED). */
+    /** True for ClickHouse 516/720, or a bare HTTP 401/403 without a ClickHouse code (a proxy in front of it). */
     public static boolean isAuthenticationFailure(Throwable e) {
         Exception rootCause = Utils.getRootCause(e, true);
-        if (!(rootCause instanceof ServerException)) {
-            return false;
+        return rootCause instanceof ServerException && isAuthenticationFailure((ServerException) rootCause);
+    }
+
+    private static boolean isAuthenticationFailure(ServerException e) {
+        int code = e.getCode();
+        if (code == 516 || code == 720) {
+            return true;
         }
-        int code = ((ServerException) rootCause).getCode();
-        return code == 516 || code == 720;
+        int httpStatus = e.getTransportProtocolCode();
+        return code == ServerException.CODE_UNKNOWN && (httpStatus == 401 || httpStatus == 403);
     }
 
     /**
-     * @param delegationTokenMode when {@code true}, authentication failures caused by an expired
-     *     short-lived JWT (516 AUTHENTICATION_FAILED, 720 USER_EXPIRED) are retriable: the next
-     *     attempt picks up the re-obtained token.
+     * @param delegationTokenMode when {@code true}, authentication failures (see
+     *     {@link #isAuthenticationFailure(Throwable)}) are retriable: an expired short-lived JWT is
+     *     replaced by the re-obtained one on the next attempt.
      */
     public static void handleException(Throwable e, boolean delegationTokenMode) {
         LOG.warn("Deciding how to handle exception: {}", e.getLocalizedMessage());
@@ -76,10 +81,10 @@ public class Utils {
             if (serverException.isRetryable()) {
                 throw new RetriableException(e);
             }
-            if (delegationTokenMode && (serverException.getCode() == 516 || serverException.getCode() == 720)) {
-                LOG.error("ClickHouse rejected the delegation token JWT (code {}); retrying with the latest token. "
+            if (delegationTokenMode && isAuthenticationFailure(serverException)) {
+                LOG.error("ClickHouse rejected the delegation token JWT (code {}, HTTP {}); retrying with the latest token. "
                         + "If this repeats, check the identity provider app and the Cloud JWT provider (issuer, audience, JWKS URL).",
-                        serverException.getCode());
+                        serverException.getCode(), serverException.getTransportProtocolCode());
                 throw new RetriableException(e);
             }
             // check if this is batch corruption

@@ -1,6 +1,8 @@
 package org.apache.flink.connector.clickhouse.token;
 
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.IllegalConfigurationException;
+import org.apache.flink.configuration.SecurityOptions;
 import org.apache.flink.util.TimeUtils;
 
 import java.net.URI;
@@ -16,7 +18,6 @@ import java.util.Optional;
 public final class ProviderConfig {
 
     public static final String PREFIX = "security.delegation.token.provider.clickhouse.";
-    static final String RENEWAL_RATIO_KEY = "security.delegation.tokens.renewal.time-ratio";
     /** Hosts allowed over plain http:// without opting in. Literal match only: no DNS lookup. */
     private static final List<String> LOOPBACK_HOSTS = Arrays.asList("localhost", "127.0.0.1", "[::1]");
 
@@ -24,6 +25,7 @@ public final class ProviderConfig {
     private URI tokenEndpoint;
     private String clientId;
     private String clientSecret;
+    private ClientAuthMethod clientAuthMethod;
     private String scope;
     private String audience;
     private boolean allowInsecureHttp;
@@ -32,12 +34,30 @@ public final class ProviderConfig {
     private Duration retryInterval;
     private double renewalRatio;
 
+    /** How the client id and secret reach the token endpoint (RFC 6749 §2.3.1). */
+    public enum ClientAuthMethod {
+        /** In the form body (Entra ID, Auth0). */
+        CLIENT_SECRET_POST("client_secret_post"),
+        /** HTTP Basic, mandatory for servers per RFC 6749 and Okta's default. */
+        CLIENT_SECRET_BASIC("client_secret_basic");
+
+        private final String configValue;
+
+        ClientAuthMethod(String configValue) {
+            this.configValue = configValue;
+        }
+    }
+
     private ProviderConfig() {}
 
-    public static ProviderConfig parse(Map<String, String> conf) {
+    static ProviderConfig parse(Map<String, String> conf) {
+        return parse(Configuration.fromMap(conf));
+    }
+
+    public static ProviderConfig parse(Configuration configuration) {
         ProviderConfig c = new ProviderConfig();
-        c.renewalRatio = conf.containsKey(RENEWAL_RATIO_KEY)
-                ? Double.parseDouble(conf.get(RENEWAL_RATIO_KEY)) : 0.75;
+        c.renewalRatio = configuration.get(SecurityOptions.DELEGATION_TOKENS_RENEWAL_TIME_RATIO);
+        Map<String, String> conf = configuration.toMap();
 
         String endpoint = optional(conf, "oauth.token-endpoint");
         if (endpoint == null) {
@@ -49,6 +69,7 @@ public final class ProviderConfig {
         c.tokenEndpoint = tokenEndpointUri("oauth.token-endpoint", endpoint, c.allowInsecureHttp);
         c.clientId = required(conf, "oauth.client-id");
         c.clientSecret = required(conf, "oauth.client-secret");
+        c.clientAuthMethod = clientAuthMethod(conf, "oauth.client-auth-method");
         c.scope = optional(conf, "oauth.scope");
         c.audience = optional(conf, "oauth.audience");
         c.connectTimeout = positiveDuration(conf, "oauth.connect-timeout", Duration.ofSeconds(10));
@@ -115,6 +136,20 @@ public final class ProviderConfig {
         return duration;
     }
 
+    private static ClientAuthMethod clientAuthMethod(Map<String, String> conf, String key) {
+        String value = optional(conf, key);
+        if (value == null) {
+            return ClientAuthMethod.CLIENT_SECRET_POST;
+        }
+        for (ClientAuthMethod method : ClientAuthMethod.values()) {
+            if (method.configValue.equalsIgnoreCase(value)) {
+                return method;
+            }
+        }
+        throw new IllegalConfigurationException(PREFIX + key + " must be client_secret_post or client_secret_basic, got '"
+                + value + "'");
+    }
+
     private static boolean bool(Map<String, String> conf, String key) {
         String value = optional(conf, key);
         if (value == null || value.equalsIgnoreCase("false")) {
@@ -156,7 +191,7 @@ public final class ProviderConfig {
         }
         if ("http".equalsIgnoreCase(scheme) && !isLoopback(uri) && !allowInsecureHttp) {
             throw new IllegalConfigurationException(PREFIX + key + " must use https:// (got " + displayable(uri)
-                    + "): the client secret is sent to it in the request body. Plain http:// is accepted only for "
+                    + "): the client secret is sent to it. Plain http:// is accepted only for "
                     + "localhost/127.0.0.1/[::1], or when " + PREFIX + "oauth.allow-insecure-http is set to true.");
         }
         return uri;
@@ -171,6 +206,7 @@ public final class ProviderConfig {
     public URI getTokenEndpoint() { return tokenEndpoint; }
     public String getClientId() { return clientId; }
     public String getClientSecret() { return clientSecret; }
+    public ClientAuthMethod getClientAuthMethod() { return clientAuthMethod; }
     public String getScope() { return scope; }
     public String getAudience() { return audience; }
     public boolean isAllowInsecureHttp() { return allowInsecureHttp; }

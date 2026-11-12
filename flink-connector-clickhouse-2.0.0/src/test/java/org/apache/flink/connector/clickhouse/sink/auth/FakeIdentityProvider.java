@@ -36,6 +36,7 @@ final class FakeIdentityProvider implements AutoCloseable {
     private final String clientSecret;
     private final long ttlSeconds;
     private final AtomicInteger issued = new AtomicInteger();
+    private volatile boolean available = true;
 
     FakeIdentityProvider(PrivateKey key, String keyId, String issuer, String audience, String subject,
                          List<String> grants, String clientId, String clientSecret, long ttlSeconds) throws IOException {
@@ -61,11 +62,19 @@ final class FakeIdentityProvider implements AutoCloseable {
         return issued.get();
     }
 
+    /** While unavailable, every token request gets HTTP 503 (an identity provider outage). */
+    void setAvailable(boolean available) {
+        this.available = available;
+    }
+
     private void handle(HttpExchange exchange) throws IOException {
         Map<String, String> form = parseForm(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
         String body;
         int status;
-        if (!"client_credentials".equals(form.get("grant_type"))
+        if (!available) {
+            status = 503;
+            body = "{\"error\":\"temporarily_unavailable\"}";
+        } else if (!"client_credentials".equals(form.get("grant_type"))
                 || !clientId.equals(form.get("client_id")) || !clientSecret.equals(form.get("client_secret"))) {
             status = 401;
             body = "{\"error\":\"invalid_client\"}";

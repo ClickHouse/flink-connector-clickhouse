@@ -41,10 +41,12 @@ jobs:
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
           FLINK_VERSION: ${{ matrix.flink }}
-        # -base's Flink-free tests gate here; no other merge-gating job runs them.
+        # -base's and -token's Flink-free tests gate here; no other merge-gating job runs them.
         run: >-
-          ./gradlew :flink-connector-clickhouse-base:test :flink-connector-clickhouse-1.17:test
-          :flink-connector-clickhouse-base:jacocoTestReport :flink-connector-clickhouse-1.17:jacocoTestReport
+          ./gradlew :flink-connector-clickhouse-base:test :flink-connector-clickhouse-token:test
+          :flink-connector-clickhouse-1.17:test
+          :flink-connector-clickhouse-base:jacocoTestReport :flink-connector-clickhouse-token:jacocoTestReport
+          :flink-connector-clickhouse-1.17:jacocoTestReport
       - name: Upload coverage to Codecov
         # One cell per Flink generation uploads, so each flag gets one upload per commit (see codecov.yml).
         if: matrix.flink == '1.20.2' && matrix.clickhouse == '25.8'
@@ -52,7 +54,7 @@ jobs:
         with:
           use_oidc: true
           disable_search: true
-          files: flink-connector-clickhouse-base/build/reports/jacoco/test/jacocoTestReport.xml,flink-connector-clickhouse-1.17/build/reports/jacoco/test/jacocoTestReport.xml
+          files: flink-connector-clickhouse-base/build/reports/jacoco/test/jacocoTestReport.xml,flink-connector-clickhouse-token/build/reports/jacoco/test/jacocoTestReport.xml,flink-connector-clickhouse-1.17/build/reports/jacoco/test/jacocoTestReport.xml
           flags: flink-1.x
           # A Codecov outage must not fail the tests.
           fail_ci_if_error: false

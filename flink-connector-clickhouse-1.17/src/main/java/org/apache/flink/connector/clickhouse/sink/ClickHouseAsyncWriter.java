@@ -20,6 +20,7 @@ import org.apache.flink.connector.clickhouse.convertor.ColumnBinding;
 import org.apache.flink.connector.clickhouse.data.ClickHousePayload;
 import org.apache.flink.connector.clickhouse.exception.DataCorruptionException;
 import org.apache.flink.connector.clickhouse.exception.FlinkWriteException;
+import org.apache.flink.connector.clickhouse.auth.DelegationTokenAuth;
 import org.apache.flink.connector.clickhouse.auth.ResolvedCredentials;
 import org.apache.flink.connector.clickhouse.exception.RetriableException;
 import org.apache.flink.connector.clickhouse.sink.writer.ExtendedAsyncSinkWriter;
@@ -174,9 +175,15 @@ public class ClickHouseAsyncWriter<InputT>
         }
 
         Client chClient = this.clickHouseClientConfig.createClient();
-        this.clickHouseClientConfig.refreshCredentialsIfChanged();
+        DelegationTokenAuth delegationTokenAuth = this.clickHouseClientConfig.getDelegationTokenAuth();
         // The JWT this batch is sent with (null in password mode); decides whether an auth failure is retried.
-        final ResolvedCredentials usedCredentials = this.clickHouseClientConfig.getAppliedCredentials();
+        final ResolvedCredentials usedCredentials;
+        try {
+            usedCredentials = delegationTokenAuth == null ? null : delegationTokenAuth.awaitUsable(chClient);
+        } catch (IllegalStateException e) {
+            getFatalExceptionCons().accept(new FlinkWriteException(e.getMessage(), e));
+            return;
+        }
         String tableName = clickHouseClientConfig.getTableName();
 
         final ClickHouseFormat format;
@@ -251,7 +258,10 @@ public class ClickHouseAsyncWriter<InputT>
                 response.getWrittenRows(), response.getServerTime(),
                 response.getWrittenBytes(), response.getQueryId(),
                 writeEndTime - writeStartTime);
-        clickHouseClientConfig.onWriteSuccess();
+        DelegationTokenAuth delegationTokenAuth = clickHouseClientConfig.getDelegationTokenAuth();
+        if (delegationTokenAuth != null) {
+            delegationTokenAuth.onWriteSuccess();
+        }
         requestToRetry.accept(Collections.emptyList());
     }
 
@@ -266,7 +276,7 @@ public class ClickHouseAsyncWriter<InputT>
             Utils.handleException(error, clickHouseClientConfig.isDelegationTokenMode());
         } catch (RetriableException e) {
             if (clickHouseClientConfig.isDelegationTokenMode() && Utils.isAuthenticationFailure(error)
-                    && !clickHouseClientConfig.onAuthFailure(usedCredentials)) {
+                    && !clickHouseClientConfig.getDelegationTokenAuth().onAuthFailure(usedCredentials)) {
                 FlinkWriteException fatal = new FlinkWriteException("ClickHouse rejected the delegation token JWT "
                         + "repeatedly and no newer token arrived; check the identity provider app and the Cloud JWT "
                         + "provider (issuer, audience, JWKS URL, roles claim)", error);

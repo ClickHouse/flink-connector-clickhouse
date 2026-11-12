@@ -1,6 +1,5 @@
 package org.apache.flink.connector.clickhouse.sink;
 
-import com.clickhouse.client.api.Client;
 import org.apache.flink.connector.clickhouse.token.ClickHouseCredentials;
 import org.apache.flink.connector.clickhouse.token.ClickHouseCredentialsHolder;
 import org.junit.jupiter.api.AfterEach;
@@ -16,7 +15,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** No ClickHouse server needed: client-v2 builds clients lazily and these tests never send a request. */
+/** No ClickHouse server needed: client-v2 builds clients lazily and these tests never send an insert. */
 class ClickHouseClientConfigDelegationTokenTests {
 
     // Port 1 is never listening: proves no connection is attempted while building the config.
@@ -53,22 +52,7 @@ class ClickHouseClientConfigDelegationTokenTests {
         publish("eyJ.jwt1.sig");
         ClickHouseClientConfig config = ClickHouseClientConfig.forDelegationToken(UNREACHABLE_URL, "db", "events");
         assertNotNull(config.createClient());
-        assertEquals("eyJ.jwt1.sig", config.getAppliedCredentials().getJwt());
-    }
-
-    @Test
-    void refreshSwapsTheJwtOnTheSameClient() {
-        publish("eyJ.jwt1.sig");
-        ClickHouseClientConfig config = ClickHouseClientConfig.forDelegationToken(UNREACHABLE_URL, "db", "events");
-        Client client = config.createClient();
-
-        config.refreshCredentialsIfChanged();
-        assertEquals("eyJ.jwt1.sig", config.getAppliedCredentials().getJwt(), "no change, no swap");
-
-        publish("eyJ.jwt2.sig");
-        config.refreshCredentialsIfChanged();
-        assertSame(client, config.createClient());
-        assertEquals("eyJ.jwt2.sig", config.getAppliedCredentials().getJwt());
+        assertEquals("eyJ.jwt1.sig", config.getDelegationTokenAuth().getAppliedCredentials().getJwt());
     }
 
     @Test
@@ -80,80 +64,17 @@ class ClickHouseClientConfigDelegationTokenTests {
     }
 
     @Test
-    void refreshIsNoOpBeforeClientExists() {
+    void noTokenStateBeforeTheClientExists() {
         publish("eyJ.jwt1.sig");
         ClickHouseClientConfig config = ClickHouseClientConfig.forDelegationToken(UNREACHABLE_URL, "db", "events");
-        config.refreshCredentialsIfChanged();
-        assertNull(config.getAppliedCredentials());
+        assertNull(config.getDelegationTokenAuth());
     }
 
     @Test
-    void sameTokenRejectedRepeatedlyExhaustsTheRetryBudget() {
-        publish("eyJ.jwt1.sig");
-        ClickHouseClientConfig config = ClickHouseClientConfig.forDelegationToken(UNREACHABLE_URL, "db", "events");
+    void passwordModeHasNoTokenState() {
+        ClickHouseClientConfig config = new ClickHouseClientConfig(UNREACHABLE_URL, "default", "pw", "db", "events");
         config.createClient();
-        for (int i = 0; i < ClickHouseClientConfig.MAX_AUTH_FAILURES_PER_TOKEN; i++) {
-            assertTrue(config.onAuthFailure(config.getAppliedCredentials()), "retry " + i);
-        }
-        assertFalse(config.onAuthFailure(config.getAppliedCredentials()), "budget exhausted for the same token");
-    }
-
-    @Test
-    void newerTokenAllowsRetryAndResetsTheBudget() {
-        publish("eyJ.jwt1.sig");
-        ClickHouseClientConfig config = ClickHouseClientConfig.forDelegationToken(UNREACHABLE_URL, "db", "events");
-        config.createClient();
-        org.apache.flink.connector.clickhouse.auth.ResolvedCredentials used = config.getAppliedCredentials();
-        for (int i = 0; i < ClickHouseClientConfig.MAX_AUTH_FAILURES_PER_TOKEN; i++) {
-            config.onAuthFailure(used);
-        }
-        publish("eyJ.jwt2.sig"); // a newer token arrived: the failed request used a stale one
-        assertTrue(config.onAuthFailure(used));
-        for (int i = 0; i < ClickHouseClientConfig.MAX_AUTH_FAILURES_PER_TOKEN; i++) {
-            config.refreshCredentialsIfChanged();
-            assertTrue(config.onAuthFailure(config.getAppliedCredentials()), "fresh budget for the new token, retry " + i);
-        }
-    }
-
-    @Test
-    void successfulWriteResetsTheBudget() {
-        publish("eyJ.jwt1.sig");
-        ClickHouseClientConfig config = ClickHouseClientConfig.forDelegationToken(UNREACHABLE_URL, "db", "events");
-        config.createClient();
-        for (int i = 0; i < ClickHouseClientConfig.MAX_AUTH_FAILURES_PER_TOKEN; i++) {
-            config.onAuthFailure(config.getAppliedCredentials());
-        }
-        config.onWriteSuccess();
-        assertTrue(config.onAuthFailure(config.getAppliedCredentials()));
-    }
-
-    @Test
-    void expiredTokenRejectionsNeverExhaustTheBudget() throws Exception {
-        ClickHouseCredentialsHolder.set(new ClickHouseCredentials("eyJ.short.sig", System.currentTimeMillis() + 300));
-        ClickHouseClientConfig config = ClickHouseClientConfig.forDelegationToken(UNREACHABLE_URL, "db", "events");
-        config.createClient();
-        org.apache.flink.connector.clickhouse.auth.ResolvedCredentials used = config.getAppliedCredentials();
-        Thread.sleep(400); // the token expires while renewal is late (identity provider down)
-        for (int i = 0; i < 10; i++) {
-            assertTrue(config.onAuthFailure(used), "rejection of an expired token is never permanent, attempt " + i);
-        }
-    }
-
-    @Test
-    void reBroadcastOfTheSameJwtDoesNotResetTheBudget() {
-        long validUntil = System.currentTimeMillis() + 60_000;
-        ClickHouseCredentialsHolder.set(new ClickHouseCredentials("eyJ.jwt1.sig", validUntil));
-        ClickHouseClientConfig config = ClickHouseClientConfig.forDelegationToken(UNREACHABLE_URL, "db", "events");
-        config.createClient();
-        org.apache.flink.connector.clickhouse.auth.ResolvedCredentials used = config.getAppliedCredentials();
-        for (int i = 0; i < ClickHouseClientConfig.MAX_AUTH_FAILURES_PER_TOKEN; i++) {
-            assertTrue(config.onAuthFailure(used));
-        }
-        // The JobManager re-sends its last good token after an identity provider failure: not a new token.
-        ClickHouseCredentialsHolder.set(new ClickHouseCredentials("eyJ.jwt1.sig", validUntil));
-        config.refreshCredentialsIfChanged();
-        assertSame(used, config.getAppliedCredentials());
-        assertFalse(config.onAuthFailure(used), "budget still exhausted: the same JWT keeps being rejected");
+        assertNull(config.getDelegationTokenAuth());
     }
 
     @Test
@@ -175,6 +96,18 @@ class ClickHouseClientConfigDelegationTokenTests {
     }
 
     @Test
+    void delegationTokenConfigRejectsCredentialOptions() {
+        ClickHouseClientConfig config = ClickHouseClientConfig.forDelegationToken(UNREACHABLE_URL, "db", "events");
+        for (String key : new String[] {"user", "password", "access_token", "bearer_token", "ssl_authentication",
+                "http_header_AUTHORIZATION", "http_header_Authorization"}) {
+            IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                    () -> config.setOptions(Map.of(key, "x")), key);
+            assertTrue(e.getMessage().contains(key), e.getMessage());
+        }
+        config.setOptions(Map.of("socket_timeout", "1234")); // non-credential options still pass through
+    }
+
+    @Test
     void copyPreservesDelegationTokenMode() {
         ClickHouseClientConfig config = ClickHouseClientConfig.forDelegationToken(UNREACHABLE_URL, "db", "events");
         config.setOptions(Map.of("socket_timeout", "1234"));
@@ -188,7 +121,7 @@ class ClickHouseClientConfigDelegationTokenTests {
 
         publish("eyJ.jwt1.sig");
         assertEquals("1234", copy.createClient().getConfiguration().get("socket_timeout"), "options were copied");
-        assertEquals("eyJ.jwt1.sig", copy.getAppliedCredentials().getJwt());
+        assertEquals("eyJ.jwt1.sig", copy.getDelegationTokenAuth().getAppliedCredentials().getJwt());
     }
 
     @Test
@@ -216,8 +149,8 @@ class ClickHouseClientConfigDelegationTokenTests {
             copy = (ClickHouseClientConfig) in.readObject();
         }
         assertTrue(copy.isDelegationTokenMode());
-        assertNull(copy.getAppliedCredentials());
+        assertNull(copy.getDelegationTokenAuth());
         assertNotNull(copy.createClient());
-        assertEquals("SECRET-JWT-7f3a9c", copy.getAppliedCredentials().getJwt(), "re-resolved from the holder on the TaskManager side");
+        assertEquals("SECRET-JWT-7f3a9c", copy.getDelegationTokenAuth().getAppliedCredentials().getJwt(), "re-resolved from the holder on the TaskManager side");
     }
 }

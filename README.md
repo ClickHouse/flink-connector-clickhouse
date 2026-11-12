@@ -400,11 +400,11 @@ Auth0, Keycloak, …) with a machine-to-machine (client-credentials) app.
    security.delegation.token.provider.clickhouse.oauth.client-secret: <secret>
    security.delegation.token.provider.clickhouse.oauth.scope: api://<client-id>/.default   # optional
    security.delegation.token.provider.clickhouse.oauth.audience: <api identifier>          # optional (Auth0-style)
+   # security.delegation.token.provider.clickhouse.oauth.client-auth-method: client_secret_basic  # optional, see notes
    # security.delegation.token.provider.clickhouse.oauth.allow-insecure-http: true         # optional, see notes
    # security.delegation.token.provider.clickhouse.oauth.connect-timeout: 10s              # optional, default 10s
    # security.delegation.token.provider.clickhouse.oauth.request-timeout: 30s              # optional, default 30s
    # security.delegation.token.provider.clickhouse.oauth.retry-interval: 60s               # optional, default 60s
-   security.ssl.internal.enabled: true
    ```
 4. **Job code:** `ClickHouseClientConfig.forDelegationToken("https://<service>:8443/", database, table)`.
    No username or password. Plain `http://` is rejected.
@@ -412,6 +412,13 @@ Auth0, Keycloak, …) with a machine-to-machine (client-credentials) app.
 Notes:
 - Only the JobManager needs the client secret, and only the JobManager talks to the identity provider. TaskManagers
   only receive short-lived JWTs.
+- Flink sends the JWTs from the JobManager to the TaskManagers over its internal RPC. To keep them off a plaintext
+  network, enable [internal SSL](https://nightlies.apache.org/flink/flink-docs-master/docs/deployment/security/security-ssl/)
+  (`security.ssl.internal.enabled: true`). It needs `security.ssl.internal.keystore` and
+  `security.ssl.internal.truststore` with their passwords, or Flink fails to start.
+- `oauth.client-auth-method` sets how the client id and secret reach the token endpoint: `client_secret_post`
+  (default, in the form body; Entra ID, Auth0) or `client_secret_basic` (HTTP Basic). Okta machine-to-machine apps
+  default to `client_secret_basic` and answer `invalid_client` to the other method.
 - The JobManager log warns if the identity provider's token is missing something ClickHouse Cloud requires.
 - The token endpoint must be `https://` because the client secret is sent to it. Plain `http://` is accepted for
   `localhost`/`127.0.0.1`/`[::1]`, or for any host when `oauth.allow-insecure-http: true` is set (for example a
@@ -425,7 +432,14 @@ Notes:
   until the identity provider recovers. No `security.delegation.tokens.renewal.retry.backoff` tuning is needed
   for the ClickHouse provider. During such an outage Flink also renews other providers' tokens (HDFS, S3) on
   that interval.
+- If the outage outlasts the last JWT, the sink stops sending it: each writer waits up to the delegation token
+  wait timeout (`ClickHouseClientConfig.setDelegationTokenWaitTimeout`, default 60s) for a renewed one, then fails
+  the job with an expiry error and relies on Flink's restart strategy.
 - Tokens apply to the whole Flink cluster: on a session cluster every job shares the same ClickHouse identity.
+- It needs access to the Flink cluster configuration and `lib/`, so managed Flink services that don't expose them
+  (for example Amazon Managed Service for Apache Flink) can't use it.
+- Don't put credentials (`user`, `password`, `access_token`, `bearer_token`, an `Authorization` header) in the
+  client options: in delegation-token mode they are rejected.
 - Keep `org.apache.flink.` in `classloader.parent-first-patterns.default` (Flink's default).
 - Self-managed / OSS ClickHouse doesn't support JWT; keep using username/password there.
 - Delegation tokens are supported by the DataStream sink (`ClickHouseClientConfig.forDelegationToken`).

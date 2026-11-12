@@ -51,6 +51,7 @@ final class OAuthClientCredentialsSource {
     private final URI tokenEndpoint;
     private final String clientId;
     private final String clientSecret;
+    private final ProviderConfig.ClientAuthMethod clientAuthMethod;
     private final String scope;
     private final String audience;
     private final Duration requestTimeout;
@@ -61,9 +62,17 @@ final class OAuthClientCredentialsSource {
     OAuthClientCredentialsSource(URI tokenEndpoint, String clientId, String clientSecret, String scope,
                                 String audience, Duration requestTimeout, Duration initialBackoff, HttpClient http,
                                 Clock clock) {
+        this(tokenEndpoint, clientId, clientSecret, ProviderConfig.ClientAuthMethod.CLIENT_SECRET_POST, scope, audience,
+                requestTimeout, initialBackoff, http, clock);
+    }
+
+    OAuthClientCredentialsSource(URI tokenEndpoint, String clientId, String clientSecret,
+                                ProviderConfig.ClientAuthMethod clientAuthMethod, String scope, String audience,
+                                Duration requestTimeout, Duration initialBackoff, HttpClient http, Clock clock) {
         this.tokenEndpoint = tokenEndpoint;
         this.clientId = clientId;
         this.clientSecret = clientSecret;
+        this.clientAuthMethod = clientAuthMethod;
         this.scope = scope;
         this.audience = audience;
         this.requestTimeout = requestTimeout;
@@ -96,24 +105,30 @@ final class OAuthClientCredentialsSource {
 
     private ClickHouseCredentials obtainOnce() throws IOException, InterruptedException {
         StringBuilder form = new StringBuilder("grant_type=client_credentials");
-        appendParam(form, "client_id", clientId);
-        appendParam(form, "client_secret", clientSecret);
+        HttpRequest.Builder request = HttpRequest.newBuilder(tokenEndpoint);
+        if (clientAuthMethod == ProviderConfig.ClientAuthMethod.CLIENT_SECRET_BASIC) {
+            // RFC 6749 §2.3.1: both parts form-urlencoded before base64.
+            String credentials = formEncode(clientId) + ":" + formEncode(clientSecret);
+            request.header("Authorization",
+                    "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8)));
+        } else {
+            appendParam(form, "client_id", clientId);
+            appendParam(form, "client_secret", clientSecret);
+        }
         if (scope != null) {
             appendParam(form, "scope", scope);
         }
         if (audience != null) {
             appendParam(form, "audience", audience);
         }
-        HttpRequest request = HttpRequest.newBuilder(tokenEndpoint)
-                .timeout(requestTimeout)
+        request.timeout(requestTimeout)
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .header("Accept", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(form.toString(), StandardCharsets.UTF_8))
-                .build();
+                .POST(HttpRequest.BodyPublishers.ofString(form.toString(), StandardCharsets.UTF_8));
         // expires_in is relative to issuance, which is no later than this; counting from the response
         // would credit a slow identity provider's latency to the token's lifetime.
         long requestedAt = clock.millis();
-        HttpResponse<String> response = send(request);
+        HttpResponse<String> response = send(request.build());
         String body = response.body();
         if (response.statusCode() != 200) {
             // The body is deliberately not included: an identity provider or proxy may echo the request,
@@ -380,9 +395,10 @@ final class OAuthClientCredentialsSource {
     }
 
     private static void appendParam(StringBuilder form, String key, String value) {
-        form.append('&')
-                .append(URLEncoder.encode(key, StandardCharsets.UTF_8))
-                .append('=')
-                .append(URLEncoder.encode(value, StandardCharsets.UTF_8));
+        form.append('&').append(formEncode(key)).append('=').append(formEncode(value));
+    }
+
+    private static String formEncode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 }

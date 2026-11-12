@@ -1,7 +1,7 @@
 # Codecov configuration: https://docs.codecov.com/docs/codecovyml-reference
 #
 # Coverage is uploaded by two cells of .github/workflows/tests.yaml, both on ClickHouse 25.8:
-#   flink-1.x  the -base and -1.17 JaCoCo reports from the Flink 1.20.2 job
+#   flink-1.x  the -base, -token and -1.17 JaCoCo reports from the Flink 1.20.2 job
 #   flink-2.x  the -2.0.0 JaCoCo report from the Flink 2.1.0 job
 #
 # Coverage is reported on PRs but never blocks them: both statuses are informational.
@@ -34,6 +34,8 @@ component_management:
   individual_components:
     - component_id: base
       paths: ["flink-connector-clickhouse-base/**"]
+    - component_id: token
+      paths: ["flink-connector-clickhouse-token/**"]
     - component_id: table
       paths: ["flink-connector-clickhouse-table/**"]
     - component_id: flink-1.x

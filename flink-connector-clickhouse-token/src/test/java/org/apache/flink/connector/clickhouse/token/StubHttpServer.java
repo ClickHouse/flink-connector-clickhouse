@@ -20,6 +20,7 @@ final class StubHttpServer implements AutoCloseable {
     volatile String lastBody;
     volatile String lastPath;
     volatile String lastContentType;
+    volatile String lastAuthorization;
     private volatile int status = 200;
     private volatile String responseBody = "";
     private volatile long headerDelayMillis;
@@ -63,6 +64,7 @@ final class StubHttpServer implements AutoCloseable {
     private void handle(HttpExchange exchange) throws IOException {
         lastBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
         lastContentType = exchange.getRequestHeaders().getFirst("Content-Type");
+        lastAuthorization = exchange.getRequestHeaders().getFirst("Authorization");
         lastPath = exchange.getRequestURI().getPath();
         requests.incrementAndGet();
         onRequest.run();

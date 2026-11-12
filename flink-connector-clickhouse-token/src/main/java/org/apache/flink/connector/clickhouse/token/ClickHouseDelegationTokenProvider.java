@@ -47,7 +47,7 @@ public class ClickHouseDelegationTokenProvider implements DelegationTokenProvide
 
     @Override
     public void init(Configuration configuration) {
-        config = ProviderConfig.parse(configuration.toMap());
+        config = ProviderConfig.parse(configuration);
         if (!config.isActive()) {
             LOG.debug("ClickHouse delegation token provider is not configured ({}oauth.token-endpoint not set); inactive",
                     ProviderConfig.PREFIX);
@@ -55,8 +55,8 @@ public class ClickHouseDelegationTokenProvider implements DelegationTokenProvide
         }
         HttpClient http = HttpClient.newBuilder().connectTimeout(config.getConnectTimeout()).build();
         source = new OAuthClientCredentialsSource(config.getTokenEndpoint(), config.getClientId(),
-                config.getClientSecret(), config.getScope(), config.getAudience(), config.getRequestTimeout(), initialBackoff,
-                http, clock);
+                config.getClientSecret(), config.getClientAuthMethod(), config.getScope(), config.getAudience(),
+                config.getRequestTimeout(), initialBackoff, http, clock);
         config.insecureEndpointWarning().ifPresent(LOG::warn);
         LOG.info("ClickHouse delegation token provider initialized: token endpoint {}",
                 ProviderConfig.displayable(config.getTokenEndpoint()));

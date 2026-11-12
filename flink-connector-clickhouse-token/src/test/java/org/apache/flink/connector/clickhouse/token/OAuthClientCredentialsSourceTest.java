@@ -70,6 +70,28 @@ class OAuthClientCredentialsSourceTest {
     }
 
     @Test
+    void clientSecretBasicSendsTheCredentialsInTheAuthorizationHeader() throws Exception {
+        stub.respond(200, "{\"access_token\":\"eyJ.payload.sig\",\"expires_in\":3600}");
+        new OAuthClientCredentialsSource(stub.uri("/oauth2/token"), "flink:app", SECRET,
+                ProviderConfig.ClientAuthMethod.CLIENT_SECRET_BASIC, "api://ch/.default", null, Duration.ofSeconds(30),
+                Duration.ZERO, HttpClient.newHttpClient(), CLOCK).obtain();
+
+        // RFC 6749 §2.3.1: id and secret are form-urlencoded, joined by ':', then base64-encoded.
+        String expected = Base64.getEncoder().encodeToString(
+                "flink%3Aapp:s%26c%2Br%3Dt+%C3%A9".getBytes(StandardCharsets.UTF_8));
+        assertEquals("Basic " + expected, stub.lastAuthorization);
+        assertEquals("grant_type=client_credentials&scope=api%3A%2F%2Fch%2F.default", stub.lastBody,
+                "no credentials in the body");
+    }
+
+    @Test
+    void clientSecretPostSendsNoAuthorizationHeader() throws Exception {
+        stub.respond(200, "{\"access_token\":\"eyJ.payload.sig\",\"expires_in\":3600}");
+        source(null, null).obtain();
+        assertNull(stub.lastAuthorization);
+    }
+
+    @Test
     void acceptsExpiresInAsString() throws Exception {
         stub.respond(200, "{\"access_token\":\"eyJ.payload.sig\",\"expires_in\":\"60\"}");
         assertEquals((1_000_000L + 60L) * 1000L, source(null, null).obtain().getValidUntilMillis());

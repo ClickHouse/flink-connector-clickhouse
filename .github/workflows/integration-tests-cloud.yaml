@@ -82,7 +82,7 @@ jobs:
       - name: Execute Gradle 'integration-test' task
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
-          # Identity provider for DelegationTokenClusterTests (skipped while these secrets are not set).
+          # Identity provider for DelegationTokenClusterTests; PR runs use main's copy of this file (pull_request_target).
           CLICKHOUSE_CLOUD_OAUTH_TOKEN_ENDPOINT: ${{ secrets.FLINK_DT_TOKEN_ENDPOINT }}
           CLICKHOUSE_CLOUD_OAUTH_CLIENT_ID: ${{ secrets.FLINK_DT_CLIENT_ID }}
           CLICKHOUSE_CLOUD_OAUTH_CLIENT_SECRET: ${{ secrets.FLINK_DT_CLIENT_SECRET }}

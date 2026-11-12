@@ -72,4 +72,15 @@ public final class DelegationTokenBridge {
             Thread.sleep(POLL_MILLIS);
         }
     }
+
+    /** Waits up to {@code timeout} for a token other than {@code previous}; returns the current one either way. */
+    public static ResolvedCredentials awaitOther(ResolvedCredentials previous, Duration timeout) throws InterruptedException {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        ResolvedCredentials credentials = current();
+        while (credentials == previous && System.nanoTime() < deadline) {
+            Thread.sleep(Math.min(POLL_MILLIS, Math.max(1, (deadline - System.nanoTime()) / 1_000_000)));
+            credentials = current();
+        }
+        return credentials;
+    }
 }

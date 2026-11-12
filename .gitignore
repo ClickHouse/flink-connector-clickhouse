@@ -85,3 +85,7 @@ nb-configuration.xml
 ## Example data (downloaded by the user per examples/README.md, ~500 MB)
 ##############################
 examples/data/
+##############################
+## Agent planning output (superpowers tooling)
+##############################
+docs/superpowers/

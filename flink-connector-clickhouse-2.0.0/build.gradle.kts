@@ -141,6 +141,11 @@ val checkCrossVersionCopiesInSync by tasks.registering {
         "src/test/java/org/apache/flink/connector/clickhouse/sink/ClickHouseAsyncSinkBuilderTest.java",
         "src/test/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSinkFactoryTest.java",
         "src/test/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSinkTest.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/sink/ClickHouseClientConfigDelegationTokenTests.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/sink/auth/ClickHouseDelegationTokenTests.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/sink/auth/ClickHouseDelegationTokenCloudRealIdpTests.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/sink/auth/FakeIdentityProvider.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/sink/auth/FakeJwtClickHouseServer.java",
     ).map { file(it) to project(":flink-connector-clickhouse-1.17").file(it) }
     inputs.files(copies.flatMap { listOf(it.first, it.second) })
     doLast {

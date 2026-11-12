@@ -5,8 +5,7 @@ import com.clickhouse.client.api.ClientConfigProperties;
 import com.clickhouse.config.BatchFailureStrategy;
 import com.clickhouse.config.RetryPolicy;
 import org.apache.flink.connector.clickhouse.auth.AuthMode;
-import org.apache.flink.connector.clickhouse.auth.DelegationTokenBridge;
-import org.apache.flink.connector.clickhouse.auth.ResolvedCredentials;
+import org.apache.flink.connector.clickhouse.auth.DelegationTokenAuth;
 import org.apache.flink.runtime.util.EnvironmentInformation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,7 +13,9 @@ import org.slf4j.LoggerFactory;
 import java.io.Serializable;
 import java.net.URI;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -52,12 +53,14 @@ public class ClickHouseClientConfig implements Serializable {
     private Api api = Api.DATASTREAM;
     private AuthMode authMode = AuthMode.PASSWORD;
     private Duration delegationTokenWaitTimeout = Duration.ofSeconds(60);
-    private transient ResolvedCredentials appliedCredentials = null;
-    private transient ResolvedCredentials authFailureToken = null;
-    private transient int authFailuresWithToken = 0;
+    private transient DelegationTokenAuth delegationTokenAuth = null;
 
-    /** Consecutive auth failures (516/720) tolerated with the same JWT before the job fails. */
-    public static final int MAX_AUTH_FAILURES_PER_TOKEN = 3;
+    /** client-v2 options that set credentials, rejected in delegation-token mode. */
+    private static final List<String> AUTH_OPTION_KEYS = Arrays.asList(
+            ClientConfigProperties.USER.getKey(), ClientConfigProperties.PASSWORD.getKey(),
+            ClientConfigProperties.ACCESS_TOKEN.getKey(), ClientConfigProperties.BEARERTOKEN_AUTH.getKey(),
+            ClientConfigProperties.SSL_AUTH.getKey());
+    private static final String AUTHORIZATION_HEADER_OPTION = ClientConfigProperties.httpHeader("Authorization");
 
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, boolean enableJsonSupportAsString) {
         this.url = url;
@@ -183,7 +186,6 @@ public class ClickHouseClientConfig implements Serializable {
     private Client initClient(String database, Map<String, String> extraServerSettings) {
         Client.Builder clientBuilder = new Client.Builder().addEndpoint(url);
         if (authMode != AuthMode.DELEGATION_TOKEN) {
-            // Before setOptions, as always: auth keys in options still override these.
             clientBuilder.setUsername(username).setPassword(password);
         }
         clientBuilder
@@ -192,7 +194,7 @@ public class ClickHouseClientConfig implements Serializable {
                 .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true")
                 .setOptions(options);
         if (authMode == AuthMode.DELEGATION_TOKEN) {
-            clientBuilder.useBearerTokenAuth(appliedCredentials.getJwt());
+            clientBuilder.useBearerTokenAuth(delegationTokenAuth.getAppliedCredentials().getJwt());
         }
 
         for (Map.Entry<String, String> entry : serverSettings.entrySet()) {
@@ -212,33 +214,18 @@ public class ClickHouseClientConfig implements Serializable {
     public Client createClient(String database) {
         if (this.client == null) {
             if (authMode == AuthMode.DELEGATION_TOKEN) {
-                try {
-                    appliedCredentials = DelegationTokenBridge.await(delegationTokenWaitTimeout);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new IllegalStateException("Interrupted while waiting for ClickHouse delegation token", e);
-                }
+                DelegationTokenAuth auth = new DelegationTokenAuth(delegationTokenWaitTimeout);
+                auth.awaitFirst();
+                delegationTokenAuth = auth;
             }
             this.client = initClient(database, Map.of());
         }
         return client;
     }
 
-    /**
-     * Applies a newer delegation token JWT to the live client, if one arrived since the last call.
-     * Cheap no-op otherwise (one volatile read). Call before every insert.
-     */
-    public void refreshCredentialsIfChanged() {
-        if (authMode != AuthMode.DELEGATION_TOKEN || client == null) {
-            return;
-        }
-        ResolvedCredentials current = DelegationTokenBridge.current();
-        if (current == null || current == appliedCredentials) {
-            return;
-        }
-        client.updateBearerToken(current.getJwt());
-        appliedCredentials = current;
-        LOG.info("Applied re-obtained ClickHouse delegation token {}", current);
+    /** Delegation-token state of the client from {@link #createClient()}; {@code null} in password mode or before. */
+    public DelegationTokenAuth getDelegationTokenAuth() {
+        return delegationTokenAuth;
     }
 
     public boolean isDelegationTokenMode() {
@@ -247,43 +234,6 @@ public class ClickHouseClientConfig implements Serializable {
 
     public void setDelegationTokenWaitTimeout(Duration delegationTokenWaitTimeout) {
         this.delegationTokenWaitTimeout = Objects.requireNonNull(delegationTokenWaitTimeout, "delegationTokenWaitTimeout");
-    }
-
-    ResolvedCredentials getAppliedCredentials() {
-        return appliedCredentials;
-    }
-
-    /**
-     * Called when ClickHouse rejected the JWT a request was sent with (516/720). Returns {@code true}
-     * if the batch should be retried: the token had expired (renewal is late), a newer token arrived
-     * since the request was sent (expiry race), or this token has failed fewer than
-     * {@link #MAX_AUTH_FAILURES_PER_TOKEN} times in a row.
-     * {@code false} means the token is rejected permanently (e.g. wrong audience in the Cloud JWT
-     * provider), so the job should fail with a clear error instead of retrying forever.
-     */
-    public synchronized boolean onAuthFailure(ResolvedCredentials usedForRequest) {
-        if (usedForRequest != null && usedForRequest.isExpired(System.currentTimeMillis())) {
-            // Rejected because it expired (renewal is late, e.g. identity provider down), not misconfigured.
-            return true;
-        }
-        ResolvedCredentials latest = authMode == AuthMode.DELEGATION_TOKEN ? DelegationTokenBridge.current() : null;
-        if (latest != null && latest != usedForRequest) {
-            authFailureToken = latest;
-            authFailuresWithToken = 0;
-            return true;
-        }
-        if (usedForRequest != authFailureToken) {
-            authFailureToken = usedForRequest;
-            authFailuresWithToken = 0;
-        }
-        authFailuresWithToken++;
-        return authFailuresWithToken <= MAX_AUTH_FAILURES_PER_TOKEN;
-    }
-
-    /** Resets the auth-failure budget after a successful insert. */
-    public synchronized void onWriteSuccess() {
-        authFailureToken = null;
-        authFailuresWithToken = 0;
     }
 
     public Client createClient() {
@@ -304,7 +254,20 @@ public class ClickHouseClientConfig implements Serializable {
 
     public void setOptions(Map<String, String> options) {
         if (options != null) {
+            if (authMode == AuthMode.DELEGATION_TOKEN) {
+                rejectAuthOptions(options);
+            }
             this.options.putAll(options);
+        }
+    }
+
+    private static void rejectAuthOptions(Map<String, String> options) {
+        for (String key : options.keySet()) {
+            if (AUTH_OPTION_KEYS.contains(key) || AUTHORIZATION_HEADER_OPTION.equalsIgnoreCase(key)) {
+                throw new IllegalArgumentException("Option '" + key + "' sets ClickHouse credentials, which "
+                        + "delegation-token auth does not allow: the JWT from Flink's delegation token framework is "
+                        + "the only credential. Remove it from the options.");
+            }
         }
     }
 
