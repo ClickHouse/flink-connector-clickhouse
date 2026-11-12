@@ -69,14 +69,14 @@ public class ClickHouseServerForTests {
     }
 
     public static void tearDown() {
-        dropCloudDatabase();
+        dropDatabase();
         if (db != null) {
             db.stop();
         }
     }
 
-    private static void dropCloudDatabase() {
-        if (!isCloud || database == null) {
+    private static void dropDatabase() {
+        if (database == null) {
             return;
         }
         try {
