@@ -52,6 +52,9 @@ dependencies {
     implementation("org.apache.logging.log4j:log4j-core:${project.extra["log4jVersion"]}")
 
     implementation(project(":flink-connector-clickhouse-base"))
+    // Delegation tokens: deployed to Flink's lib/, never bundled into the shadow JAR.
+    compileOnly(project(":flink-connector-clickhouse-token"))
+    testImplementation(project(":flink-connector-clickhouse-token"))
     // ClickHouse Client Libraries
     // Exclude the client's external lz4: the ':all' jar embeds it.
     implementation("com.clickhouse:client-v2:${clickhouseVersion}:all") {

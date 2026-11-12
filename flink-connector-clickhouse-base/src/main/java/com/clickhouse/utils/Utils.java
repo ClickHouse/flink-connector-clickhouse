@@ -49,12 +49,42 @@ public class Utils {
      */
 
     public static void handleException(Throwable e) {
+        handleException(e, false);
+    }
+
+    /** True for ClickHouse 516/720, or a bare HTTP 401/403 without a ClickHouse code (a proxy in front of it). */
+    public static boolean isAuthenticationFailure(Throwable e) {
+        Exception rootCause = Utils.getRootCause(e, true);
+        return rootCause instanceof ServerException && isAuthenticationFailure((ServerException) rootCause);
+    }
+
+    private static boolean isAuthenticationFailure(ServerException e) {
+        int code = e.getCode();
+        if (code == 516 || code == 720) {
+            return true;
+        }
+        int httpStatus = e.getTransportProtocolCode();
+        return code == ServerException.CODE_UNKNOWN && (httpStatus == 401 || httpStatus == 403);
+    }
+
+    /**
+     * @param delegationTokenMode when {@code true}, authentication failures (see
+     *     {@link #isAuthenticationFailure(Throwable)}) are retriable: an expired short-lived JWT is
+     *     replaced by the re-obtained one on the next attempt.
+     */
+    public static void handleException(Throwable e, boolean delegationTokenMode) {
         LOG.warn("Deciding how to handle exception: {}", e.getLocalizedMessage());
         Exception rootCause = Utils.getRootCause(e, true);
         if (rootCause instanceof ServerException) {
             ServerException serverException = (ServerException) rootCause;
             LOG.warn("ClickHouse Server Exception Code: {} isRetryable: {}", serverException.getCode(), serverException.isRetryable());
             if (serverException.isRetryable()) {
+                throw new RetriableException(e);
+            }
+            if (delegationTokenMode && isAuthenticationFailure(serverException)) {
+                LOG.error("ClickHouse rejected the delegation token JWT (code {}, HTTP {}); retrying with the latest token. "
+                        + "If this repeats, check the identity provider app and the Cloud JWT provider (issuer, audience, JWKS URL).",
+                        serverException.getCode(), serverException.getTransportProtocolCode());
                 throw new RetriableException(e);
             }
             // check if this is batch corruption

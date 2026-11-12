@@ -73,9 +73,23 @@ jobs:
       - name: Generate Flink SQL sink example 1.17+
         working-directory: ./examples/maven/flink-v1.7/sql
         run: mvn clean install
+      - name: Generate delegation-token example 2.X
+        working-directory: ./examples/maven/flink-v2/delegation-token
+        run: mvn clean install
+      - name: Generate delegation-token example 1.17+
+        working-directory: ./examples/maven/flink-v1.7/delegation-token
+        run: mvn clean install
       - name: Execute Gradle 'integration-test' task
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
+          # Identity provider for DelegationTokenClusterTests; PR runs use main's copy of this file (pull_request_target).
+          CLICKHOUSE_CLOUD_OAUTH_TOKEN_ENDPOINT: ${{ secrets.FLINK_DT_TOKEN_ENDPOINT }}
+          CLICKHOUSE_CLOUD_OAUTH_CLIENT_ID: ${{ secrets.FLINK_DT_CLIENT_ID }}
+          CLICKHOUSE_CLOUD_OAUTH_CLIENT_SECRET: ${{ secrets.FLINK_DT_CLIENT_SECRET }}
+          CLICKHOUSE_CLOUD_OAUTH_AUDIENCE: ${{ secrets.FLINK_DT_AUDIENCE }}
+          # Unused with Auth0 (audience sets the token target); needed if the tenant moves to Entra or Okta.
+          CLICKHOUSE_CLOUD_OAUTH_SCOPE: ${{ secrets.FLINK_DT_SCOPE }}
+          # ClickHouse service credentials 
           CLICKHOUSE_CLOUD_HOST: ${{ secrets.CONNECTORS_TEAM_TESTS_CLOUD_HOST }}
           CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.CONNECTORS_TEAM_TESTS_CLOUD_PASSWORD }}
           FLINK_VERSION: ${{ matrix.flink }}

@@ -66,6 +66,12 @@ jobs:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
           CLICKHOUSE_CLOUD_HOST: ${{ secrets.CONNECTORS_TEAM_TESTS_CLOUD_HOST }}
           CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.CONNECTORS_TEAM_TESTS_CLOUD_PASSWORD }}
+          # Identity provider for ClickHouseDelegationTokenCloudRealIdpTests (skipped while unset).
+          CLICKHOUSE_CLOUD_OAUTH_TOKEN_ENDPOINT: ${{ secrets.FLINK_DT_TOKEN_ENDPOINT }}
+          CLICKHOUSE_CLOUD_OAUTH_CLIENT_ID: ${{ secrets.FLINK_DT_CLIENT_ID }}
+          CLICKHOUSE_CLOUD_OAUTH_CLIENT_SECRET: ${{ secrets.FLINK_DT_CLIENT_SECRET }}
+          CLICKHOUSE_CLOUD_OAUTH_AUDIENCE: ${{ secrets.FLINK_DT_AUDIENCE }}
+          CLICKHOUSE_CLOUD_OAUTH_SCOPE: ${{ secrets.FLINK_DT_SCOPE }}
           FLINK_VERSION: ${{ matrix.flink }}
         run: ./gradlew :flink-connector-clickhouse-1.17:test
   test-flink-2:
@@ -94,6 +100,12 @@ jobs:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
           CLICKHOUSE_CLOUD_HOST: ${{ secrets.CONNECTORS_TEAM_TESTS_CLOUD_HOST }}
           CLICKHOUSE_CLOUD_PASSWORD: ${{ secrets.CONNECTORS_TEAM_TESTS_CLOUD_PASSWORD }}
+          # Identity provider for ClickHouseDelegationTokenCloudRealIdpTests (skipped while unset).
+          CLICKHOUSE_CLOUD_OAUTH_TOKEN_ENDPOINT: ${{ secrets.FLINK_DT_TOKEN_ENDPOINT }}
+          CLICKHOUSE_CLOUD_OAUTH_CLIENT_ID: ${{ secrets.FLINK_DT_CLIENT_ID }}
+          CLICKHOUSE_CLOUD_OAUTH_CLIENT_SECRET: ${{ secrets.FLINK_DT_CLIENT_SECRET }}
+          CLICKHOUSE_CLOUD_OAUTH_AUDIENCE: ${{ secrets.FLINK_DT_AUDIENCE }}
+          CLICKHOUSE_CLOUD_OAUTH_SCOPE: ${{ secrets.FLINK_DT_SCOPE }}
         run: ./gradlew :flink-connector-clickhouse-2.0.0:test
 
   remove-label:

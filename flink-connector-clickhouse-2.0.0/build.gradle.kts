@@ -62,6 +62,9 @@ dependencies {
     implementation("org.apache.flink:flink-connector-base:${project.extra["flinkVersion"]}")
     implementation("org.apache.flink:flink-streaming-java:${project.extra["flinkVersion"]}")
     implementation(project(":flink-connector-clickhouse-base"))
+    // Delegation tokens: deployed to Flink's lib/, never bundled into the shadow JAR.
+    compileOnly(project(":flink-connector-clickhouse-token"))
+    testImplementation(project(":flink-connector-clickhouse-token"))
     // Table API glue (factory + sink) — provided by the Flink dist, never bundled.
     compileOnly("org.apache.flink:flink-table-common:${project.extra["flinkVersion"]}")
 
@@ -138,6 +141,11 @@ val checkCrossVersionCopiesInSync by tasks.registering {
         "src/test/java/org/apache/flink/connector/clickhouse/sink/ClickHouseAsyncSinkBuilderTest.java",
         "src/test/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSinkFactoryTest.java",
         "src/test/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSinkTest.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/sink/ClickHouseClientConfigDelegationTokenTests.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/sink/auth/ClickHouseDelegationTokenTests.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/sink/auth/ClickHouseDelegationTokenCloudRealIdpTests.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/sink/auth/FakeIdentityProvider.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/sink/auth/FakeJwtClickHouseServer.java",
     ).map { file(it) to project(":flink-connector-clickhouse-1.17").file(it) }
     inputs.files(copies.flatMap { listOf(it.first, it.second) })
     doLast {

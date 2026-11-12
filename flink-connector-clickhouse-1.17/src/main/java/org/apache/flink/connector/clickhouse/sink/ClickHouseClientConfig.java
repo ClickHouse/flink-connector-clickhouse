@@ -4,13 +4,19 @@ import com.clickhouse.client.api.Client;
 import com.clickhouse.client.api.ClientConfigProperties;
 import com.clickhouse.config.BatchFailureStrategy;
 import com.clickhouse.config.RetryPolicy;
+import org.apache.flink.connector.clickhouse.auth.AuthMode;
+import org.apache.flink.connector.clickhouse.auth.DelegationTokenAuth;
 import org.apache.flink.runtime.util.EnvironmentInformation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
+import java.net.URI;
+import java.time.Duration;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -21,6 +27,8 @@ import java.util.Optional;
  * touches the network: {@link ClickHouseAsyncSinkBuilder#build()} verifies connectivity on the
  * job driver via {@link #verifyConnectivity()}, while the Table API factory relies on its
  * planning-time DESCRIBE through {@link #createPlanningClient(Map)} failing instead.
+ * Delegation-token configs ({@link #forDelegationToken}) skip the driver-side check: the job
+ * driver never receives tokens, so the first connection happens on the task managers.
  */
 public class ClickHouseClientConfig implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(ClickHouseClientConfig.class);
@@ -44,6 +52,16 @@ public class ClickHouseClientConfig implements Serializable {
     private RetryPolicy retryPolicy = RetryPolicy.forever();
     private BatchFailureStrategy batchFailureStrategy = BatchFailureStrategy.STOP_FLINK;
     private Api api = Api.DATASTREAM;
+    private AuthMode authMode = AuthMode.PASSWORD;
+    private Duration delegationTokenWaitTimeout = Duration.ofSeconds(60);
+    private transient DelegationTokenAuth delegationTokenAuth = null;
+
+    /** client-v2 options that set credentials, rejected in delegation-token mode. */
+    private static final List<String> AUTH_OPTION_KEYS = Arrays.asList(
+            ClientConfigProperties.USER.getKey(), ClientConfigProperties.PASSWORD.getKey(),
+            ClientConfigProperties.ACCESS_TOKEN.getKey(), ClientConfigProperties.BEARERTOKEN_AUTH.getKey(),
+            ClientConfigProperties.SSL_AUTH.getKey());
+    private static final String AUTHORIZATION_HEADER_OPTION = ClientConfigProperties.httpHeader("Authorization");
 
     public ClickHouseClientConfig(String url, String username, String password, String database, String tableName, Map<String, String> options, Map<String, String> serverSettings, boolean enableJsonSupportAsString) {
         this.url = url;
@@ -65,10 +83,55 @@ public class ClickHouseClientConfig implements Serializable {
         this(url, username, password, database, tableName, new HashMap<>(), new HashMap<>(), enableJsonSupport);
     }
 
+    private ClickHouseClientConfig(String url, String database, String tableName, AuthMode authMode) {
+        this.url = url;
+        this.username = null;
+        this.password = null;
+        this.database = database;
+        this.tableName = tableName;
+        this.options = new HashMap<>();
+        this.serverSettings = new HashMap<>();
+        this.enableJsonSupportAsString = false; // same default as the 5-arg password constructor
+        this.authMode = authMode;
+        LOG.info("ClickHouseClientConfig: url={}, auth=delegation-token (JWT), database={}", url, database);
+    }
+
+    /**
+     * Config that authenticates to ClickHouse Cloud with short-lived JWTs from Flink's delegation
+     * token framework. Requires flink-connector-clickhouse-token in Flink's lib/ and
+     * {@code security.delegation.token.provider.clickhouse.oauth.*} in the Flink configuration.
+     */
+    public static ClickHouseClientConfig forDelegationToken(String url, String database, String tableName) {
+        requireHttpsOrLoopback(url);
+        return new ClickHouseClientConfig(url, database, tableName, AuthMode.DELEGATION_TOKEN);
+    }
+
+    /** ClickHouse Cloud: "Always send JWTs over HTTPS". Plain HTTP is allowed only for loopback test endpoints. */
+    static void requireHttpsOrLoopback(String url) {
+        URI uri = URI.create(url);
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+        boolean loopback = "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host)
+                || "[::1]".equals(host) || "::1".equals(host);
+        if ("https".equalsIgnoreCase(scheme) || ("http".equalsIgnoreCase(scheme) && loopback)) {
+            return;
+        }
+        throw new IllegalArgumentException("ClickHouse JWTs must be sent over HTTPS (got " + url
+                + "); plain http:// is only allowed for loopback test endpoints");
+    }
+
     /** Deep copy for DynamicTableSink#copy(); the cached client is not shared. */
     public ClickHouseClientConfig copy() {
-        ClickHouseClientConfig copy = new ClickHouseClientConfig(
-                url, username, password, database, tableName, options, serverSettings, enableJsonSupportAsString);
+        ClickHouseClientConfig copy = authMode == AuthMode.DELEGATION_TOKEN
+                ? new ClickHouseClientConfig(url, database, tableName, AuthMode.DELEGATION_TOKEN)
+                : new ClickHouseClientConfig(url, username, password, database, tableName, options, serverSettings,
+                        enableJsonSupportAsString);
+        if (authMode == AuthMode.DELEGATION_TOKEN) {
+            copy.setOptions(options);
+            copy.setServerSettings(serverSettings);
+            copy.setEnableJsonSupportAsString(enableJsonSupportAsString);
+        }
+        copy.setDelegationTokenWaitTimeout(delegationTokenWaitTimeout);
         copy.setSupportDefault(supportDefault);
         copy.setRetryPolicy(retryPolicy);
         copy.setBatchFailureStrategy(batchFailureStrategy);
@@ -84,6 +147,11 @@ public class ClickHouseClientConfig implements Serializable {
      * cleared) and counts as a failed attempt.
      */
     public void verifyConnectivity() {
+        if (authMode == AuthMode.DELEGATION_TOKEN) {
+            LOG.info("Skipping the connectivity check for delegation-token auth: the job driver has no token; "
+                    + "the first connection happens on the task managers");
+            return;
+        }
         try (Client probe = initClient(database, Map.of())) {
             boolean isServerAlive = false;
             for (int i = 0; i < DEFAULT_MAX_RETRIES && !isServerAlive; i++) {
@@ -109,20 +177,28 @@ public class ClickHouseClientConfig implements Serializable {
      * reach this client only, never the serialized runtime config.
      */
     public Client createPlanningClient(Map<String, String> planningServerSettings) {
+        if (authMode == AuthMode.DELEGATION_TOKEN) {
+            throw new UnsupportedOperationException("Table API planning does not support delegation-token auth: "
+                    + "the planner has no ClickHouse JWT. Use username/password for Table API sinks.");
+        }
         return initClient(database, planningServerSettings);
     }
 
     private Client initClient(String database, Map<String, String> extraServerSettings) {
-        Client.Builder clientBuilder = new Client.Builder()
-                .addEndpoint(url)
-                .setUsername(username)
-                .setPassword(password)
+        Client.Builder clientBuilder = new Client.Builder().addEndpoint(url);
+        if (authMode != AuthMode.DELEGATION_TOKEN) {
+            clientBuilder.setUsername(username).setPassword(password);
+        }
+        clientBuilder
                 .setDefaultDatabase(database)
                 .setClientName(productName(), clientMetadata())
                 .setOption(ClientConfigProperties.ASYNC_OPERATIONS.getKey(), "true")
                 // Unknown client keys only WARN; a DataStream setOptions copy of this key wins, the Table API validates keys itself.
                 .setOption(ClientConfigProperties.IGNORE_UNKNOWN_CONFIG_KEY, "true")
                 .setOptions(options);
+        if (authMode == AuthMode.DELEGATION_TOKEN) {
+            clientBuilder.useBearerTokenAuth(delegationTokenAuth.getAppliedCredentials().getJwt());
+        }
 
         for (Map.Entry<String, String> entry : serverSettings.entrySet()) {
             clientBuilder.serverSetting(entry.getKey(), entry.getValue());
@@ -147,9 +223,27 @@ public class ClickHouseClientConfig implements Serializable {
 
     public Client createClient(String database) {
         if (this.client == null) {
+            if (authMode == AuthMode.DELEGATION_TOKEN) {
+                DelegationTokenAuth auth = new DelegationTokenAuth(delegationTokenWaitTimeout);
+                auth.awaitFirst();
+                delegationTokenAuth = auth;
+            }
             this.client = initClient(database, Map.of());
         }
         return client;
+    }
+
+    /** Delegation-token state of the client from {@link #createClient()}; {@code null} in password mode or before. */
+    public DelegationTokenAuth getDelegationTokenAuth() {
+        return delegationTokenAuth;
+    }
+
+    public boolean isDelegationTokenMode() {
+        return authMode == AuthMode.DELEGATION_TOKEN;
+    }
+
+    public void setDelegationTokenWaitTimeout(Duration delegationTokenWaitTimeout) {
+        this.delegationTokenWaitTimeout = Objects.requireNonNull(delegationTokenWaitTimeout, "delegationTokenWaitTimeout");
     }
 
     public Client createClient() {
@@ -170,7 +264,20 @@ public class ClickHouseClientConfig implements Serializable {
 
     public void setOptions(Map<String, String> options) {
         if (options != null) {
+            if (authMode == AuthMode.DELEGATION_TOKEN) {
+                rejectAuthOptions(options);
+            }
             this.options.putAll(options);
+        }
+    }
+
+    private static void rejectAuthOptions(Map<String, String> options) {
+        for (String key : options.keySet()) {
+            if (AUTH_OPTION_KEYS.contains(key) || AUTHORIZATION_HEADER_OPTION.equalsIgnoreCase(key)) {
+                throw new IllegalArgumentException("Option '" + key + "' sets ClickHouse credentials, which "
+                        + "delegation-token auth does not allow: the JWT from Flink's delegation token framework is "
+                        + "the only credential. Remove it from the options.");
+            }
         }
     }
 
