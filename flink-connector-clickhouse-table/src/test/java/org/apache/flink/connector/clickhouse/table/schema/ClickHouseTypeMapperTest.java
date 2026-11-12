@@ -413,15 +413,29 @@ class ClickHouseTypeMapperTest {
         assertEquals(41, converter.convert(41));
     }
 
-    /** Nested SAF has no wire encoding — it must be rejected at planning, never unwrapped. */
+    /** Needs client-v2 0.11.0+ (clickhouse-java#2937); the wrapper is shed at every nesting, so the inner type's nullability is what the position matches. */
     @Test
-    void nestedSimpleAggregateFunctionIsRejectedAtPlanning() {
+    void simpleAggregateFunctionIsTransparentInsideComposites() {
+        ValueConverter array = ClickHouseTypeMapper.converterFor(
+                new ArrayType(false, new IntType(true)),
+                col("Array(SimpleAggregateFunction(anyLast, Nullable(Int32)))"), LENIENT, "c");
+        assertEquals(Arrays.asList(41, null), array.convert(new GenericArrayData(new Object[]{41, null})));
+
+        VarCharType key = new VarCharType(false, VarCharType.MAX_LENGTH);
+        ValueConverter map = ClickHouseTypeMapper.converterFor(
+                new MapType(false, key, new IntType(false)),
+                col("Map(String, SimpleAggregateFunction(max, Int32))"), LENIENT, "c");
+        assertEquals(Map.of("k", 41), map.convert(new GenericMapData(Map.of(StringData.fromString("k"), 41))));
+
+        ValueConverter row = ClickHouseTypeMapper.converterFor(
+                rowOf(new IntType(false)), col("Tuple(SimpleAggregateFunction(max, Int32))"), LENIENT, "c");
+        assertArrayEquals(new Object[]{41}, (Object[]) row.convert(GenericRowData.of(41)));
+
         TypeMappingException e = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
-                        new ArrayType(false, new IntType(false)),
+                        new ArrayType(false, new IntType(true)),
                         col("Array(SimpleAggregateFunction(max, Int32))"), LENIENT, "c"));
-        assertEquals(TypeMappingException.Kind.TARGET_UNSUPPORTED, e.getKind());
-        assertTrue(e.getMessage().contains("top-level column"), e.getMessage());
+        assertTrue(e.getMessage().contains("element type INT is nullable"), e.getMessage());
     }
 
     @Test
@@ -485,13 +499,26 @@ class ClickHouseTypeMapperTest {
     }
 
     @Test
-    void multisetRejectsNonIntegerAndNullableCountColumns() {
-        for (String countType : new String[] {"String", "Float64", "Nullable(UInt64)"}) {
+    void multisetRejectsNonIntegerCountColumns() {
+        for (String countType : new String[] {"String", "Float64", "Nullable(String)"}) {
             TypeMappingException e = assertThrows(TypeMappingException.class,
                     () -> ClickHouseTypeMapper.converterFor(
                             multisetOfString(), col("Map(String, " + countType + ")"), LENIENT, "c"),
                     countType);
-            assertTrue(e.getMessage().contains("non-Nullable integer Map value type"), e.getMessage());
+            assertTrue(e.getMessage().contains("integer Map value type"), e.getMessage());
+        }
+    }
+
+    /** A count is never null, so a Nullable or SimpleAggregateFunction count column takes it as its inner integer. */
+    @Test
+    void multisetWritesCountsIntoNullableAndSimpleAggregateFunctionColumns() {
+        for (String countType : new String[] {"Nullable(UInt64)", "SimpleAggregateFunction(sum, UInt64)",
+                "SimpleAggregateFunction(anyLast, Nullable(UInt64))"}) {
+            ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                    multisetOfString(), col("Map(String, " + countType + ")"), LENIENT, "c");
+            Map<Object, Object> counts = new LinkedHashMap<>();
+            counts.put(StringData.fromString("a"), 2);
+            assertEquals(Map.of("a", 2L), converter.convert(new GenericMapData(counts)), countType);
         }
     }
 
@@ -561,37 +588,64 @@ class ClickHouseTypeMapperTest {
         assertEquals("ROW has 1 fields but the Tuple has 2 elements", e.getMessage());
     }
 
+    /** Needs client-v2 0.10.0+, which writes the null marker of a Nullable Tuple element (clickhouse-java#2886). */
     @Test
-    void nullableTupleElementsAreRejectedOnEitherSide() {
+    void nullableTupleElementsTakeNullsAndNonNullableOnesRejectANullableField() {
         TypeMappingException flinkSide = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
                         rowOf(new IntType(true)), col("Tuple(Int32)"), LENIENT, "c"));
         assertTrue(flinkSide.getMessage().contains("the Flink ROW field 'f0' is nullable"),
                 flinkSide.getMessage());
-        assertTrue(flinkSide.getMessage().contains("declare it NOT NULL"), flinkSide.getMessage());
+        assertTrue(flinkSide.getMessage().contains("declare it NOT NULL or make the ClickHouse type Nullable"),
+                flinkSide.getMessage());
 
-        TypeMappingException clickHouseSide = assertThrows(TypeMappingException.class,
-                () -> ClickHouseTypeMapper.converterFor(
-                        rowOf(new IntType(false)), col("Tuple(Nullable(Int32))"), LENIENT, "c"));
-        assertTrue(clickHouseSide.getMessage().contains("Nullable Tuple elements (Nullable(Int32) at position 1)"),
-                clickHouseSide.getMessage());
+        ValueConverter nullable = ClickHouseTypeMapper.converterFor(
+                rowOf(new IntType(true), new IntType(false)), col("Tuple(Nullable(Int32), Nullable(Int32))"), LENIENT, "c");
+        assertArrayEquals(new Object[]{null, 2}, (Object[]) nullable.convert(GenericRowData.of(null, 2)));
+        assertArrayEquals(new Object[]{1, 2}, (Object[]) nullable.convert(GenericRowData.of(1, 2)));
     }
 
+    /** Needs client-v2 0.10.0+, which writes the null marker of a Nullable Map value (clickhouse-java#2886). */
     @Test
-    void nullableMapValuesAreRejectedOnEitherSide() {
+    void nullableMapValuesTakeNullsAndNonNullableOnesRejectANullableValueType() {
         VarCharType key = new VarCharType(false, VarCharType.MAX_LENGTH);
         TypeMappingException flinkSide = assertThrows(TypeMappingException.class,
                 () -> ClickHouseTypeMapper.converterFor(
                         new MapType(false, key, new IntType(true)), col("Map(String, Int32)"), LENIENT, "c"));
         assertTrue(flinkSide.getMessage().contains("the Flink map value type INT is nullable"),
                 flinkSide.getMessage());
-        assertTrue(flinkSide.getMessage().contains("declare it NOT NULL"), flinkSide.getMessage());
+        assertTrue(flinkSide.getMessage().contains("declare it NOT NULL or make the ClickHouse type Nullable"),
+                flinkSide.getMessage());
 
-        TypeMappingException clickHouseSide = assertThrows(TypeMappingException.class,
-                () -> ClickHouseTypeMapper.converterFor(
-                        new MapType(false, key, new IntType(false)), col("Map(String, Nullable(Int32))"), LENIENT, "c"));
-        assertTrue(clickHouseSide.getMessage().contains("Nullable Map values (Nullable(Int32))"),
-                clickHouseSide.getMessage());
+        ValueConverter nullable = ClickHouseTypeMapper.converterFor(
+                new MapType(false, key, new IntType(true)), col("Map(String, Nullable(Int32))"), LENIENT, "c");
+        Map<Object, Object> entries = new LinkedHashMap<>();
+        entries.put(StringData.fromString("a"), 1);
+        entries.put(StringData.fromString("b"), null);
+        Map<String, Object> expected = new LinkedHashMap<>();
+        expected.put("a", 1);
+        expected.put("b", null);
+        assertEquals(expected, nullable.convert(new GenericMapData(entries)));
+    }
+
+    /** ClickHouse's experimental Nullable(Tuple) takes a null ROW as a Map value or a Tuple element. */
+    @Test
+    void nullableTuplesInsideMapsAndTuplesTakeNullRows() {
+        RowType nullableRow = new RowType(true, rowOf(new IntType(false)).getFields());
+        VarCharType key = new VarCharType(false, VarCharType.MAX_LENGTH);
+
+        ValueConverter map = ClickHouseTypeMapper.converterFor(
+                new MapType(false, key, nullableRow), col("Map(String, Nullable(Tuple(Int32)))"), LENIENT, "c");
+        Map<Object, Object> entries = new LinkedHashMap<>();
+        entries.put(StringData.fromString("a"), null);
+        entries.put(StringData.fromString("b"), GenericRowData.of(1));
+        Map<?, ?> payload = (Map<?, ?>) map.convert(new GenericMapData(entries));
+        assertTrue(payload.containsKey("a") && payload.get("a") == null, payload.toString());
+        assertArrayEquals(new Object[]{1}, (Object[]) payload.get("b"));
+
+        ValueConverter row = ClickHouseTypeMapper.converterFor(
+                rowOf(nullableRow, new IntType(false)), col("Tuple(Nullable(Tuple(Int32)), Int32)"), LENIENT, "c");
+        assertArrayEquals(new Object[]{null, 7}, (Object[]) row.convert(GenericRowData.of(null, 7)));
     }
 
     /** Binding is positional; the same names in another order is almost certainly a mistake. */
@@ -727,6 +781,26 @@ class ClickHouseTypeMapperTest {
                         col("Map(UInt64, UInt64)"), LENIENT, "c"));
         assertTrue(multisetError.getMessage().contains("Map keys of type UInt64"),
                 multisetError.getMessage());
+    }
+
+    @Test
+    void simpleAggregateFunctionMapKeysAreRejectedAtPlanning() {
+        // client-v2's serializeMapData sends keys through serializePrimitiveData, which has no SAF case.
+        MapType mapType = new MapType(false,
+                new VarCharType(false, VarCharType.MAX_LENGTH), new IntType(false));
+        TypeMappingException e = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(
+                        mapType, col("Map(SimpleAggregateFunction(max, String), Int32)"), LENIENT, "c"));
+        assertTrue(e.getMessage().contains("Map keys of type SimpleAggregateFunction"), e.getMessage());
+        assertTrue(e.getMessage().contains("use a plain String key column"), e.getMessage());
+
+        // UInt64 is rejected as a key too, so the message must not suggest it.
+        TypeMappingException unsupportedInner = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(
+                        mapType, col("Map(SimpleAggregateFunction(max, UInt64), Int32)"), LENIENT, "c"));
+        assertTrue(unsupportedInner.getMessage().contains("Map keys of type SimpleAggregateFunction"),
+                unsupportedInner.getMessage());
+        assertFalse(unsupportedInner.getMessage().contains("use a plain"), unsupportedInner.getMessage());
     }
 
     @Test

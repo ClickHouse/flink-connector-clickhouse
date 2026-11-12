@@ -527,6 +527,30 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals(1L, rows.get(1).getLong("n_keys"));
     }
 
+    /** A count is never null, so a Nullable or SimpleAggregateFunction count column takes it as its inner integer. */
+    @Test
+    void multisetRoundTripsIntoNullableAndSimpleAggregateFunctionCountMaps() throws Exception {
+        String table = "table_api_multiset_wrapped_counts";
+        createTable(table, "id Int64, tags Map(String, Nullable(UInt32)), "
+                + "totals Map(String, SimpleAggregateFunction(sum, UInt64))");
+
+        TableEnvironment env = TableEnvironment.create(EnvironmentSettings.inBatchMode());
+        env.executeSql(sinkDdl("ch_multiset_wrapped_counts", table,
+                "id BIGINT NOT NULL, tags MULTISET<STRING NOT NULL> NOT NULL, "
+                        + "totals MULTISET<STRING NOT NULL> NOT NULL"));
+        env.executeSql("INSERT INTO ch_multiset_wrapped_counts "
+                + "SELECT id, COLLECT(tag), COLLECT(tag) FROM ("
+                + "  SELECT CAST(id AS BIGINT) AS id, CAST(tag AS STRING) AS tag "
+                + "  FROM (VALUES (1, 'a'), (1, 'a'), (1, 'b')) AS t(id, tag)"
+                + ") GROUP BY id").await();
+
+        List<GenericRecord> rows = readBack(
+                "id, toString(mapSort(tags)) AS tags_s, toString(mapSort(totals)) AS totals_s", table, "id", 1);
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals("{'a':2,'b':1}", rows.get(0).getString("tags_s"));
+        Assertions.assertEquals("{'a':2,'b':1}", rows.get(0).getString("totals_s"));
+    }
+
     @Test
     void rowsWriteIntoTuplesAtEveryNestingAndNullArrayElementsRoundTrip() throws Exception {
         String table = "table_api_tuple";
@@ -686,6 +710,76 @@ public class ClickHouseTableApiIntegrationTests {
         Assertions.assertEquals(2, rows.size());
         Assertions.assertEquals(10L, rows.get(0).getLong("total_v"));
         Assertions.assertEquals(20L, rows.get(1).getLong("total_v"));
+    }
+
+    /** Needs client-v2 0.11.0+, which serializes SimpleAggregateFunction inside composites (clickhouse-java#2937); the inner type's nullability is what counts. */
+    @Test
+    void simpleAggregateFunctionInsideCompositesAcceptsTheInnerType() throws Exception {
+        String table = "table_api_nested_simple_agg";
+        createTable(table, "id Int64, highs Array(SimpleAggregateFunction(max, Int64)), "
+                + "lasts Array(SimpleAggregateFunction(anyLast, Nullable(Int64))), "
+                + "last_by_key Map(String, SimpleAggregateFunction(anyLast, Nullable(String))), "
+                + "pair Tuple(SimpleAggregateFunction(max, Int64), SimpleAggregateFunction(anyLast, String), "
+                + "SimpleAggregateFunction(anyLast, Nullable(String)))");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_nested_simple_agg", table,
+                "id BIGINT NOT NULL,"
+                        + "highs ARRAY<BIGINT NOT NULL> NOT NULL,"
+                        + "lasts ARRAY<BIGINT> NOT NULL,"
+                        + "last_by_key MAP<STRING, STRING> NOT NULL,"
+                        + "pair ROW<a BIGINT NOT NULL, b STRING NOT NULL, c STRING> NOT NULL"));
+        env.executeSql("INSERT INTO ch_nested_simple_agg VALUES "
+                + "(1, ARRAY[CAST(1 AS BIGINT), CAST(2 AS BIGINT)], ARRAY[CAST(4 AS BIGINT), CAST(NULL AS BIGINT)], "
+                + "MAP['k', 'v', 'n', CAST(NULL AS STRING)], "
+                + "ROW(CAST(3 AS BIGINT), 'x', CAST(NULL AS STRING)))").await();
+
+        List<GenericRecord> rows = readBack(
+                "id, toString(highs) AS highs_s, toString(lasts) AS lasts_s, "
+                        + "toString(mapSort(last_by_key)) AS last_s, toString(pair) AS pair_s",
+                table, "id", 1);
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals("[1,2]", rows.get(0).getString("highs_s"));
+        Assertions.assertEquals("[4,NULL]", rows.get(0).getString("lasts_s"));
+        Assertions.assertEquals("{'k':'v','n':NULL}", rows.get(0).getString("last_s"));
+        Assertions.assertEquals("(3,'x',NULL)", rows.get(0).getString("pair_s"));
+    }
+
+    /** Needs client-v2 0.10.0+, which writes the null marker of a Nullable Map value or Tuple element (clickhouse-java#2886). */
+    @Test
+    void nullableMapValuesAndTupleElementsRoundTrip() throws Exception {
+        String table = "table_api_nullable_nested";
+        createTable(table, "id Int64, scores Map(String, Nullable(Int32)), "
+                + "pair Tuple(Nullable(Int32), Nullable(String)), pairs Array(Tuple(Nullable(Int32), String)), "
+                + "counts Map(String, Nullable(UInt32))");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_nullable_nested", table,
+                "id BIGINT NOT NULL,"
+                        + "scores MAP<STRING, INT> NOT NULL,"
+                        + "pair ROW<a INT, b STRING> NOT NULL,"
+                        + "pairs ARRAY<ROW<a INT, b STRING NOT NULL> NOT NULL> NOT NULL,"
+                        + "counts MAP<STRING, BIGINT> NOT NULL"));
+        env.executeSql("INSERT INTO ch_nullable_nested VALUES "
+                + "(1, MAP['a', 1, 'b', CAST(NULL AS INT)], ROW(CAST(NULL AS INT), 'x'), "
+                + "ARRAY[ROW(CAST(NULL AS INT), 'p'), ROW(2, 'q')], "
+                + "MAP['n', CAST(NULL AS BIGINT), 'u', CAST(4000000000 AS BIGINT)]), "
+                + "(2, MAP['c', 3], ROW(4, CAST(NULL AS STRING)), ARRAY[ROW(5, 'r')], "
+                + "MAP['w', CAST(7 AS BIGINT)])").await();
+
+        List<GenericRecord> rows = readBack(
+                "id, toString(mapSort(scores)) AS scores_s, toString(pair) AS pair_s, toString(pairs) AS pairs_s, "
+                        + "toString(mapSort(counts)) AS counts_s",
+                table, "id", 2);
+        Assertions.assertEquals(2, rows.size());
+        Assertions.assertEquals("{'a':1,'b':NULL}", rows.get(0).getString("scores_s"));
+        Assertions.assertEquals("(NULL,'x')", rows.get(0).getString("pair_s"));
+        Assertions.assertEquals("[(NULL,'p'),(2,'q')]", rows.get(0).getString("pairs_s"));
+        Assertions.assertEquals("{'n':NULL,'u':4000000000}", rows.get(0).getString("counts_s"));
+        Assertions.assertEquals("{'c':3}", rows.get(1).getString("scores_s"));
+        Assertions.assertEquals("(4,NULL)", rows.get(1).getString("pair_s"));
+        Assertions.assertEquals("[(5,'r')]", rows.get(1).getString("pairs_s"));
+        Assertions.assertEquals("{'w':7}", rows.get(1).getString("counts_s"));
     }
 
     @Test
@@ -1377,8 +1471,6 @@ public class ClickHouseTableApiIntegrationTests {
             // --- ClickHouse targets the sink has no write path for
             {"Enum8('a' = 1, 'b' = 2)", "STRING NOT NULL", "'a'", "",
              "is not yet supported by the sink~issue #43"},
-            {"Array(SimpleAggregateFunction(sum, Int64))", "ARRAY<BIGINT NOT NULL> NOT NULL",
-             "ARRAY[CAST(1 AS BIGINT)]", "", "SimpleAggregateFunction is only writable as a top-level column"},
             // --- Decimal: the four ways a Decimal source can fail to fit
             {"Decimal(10, 2)", "DECIMAL(10, 4) NOT NULL", "CAST('1.2345' AS DECIMAL(10, 4))", "",
              "Column 'c'~scale 4 exceeds the column's scale 2"},
@@ -1455,7 +1547,7 @@ public class ClickHouseTableApiIntegrationTests {
                         + "SELECT CAST(id AS BIGINT), COLLECT(CAST(tag AS STRING)) "
                         + "FROM (VALUES (1, 'a')) AS t(id, tag) GROUP BY id"),
                 "Column 'tags'",
-                "MULTISET counts require a non-Nullable integer Map value type "
+                "MULTISET counts require an integer Map value type "
                         + "(Int8..Int256, UInt8..UInt256), found String");
     }
 
