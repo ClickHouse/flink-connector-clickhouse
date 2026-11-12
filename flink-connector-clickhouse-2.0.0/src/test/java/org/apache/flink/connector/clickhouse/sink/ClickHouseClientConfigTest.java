@@ -5,7 +5,11 @@ import com.clickhouse.client.api.ClientConfigProperties;
 import com.clickhouse.client.api.ClientMisconfigurationException;
 import com.clickhouse.config.BatchFailureStrategy;
 import com.clickhouse.config.RetryPolicy;
+import org.apache.flink.connector.base.sink.writer.strategy.AIMDScalingStrategy;
+import org.apache.flink.connector.base.sink.writer.strategy.CongestionControlRateLimitingStrategy;
+import org.apache.flink.connector.base.sink.writer.strategy.RateLimitingStrategy;
 import org.apache.flink.runtime.util.EnvironmentInformation;
+import org.apache.flink.util.function.SerializableSupplier;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -13,6 +17,8 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -53,6 +59,20 @@ class ClickHouseClientConfigTest {
         assertEquals(RetryPolicy.limited(2), original.getRetryPolicy());
         assertEquals(Boolean.TRUE, original.getSupportDefault());
         assertEquals(ClickHouseClientConfig.Api.TABLE, original.getApi());
+    }
+
+    @Test void copyCarriesTheRateLimitingStrategySupplier() {
+        ClickHouseClientConfig original = config();
+        assertNull(original.copy().getRateLimitingStrategySupplier());
+
+        SerializableSupplier<RateLimitingStrategy> supplier = () -> CongestionControlRateLimitingStrategy.builder()
+                .setMaxInFlightRequests(1)
+                .setInitialMaxInFlightMessages(1)
+                .setScalingStrategy(AIMDScalingStrategy.builder(1).build())
+                .build();
+        original.setRateLimitingStrategySupplier(supplier);
+
+        assertSame(supplier, original.copy().getRateLimitingStrategySupplier());
     }
 
     /** system.query_log's http_user_agent starts with the name; the api tag tells DataStream jobs from Table API ones. */
