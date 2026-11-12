@@ -81,7 +81,7 @@ public class ClickHouseServerForTests {
             return;
         }
         try {
-            executeSql(String.format("DROP DATABASE IF EXISTS `%s`", database));
+            executeSql(String.format("DROP DATABASE IF EXISTS `%s` SYNC", database));
         } catch (Exception e) {
             LOG.warn("Failed to drop database {}", database, e);
         }
