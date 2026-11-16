@@ -43,6 +43,9 @@ public class ClickHouseTestHelpers {
         if (isCloud()) {
             // Cloud reads are eventually consistent across replicas; this makes a SELECT right after an INSERT see it.
             builder.serverSetting("select_sequential_consistency", "1");
+            // Cloud's alter_sync default is 0, so an ALTER returns before the replicas apply it and the next
+            // connection can still see the old schema; 3 waits for every active replica.
+            builder.serverSetting("alter_sync", "3");
         }
         return builder.build();
     }
