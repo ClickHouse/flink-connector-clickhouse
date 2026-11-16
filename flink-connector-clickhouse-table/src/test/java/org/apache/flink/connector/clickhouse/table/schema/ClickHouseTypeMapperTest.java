@@ -413,29 +413,25 @@ class ClickHouseTypeMapperTest {
         assertEquals(41, converter.convert(41));
     }
 
-    /** Needs client-v2 0.11.0+ (clickhouse-java#2937); the wrapper is shed at every nesting, so the inner type's nullability is what the position matches. */
+    /** ClickHouse aggregates SimpleAggregateFunction only as a top-level column, so nested ones are rejected at planning. */
     @Test
-    void simpleAggregateFunctionIsTransparentInsideComposites() {
-        ValueConverter array = ClickHouseTypeMapper.converterFor(
-                new ArrayType(false, new IntType(true)),
-                col("Array(SimpleAggregateFunction(anyLast, Nullable(Int32)))"), LENIENT, "c");
-        assertEquals(Arrays.asList(41, null), array.convert(new GenericArrayData(new Object[]{41, null})));
-
+    void nestedSimpleAggregateFunctionIsRejectedAtPlanning() {
         VarCharType key = new VarCharType(false, VarCharType.MAX_LENGTH);
-        ValueConverter map = ClickHouseTypeMapper.converterFor(
-                new MapType(false, key, new IntType(false)),
-                col("Map(String, SimpleAggregateFunction(max, Int32))"), LENIENT, "c");
-        assertEquals(Map.of("k", 41), map.convert(new GenericMapData(Map.of(StringData.fromString("k"), 41))));
-
-        ValueConverter row = ClickHouseTypeMapper.converterFor(
-                rowOf(new IntType(false)), col("Tuple(SimpleAggregateFunction(max, Int32))"), LENIENT, "c");
-        assertArrayEquals(new Object[]{41}, (Object[]) row.convert(GenericRowData.of(41)));
-
-        TypeMappingException e = assertThrows(TypeMappingException.class,
-                () -> ClickHouseTypeMapper.converterFor(
-                        new ArrayType(false, new IntType(true)),
-                        col("Array(SimpleAggregateFunction(max, Int32))"), LENIENT, "c"));
-        assertTrue(e.getMessage().contains("element type INT is nullable"), e.getMessage());
+        Object[][] cases = {
+            {new ArrayType(false, new IntType(false)), "Array(SimpleAggregateFunction(max, Int32))", "an Array element"},
+            {new MapType(false, key, new IntType(false)), "Map(String, SimpleAggregateFunction(max, Int32))", "a Map value"},
+            {new MapType(false, key, new IntType(false)), "Map(SimpleAggregateFunction(max, String), Int32)", "a Map key"},
+            {rowOf(new IntType(false)), "Tuple(SimpleAggregateFunction(max, Int32))", "the Tuple element at position 1"},
+            {multisetOfString(), "Map(String, SimpleAggregateFunction(sum, UInt64))", "the MULTISET count value"},
+        };
+        for (Object[] c : cases) {
+            TypeMappingException e = assertThrows(TypeMappingException.class,
+                    () -> ClickHouseTypeMapper.converterFor((LogicalType) c[0], col((String) c[1]), LENIENT, "c"),
+                    (String) c[1]);
+            assertEquals(TypeMappingException.Kind.TARGET_UNSUPPORTED, e.getKind(), (String) c[1]);
+            assertTrue(e.getMessage().contains("only supported as a top-level column; found as " + c[2]),
+                    e.getMessage());
+        }
     }
 
     @Test
@@ -509,17 +505,14 @@ class ClickHouseTypeMapperTest {
         }
     }
 
-    /** A count is never null, so a Nullable or SimpleAggregateFunction count column takes it as its inner integer. */
+    /** A count is never null, so a Nullable count column takes it as its inner integer. */
     @Test
-    void multisetWritesCountsIntoNullableAndSimpleAggregateFunctionColumns() {
-        for (String countType : new String[] {"Nullable(UInt64)", "SimpleAggregateFunction(sum, UInt64)",
-                "SimpleAggregateFunction(anyLast, Nullable(UInt64))"}) {
-            ValueConverter converter = ClickHouseTypeMapper.converterFor(
-                    multisetOfString(), col("Map(String, " + countType + ")"), LENIENT, "c");
-            Map<Object, Object> counts = new LinkedHashMap<>();
-            counts.put(StringData.fromString("a"), 2);
-            assertEquals(Map.of("a", 2L), converter.convert(new GenericMapData(counts)), countType);
-        }
+    void multisetWritesCountsIntoNullableColumns() {
+        ValueConverter converter = ClickHouseTypeMapper.converterFor(
+                multisetOfString(), col("Map(String, Nullable(UInt64))"), LENIENT, "c");
+        Map<Object, Object> counts = new LinkedHashMap<>();
+        counts.put(StringData.fromString("a"), 2);
+        assertEquals(Map.of("a", 2L), converter.convert(new GenericMapData(counts)));
     }
 
     @Test
@@ -781,26 +774,6 @@ class ClickHouseTypeMapperTest {
                         col("Map(UInt64, UInt64)"), LENIENT, "c"));
         assertTrue(multisetError.getMessage().contains("Map keys of type UInt64"),
                 multisetError.getMessage());
-    }
-
-    @Test
-    void simpleAggregateFunctionMapKeysAreRejectedAtPlanning() {
-        // client-v2's serializeMapData sends keys through serializePrimitiveData, which has no SAF case.
-        MapType mapType = new MapType(false,
-                new VarCharType(false, VarCharType.MAX_LENGTH), new IntType(false));
-        TypeMappingException e = assertThrows(TypeMappingException.class,
-                () -> ClickHouseTypeMapper.converterFor(
-                        mapType, col("Map(SimpleAggregateFunction(max, String), Int32)"), LENIENT, "c"));
-        assertTrue(e.getMessage().contains("Map keys of type SimpleAggregateFunction"), e.getMessage());
-        assertTrue(e.getMessage().contains("use a plain String key column"), e.getMessage());
-
-        // UInt64 is rejected as a key too, so the message must not suggest it.
-        TypeMappingException unsupportedInner = assertThrows(TypeMappingException.class,
-                () -> ClickHouseTypeMapper.converterFor(
-                        mapType, col("Map(SimpleAggregateFunction(max, UInt64), Int32)"), LENIENT, "c"));
-        assertTrue(unsupportedInner.getMessage().contains("Map keys of type SimpleAggregateFunction"),
-                unsupportedInner.getMessage());
-        assertFalse(unsupportedInner.getMessage().contains("use a plain"), unsupportedInner.getMessage());
     }
 
     @Test

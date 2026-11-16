@@ -137,31 +137,11 @@ class DataWriterContractTest {
                 serialize(Collections.singletonMap("a", null), column("Map(String, Nullable(Tuple(Int32)))")));
     }
 
-    /** The mapper matches SimpleAggregateFunction inside composites on its inner type because the client writes it as that type (clickhouse-java#2937). */
-    @Test
-    void simpleAggregateFunctionInsideCompositesWritesAsItsInnerType() throws IOException {
-        assertArrayEquals(bytes(2, 0, 41, 0, 0, 0, 1),
-                serialize(Arrays.asList(41, null), column("Array(SimpleAggregateFunction(anyLast, Nullable(Int32)))")));
-        assertArrayEquals(bytes(1, 3, 0, 0, 0, 0, 0, 0, 0),
-                serialize(new Object[]{null, 3L}, column(
-                        "Tuple(SimpleAggregateFunction(anyLast, Nullable(String)), SimpleAggregateFunction(max, Int64))")));
-        assertArrayEquals(bytes(1, 1, 'a', 2, 0, 0, 0, 0, 0, 0, 0),
-                serialize(Map.of("a", 2L), column("Map(String, SimpleAggregateFunction(sum, Int64))")));
-    }
-
-    /** Canary for the mapper's SimpleAggregateFunction Map-key rejection: when this fails, the client writes such keys and the rejection can go. */
-    @Test
-    void simpleAggregateFunctionMapKeysStayUnwritable() {
-        assertThrows(UnsupportedOperationException.class,
-                () -> serialize(Map.of("k", 1), column("Map(SimpleAggregateFunction(max, String), Int32)")));
-    }
-
     /** A restored payload skips the mapper, so nested nulls must come back from the checkpoint encoding byte-identical. */
     @Test
     void nestedNullsRestoreFromACheckpointToTheSameBytes() throws IOException {
         assertRestoresToTheSameBytes(scoresWithANull(), "Map(String, Nullable(Int32))");
         assertRestoresToTheSameBytes(new Object[]{null, "x"}, "Tuple(Nullable(Int32), Nullable(String))");
-        assertRestoresToTheSameBytes(Arrays.asList(41, null), "Array(SimpleAggregateFunction(anyLast, Nullable(Int32)))");
     }
 
     // ------------------------------------------------------------------------------------

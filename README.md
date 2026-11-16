@@ -248,7 +248,8 @@ and let server defaults fill them.
 Everywhere: nullable Flink columns need `Nullable(...)` targets — except top-level
 `Nullable(UInt8/16/32/64)` columns, blocked until issue #144 — and composites must be `NOT NULL`
 (a nested `ROW` may be nullable against ClickHouse's experimental `Nullable(Tuple(...))`).
-`LowCardinality` is transparent; `SimpleAggregateFunction(f, T)` matches as `T`, except as a `Map` key.
+`LowCardinality` is transparent; `SimpleAggregateFunction(f, T)` matches as `T`, top-level only (ClickHouse
+does not aggregate it inside a composite).
 
 Notes for SQL users:
 - Operator names are planner-generated (e.g. `Sink: ch_events[3]`), which affects metric

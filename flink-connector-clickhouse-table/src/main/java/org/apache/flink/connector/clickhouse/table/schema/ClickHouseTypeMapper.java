@@ -191,6 +191,17 @@ public final class ClickHouseTypeMapper {
         }
     }
 
+    /** AggregatingMergeTree aggregates only top-level SimpleAggregateFunction columns; nested, merges keep one row's value. */
+    private static ClickHouseColumn rejectNestedSimpleAggregateFunction(ClickHouseColumn column, String position) {
+        if (column.getDataType() == ClickHouseDataType.SimpleAggregateFunction) {
+            throw TypeMappingException.targetUnsupported(String.format(
+                    "SimpleAggregateFunction is only supported as a top-level column; found as %s, where "
+                    + "ClickHouse does not aggregate it on merge — declare %s instead",
+                    position, unwrapSimpleAggregateFunction(column).getOriginalTypeName()));
+        }
+        return column;
+    }
+
     // ------------------------------------------------------------------------------------
     // Matrix registration — one entry per LogicalTypeRoot
     // ------------------------------------------------------------------------------------
@@ -657,7 +668,8 @@ public final class ClickHouseTypeMapper {
                                                       TypeMappingOptions options, String columnPathText) {
         requireTargetType(target, ClickHouseDataType.Array, flinkType, "Array(T)");
         LogicalType elementType = ((ArrayType) flinkType).getElementType();
-        ClickHouseColumn elementColumn = unwrapSimpleAggregateFunction(target.getNestedColumns().get(0));
+        ClickHouseColumn elementColumn =
+                rejectNestedSimpleAggregateFunction(target.getNestedColumns().get(0), "an Array element");
         checkArrayElementNullability(elementType, elementColumn);
 
         ArrayData.ElementGetter elementGetter = nullCheckingElementGetter(elementType);
@@ -686,7 +698,7 @@ public final class ClickHouseTypeMapper {
         MapType mapType = (MapType) flinkType;
         LogicalType keyType = mapType.getKeyType();
         LogicalType valueType = mapType.getValueType();
-        ClickHouseColumn valueColumn = unwrapSimpleAggregateFunction(target.getValueInfo());
+        ClickHouseColumn valueColumn = rejectNestedSimpleAggregateFunction(target.getValueInfo(), "a Map value");
         ValueConverter keyConverter = buildMapKeyConverter(keyType, target.getKeyInfo(), options, columnPathText);
         ValueConverter valueConverter = buildMapValueConverter(valueType, valueColumn, options, columnPathText);
         return buildPayloadMapConverter(keyType, keyConverter, valueType, valueConverter,
@@ -737,7 +749,8 @@ public final class ClickHouseTypeMapper {
     }
 
     private static ClickHouseDataType checkMultisetCountTarget(ClickHouseColumn target) {
-        ClickHouseColumn valueColumn = unwrapSimpleAggregateFunction(target.getValueInfo());
+        ClickHouseColumn valueColumn =
+                rejectNestedSimpleAggregateFunction(target.getValueInfo(), "the MULTISET count value");
         if (!INTEGER_TARGETS.contains(valueColumn.getDataType())) {
             throw TypeMappingException.mismatch(String.format(
                     "MULTISET counts require an integer Map value type "
@@ -763,6 +776,7 @@ public final class ClickHouseTypeMapper {
      */
     private static ValueConverter buildMapKeyConverter(LogicalType keyType, ClickHouseColumn keyColumn,
                                                        TypeMappingOptions options, String columnPathText) {
+        rejectNestedSimpleAggregateFunction(keyColumn, "a Map key");
         checkMapKeyNullability(keyColumn);
         checkMapKeyIsRestorableFromString(keyColumn);
         ValueConverter keyConverter = buildNestedConverter(
@@ -790,15 +804,6 @@ public final class ClickHouseTypeMapper {
                     + "are checkpointed as strings and the client serializer restores them with a "
                     + "signed-long parse, which fails for the upper half of the UInt64 range; "
                     + "use an Int64 or UInt128 key column instead");
-        }
-        if (keyColumn.getDataType() == ClickHouseDataType.SimpleAggregateFunction) {
-            ClickHouseColumn inner = unwrapSimpleAggregateFunction(keyColumn);
-            throw TypeMappingException.mismatch(String.format(
-                    "ClickHouse Map keys of type SimpleAggregateFunction are not supported by the sink — "
-                    + "the client serializer unwraps SimpleAggregateFunction everywhere except in a Map key%s",
-                    STRING_RESTORABLE_MAP_KEY_TARGETS.contains(inner.getDataType())
-                            ? "; use a plain " + inner.getOriginalTypeName() + " key column instead"
-                            : ""));
         }
         throw TypeMappingException.mismatch(String.format(
                 "ClickHouse Map key type %s is not supported by the sink — map keys are "
@@ -894,7 +899,8 @@ public final class ClickHouseTypeMapper {
         boolean[] nullableElements = new boolean[rowType.getFieldCount()];
         for (int i = 0; i < rowType.getFieldCount(); i++) {
             RowType.RowField field = rowType.getFields().get(i);
-            ClickHouseColumn element = unwrapSimpleAggregateFunction(elements.get(i));
+            ClickHouseColumn element =
+                    rejectNestedSimpleAggregateFunction(elements.get(i), "the Tuple element at position " + (i + 1));
             fieldGetters[i] = nullCheckingFieldGetter(field.getType(), i);
             fieldConverters[i] = buildRowFieldConverter(field, element, options, columnPathText);
             nullableElements[i] = element.isNullable();
@@ -980,7 +986,7 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    /** Recurses into a nested pair, prefixing mismatch reasons with the structural context; nested SimpleAggregateFunction and Nullable elements rely on client-v2 0.11.0+ (clickhouse-java#2937, #2886). */
+    /** Recurses into a nested pair, prefixing mismatch reasons with the structural context; nested Nullable elements rely on client-v2 0.10.0+ (clickhouse-java#2886). */
     private static ValueConverter buildNestedConverter(LogicalType flinkType, ClickHouseColumn column,
                                                        TypeMappingOptions options, String columnPathText, String context) {
         try {
