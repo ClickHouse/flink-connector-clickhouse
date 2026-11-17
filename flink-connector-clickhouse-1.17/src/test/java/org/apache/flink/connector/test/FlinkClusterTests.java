@@ -15,8 +15,11 @@ public class FlinkClusterTests {
 
     @AfterAll
     public static void tearDown() {
-        EmbeddedFlinkClusterForTests.tearDown();
-        ClickHouseServerForTests.tearDown();
+        try {
+            EmbeddedFlinkClusterForTests.tearDown();
+        } finally {
+            ClickHouseServerForTests.tearDown();
+        }
     }
 
     public static String getServerURL() {

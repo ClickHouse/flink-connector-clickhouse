@@ -52,10 +52,10 @@ dependencies {
     }
     testFixturesImplementation("org.testcontainers:testcontainers:${project.extra["testContainersVersion"]}")
     testFixturesImplementation("org.testcontainers:clickhouse:${project.extra["testContainersVersion"]}")
-    testFixturesImplementation("com.squareup.okhttp3:okhttp:5.1.0")
-    testFixturesImplementation("com.google.code.gson:gson:2.10.1")
-    testFixturesImplementation("org.scalatest:scalatest_2.13:3.2.19")
-    testFixturesImplementation("org.scalatestplus:junit-4-13_2.13:3.2.18.0")
+    testFixturesImplementation("com.squareup.okhttp3:okhttp:5.5.1")
+    testFixturesImplementation("com.google.code.gson:gson:2.15.0")
+    testFixturesImplementation("org.scalatest:scalatest_2.13:3.2.20")
+    testFixturesImplementation("org.scalatestplus:junit-4-13_2.13:3.2.20.0")
 
 }
 

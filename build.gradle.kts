@@ -3,7 +3,7 @@ plugins {
     java
     signing
     id("com.gradleup.nmcp") version "0.0.8"
-    id("com.gradleup.shadow") version "9.0.2"
+    id("com.gradleup.shadow") version "9.6.1"
 }
 
 val versionFile by extra("version.txt")
@@ -66,6 +66,9 @@ subprojects {
         testLogging {
             events("passed", "failed", "skipped")
             //showStandardStreams = true - , "standardOut", "standardError"
+            // CI uploads no test reports, so the log is all there is: print each cause's message
+            // (for a ServerException, the server's "Code: NN. DB::Exception ... (queryId= ...)").
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
         }
     }
 

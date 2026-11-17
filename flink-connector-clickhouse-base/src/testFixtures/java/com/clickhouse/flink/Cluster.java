@@ -24,6 +24,18 @@ public class Cluster {
     private static final int INTERNAL_REST_PORT = 8081;
     private static final int INTERNAL_JOB_MANAGER_RCP_PORT = 6123;
 
+    /**
+     * Shared client for the JobManager REST calls. OkHttp's default 10 s read/write timeout is
+     * too tight for {@code /jars/:id/run}: the JobManager runs the job's main() (which pings
+     * ClickHouse) and submits the JobGraph before it answers, and on a freshly started cluster on
+     * a slow CI runner that can take longer than 10 s.
+     */
+    private static final OkHttpClient REST_CLIENT = new OkHttpClient.Builder()
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .build();
+
     private GenericContainer<?> containerJobManager;
     private List<GenericContainer<?>> containerTaskManagerList = new ArrayList<>();
 
@@ -173,7 +185,7 @@ public class Cluster {
     public String uploadJar(String jarFilePath) throws IOException {
         File jarFile = new File(jarFilePath);
         String clusterURLJarUploadAPI = String.format("http://%s/jars/upload", getDashboardUrl());
-        OkHttpClient client = new OkHttpClient();
+        OkHttpClient client = REST_CLIENT;
         RequestBody fileBody = RequestBody.create(jarFile, MediaType.parse("application/java-archive"));
         MultipartBody requestBody = new MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
@@ -209,7 +221,7 @@ public class Cluster {
     public List<String> listAllJars() throws IOException {
         String clusterURLListJars = String.format("http://%s/jars", getDashboardUrl());
 
-        OkHttpClient client = new OkHttpClient();
+        OkHttpClient client = REST_CLIENT;
         Request request = new Request.Builder()
                 .url(clusterURLListJars)
                 .build();
@@ -246,7 +258,7 @@ public class Cluster {
                 MediaType.get("application/json; charset=utf-8")
         );
 
-        OkHttpClient client = new OkHttpClient();
+        OkHttpClient client = REST_CLIENT;
         Request request = new Request.Builder()
                 .url(clusterURLJarRunAPI)
                 .post(body)
@@ -271,7 +283,7 @@ public class Cluster {
 
     public String jobStatus(String jobId) throws IOException {
         String clusterURLJobStatusAPI = String.format("http://%s/jobs/%s", getDashboardUrl(), jobId);
-        OkHttpClient client = new OkHttpClient();
+        OkHttpClient client = REST_CLIENT;
         Request request = new Request.Builder()
                 .url(clusterURLJobStatusAPI)
                 .build();
@@ -308,7 +320,7 @@ public class Cluster {
         body.addProperty("target-directory", targetDirectory);
         body.addProperty("cancel-job", false);
 
-        OkHttpClient client = new OkHttpClient();
+        OkHttpClient client = REST_CLIENT;
         Request request = new Request.Builder()
                 .url(url)
                 .post(RequestBody.create(body.toString(), MediaType.get("application/json; charset=utf-8")))
@@ -330,7 +342,7 @@ public class Cluster {
 
     private String waitForSavepointCompletion(String jobId, String triggerId) throws IOException, InterruptedException {
         String url = String.format("http://%s/jobs/%s/savepoints/%s", getDashboardUrl(), jobId, triggerId);
-        OkHttpClient client = new OkHttpClient();
+        OkHttpClient client = REST_CLIENT;
         String lastBody = "";
         for (int i = 0; i < 120; i++) {
             Request request = new Request.Builder().url(url).build();
@@ -367,7 +379,7 @@ public class Cluster {
      */
     public boolean cancelJob(String jobId) throws IOException {
         String url = String.format("http://%s/jobs/%s?mode=cancel", getDashboardUrl(), jobId);
-        OkHttpClient client = new OkHttpClient();
+        OkHttpClient client = REST_CLIENT;
         Request request = new Request.Builder()
                 .url(url)
                 .patch(RequestBody.create("", MediaType.get("application/json; charset=utf-8")))
@@ -401,7 +413,7 @@ public class Cluster {
             body.add("programArgsList", arr);
         }
 
-        OkHttpClient client = new OkHttpClient();
+        OkHttpClient client = REST_CLIENT;
         Request request = new Request.Builder()
                 .url(url)
                 .post(RequestBody.create(body.toString(), MediaType.get("application/json; charset=utf-8")))
