@@ -46,8 +46,8 @@ dependencies {
     // For testing
     testImplementation(testFixtures(project(":flink-connector-clickhouse-base")))
     testImplementation("org.testcontainers:testcontainers:${project.extra["testContainersVersion"]}")
-    testImplementation("com.squareup.okhttp3:okhttp:5.1.0")
-    testImplementation("com.google.code.gson:gson:2.10.1")
+    testImplementation("com.squareup.okhttp3:okhttp:5.5.1")
+    testImplementation("com.google.code.gson:gson:2.15.0")
 }
 
 sourceSets {
