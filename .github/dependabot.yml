@@ -29,3 +29,8 @@ updates:
       # version change breaks binary compatibility.
       - dependency-name: "org.scala-lang:*"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # JUnit 6 needs Java 17, and tests run on the Java 11 toolchain.
+      - dependency-name: "org.junit.jupiter:*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "org.junit.platform:*"
+        update-types: ["version-update:semver-major"]
