@@ -66,6 +66,9 @@ subprojects {
         testLogging {
             events("passed", "failed", "skipped")
             //showStandardStreams = true - , "standardOut", "standardError"
+            // CI uploads no test reports, so the log is all there is: print each cause's message
+            // (for a ServerException, the server's "Code: NN. DB::Exception ... (queryId= ...)").
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
         }
     }
 
