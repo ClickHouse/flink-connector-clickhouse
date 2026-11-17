@@ -34,4 +34,4 @@ jobs:
           NMCP_PASSWORD: ${{ secrets.NMCP_PASSWORD }}
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-        run: ./gradlew publishMavenPublicationToCentralPortal
+        run: ./gradlew publishAggregationToCentralPortal

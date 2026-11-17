@@ -2,7 +2,7 @@ plugins {
     `maven-publish`
     java
     signing
-    id("com.gradleup.nmcp") version "1.6.2"
+    id("com.gradleup.nmcp.aggregation") version "1.6.2"
     id("com.gradleup.shadow") version "9.6.1"
 }
 
@@ -115,4 +115,18 @@ subprojects {
             "-s", "org.apache.flink.connector.clickhouse.test.scala.ClickHouseSinkTests"
         )
     }
+}
+
+// One Central Portal deployment for both published modules: ./gradlew publishAggregationToCentralPortal
+nmcpAggregation {
+    centralPortal {
+        username = System.getenv("NMCP_USERNAME")
+        password = System.getenv("NMCP_PASSWORD")
+        publishingType = "USER_MANAGED"
+    }
+}
+
+dependencies {
+    nmcpAggregation(project(":flink-connector-clickhouse-1.17"))
+    nmcpAggregation(project(":flink-connector-clickhouse-2.0.0"))
 }

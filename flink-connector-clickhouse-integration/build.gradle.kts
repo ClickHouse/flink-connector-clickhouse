@@ -7,7 +7,7 @@ plugins {
     `maven-publish`
     java
     signing
-    id("com.gradleup.nmcp") version "1.6.2"
+    id("com.gradleup.nmcp")
 }
 
 val scalaVersion = "2.13.12"
