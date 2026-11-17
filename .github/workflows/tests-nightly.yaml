@@ -10,6 +10,10 @@ jobs:
   test-flink-17:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # Restore the entry tests.yaml saves for this Flink version (same job id, same key);
+      # this job's dependencies are a subset of that job's. See the comment there.
+      GRADLE_BUILD_ACTION_CACHE_KEY_JOB_INSTANCE: flink-${{ matrix.flink }}
     strategy:
       fail-fast: false
       matrix:
@@ -49,6 +53,9 @@ jobs:
   test-flink-2:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # FLINK_2_VERSION is unset here, so the module builds against its 2.0.0 default.
+      GRADLE_BUILD_ACTION_CACHE_KEY_JOB_INSTANCE: flink-2.0.0
     strategy:
       fail-fast: false
       matrix:
