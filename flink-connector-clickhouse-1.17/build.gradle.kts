@@ -13,7 +13,7 @@ plugins {
     java
     signing
     `java-test-fixtures`
-    id("com.gradleup.nmcp") version "0.0.8"
+    id("com.gradleup.nmcp")
     id("com.gradleup.shadow") version "9.6.1"
 }
 
@@ -206,13 +206,5 @@ signing {
     if (signingKey != null && signingPassword != null) {
         useInMemoryPgpKeys(signingKey, signingPassword)
         sign(publishing.publications["maven"])
-    }
-}
-
-nmcp {
-    publish("maven") {
-        username = System.getenv("NMCP_USERNAME")
-        password = System.getenv("NMCP_PASSWORD")
-        publicationType = "USER_MANAGED"
     }
 }

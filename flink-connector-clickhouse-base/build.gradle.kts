@@ -8,7 +8,7 @@ plugins {
     java
     signing
     `java-test-fixtures`
-    id("com.gradleup.nmcp") version "0.0.8"
+    id("com.gradleup.nmcp")
 }
 
 val scalaVersion = "2.13.12"
