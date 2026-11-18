@@ -70,7 +70,7 @@ public final class ServerComputedColumns {
         }
     }
 
-    private static boolean isInsertTarget(ClickHouseColumn column) {
+    static boolean isInsertTarget(ClickHouseColumn column) {
         return !column.hasDefault() || column.getDefaultValue() == null
                 || column.getDefaultValue() == ClickHouseColumn.DefaultValue.DEFAULT;
     }

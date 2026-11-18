@@ -11,7 +11,12 @@ import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.types.logical.ArrayType;
+import org.apache.flink.table.types.logical.BigIntType;
+import org.apache.flink.table.types.logical.BooleanType;
+import org.apache.flink.table.types.logical.DateType;
 import org.apache.flink.table.types.logical.DecimalType;
+import org.apache.flink.table.types.logical.DoubleType;
+import org.apache.flink.table.types.logical.FloatType;
 import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LocalZonedTimestampType;
 import org.apache.flink.table.types.logical.LogicalType;
@@ -19,7 +24,10 @@ import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.MapType;
 import org.apache.flink.table.types.logical.MultisetType;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.table.types.logical.SmallIntType;
 import org.apache.flink.table.types.logical.TimestampType;
+import org.apache.flink.table.types.logical.TinyIntType;
+import org.apache.flink.table.types.logical.VarCharType;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -58,6 +66,9 @@ import static com.clickhouse.utils.writer.DataWriter.unwrapSimpleAggregateFuncti
  * <p>{@code build*Converter} methods run once per column at planning time; {@code toPayload*}
  * methods run per record on the TaskManager. Wrapper shedding is shared with the write path
  * (DataWriter#unwrapSimpleAggregateFunction).
+ *
+ * <p>{@link #toFlinkType} is the opposite direction, for the catalog: the Flink type to declare for
+ * a ClickHouse column, checked against this same matrix.
  */
 public final class ClickHouseTypeMapper {
 
@@ -969,6 +980,114 @@ public final class ClickHouseTypeMapper {
             result[i] = converters[i].convert(field);
         }
         return result;
+    }
+
+    // ------------------------------------------------------------------------------------
+    // Reverse mapping — ClickHouse to Flink, for the catalog
+    // ------------------------------------------------------------------------------------
+
+    /** Neither option shapes a derived type; they only parameterise the acceptance check. */
+    private static final TypeMappingOptions REVERSE_MAPPING_OPTIONS = new TypeMappingOptions(ZoneOffset.UTC, false);
+
+    /**
+     * The Flink type a hand-written DDL would declare for {@code column}, or a
+     * {@link TypeMappingException} when the sink cannot write the column.
+     */
+    public static LogicalType toFlinkType(ClickHouseColumn column) {
+        LogicalType flinkType = counterpartOf(column);
+        // The forward matrix stays the one authority on what is writable.
+        converterFor(flinkType, column, REVERSE_MAPPING_OPTIONS, column.getColumnName());
+        return flinkType;
+    }
+
+    /** Nullable exactly where the column is, at every nesting level. */
+    private static LogicalType counterpartOf(ClickHouseColumn column) {
+        ClickHouseColumn target = unwrapSimpleAggregateFunction(column);
+        checkTargetWritable(target);
+        return bareCounterpartOf(target).copy(target.isNullable());
+    }
+
+    private static LogicalType bareCounterpartOf(ClickHouseColumn target) {
+        switch (target.getDataType()) {
+            case Bool:
+                return new BooleanType();
+            case Int8:
+                return new TinyIntType();
+            case Int16:
+                return new SmallIntType();
+            case Int32:
+                return new IntType();
+            case Int64:
+                return new BigIntType();
+            // Unsigned columns take the narrowest signed Flink type holding their whole range.
+            case UInt8:
+                return new SmallIntType();
+            case UInt16:
+                return new IntType();
+            case UInt32:
+                return new BigIntType();
+            case UInt64:
+                return new DecimalType(20, 0);
+            // Wider than Flink's 38 digits, so only that much of their range is reachable.
+            case Int128:
+            case Int256:
+            case UInt128:
+            case UInt256:
+                return new DecimalType(DecimalType.MAX_PRECISION, 0);
+            case Float32:
+                return new FloatType();
+            case Float64:
+                return new DoubleType();
+            case Decimal:
+            case Decimal32:
+            case Decimal64:
+            case Decimal128:
+            case Decimal256:
+                return decimalCounterpart(target.getPrecision(), target.getScale());
+            case String:
+            case FixedString:
+            case UUID:
+            case JSON:
+                return VarCharType.STRING_TYPE;
+            case Date:
+            case Date32:
+                return new DateType();
+            case DateTime:
+                return timestampCounterpart(target, 0);
+            case DateTime64:
+                return timestampCounterpart(target, target.getScale());
+            case Array:
+                return new ArrayType(counterpartOf(target.getNestedColumns().get(0)));
+            case Map:
+                // Nullable like every MAP key in Flink DDL; the forward matrix exempts it.
+                return new MapType(counterpartOf(target.getKeyInfo()).copy(true), counterpartOf(target.getValueInfo()));
+            case Tuple:
+                return rowCounterpart(target.getNestedColumns());
+            default:
+                throw new IllegalStateException("Writable type " + target.getDataType() + " has no Flink counterpart");
+        }
+    }
+
+    /** Flink ends at 38 digits; a wider column keeps its scale, so no written value is rounded. */
+    private static LogicalType decimalCounterpart(int precision, int scale) {
+        int flinkPrecision = Math.min(precision, DecimalType.MAX_PRECISION);
+        return new DecimalType(flinkPrecision, Math.min(scale, flinkPrecision));
+    }
+
+    /** A column naming its zone holds instants; without one it is a wall clock in {@code sink.timezone}. */
+    private static LogicalType timestampCounterpart(ClickHouseColumn target, int precision) {
+        return target.hasTimeZone() ? new LocalZonedTimestampType(precision) : new TimestampType(precision);
+    }
+
+    /** An unnamed Tuple gets Flink's own positional field names. */
+    private static LogicalType rowCounterpart(List<ClickHouseColumn> elements) {
+        List<RowType.RowField> fields = new ArrayList<>(elements.size());
+        for (int i = 0; i < elements.size(); i++) {
+            String name = elements.get(i).getColumnName();
+            fields.add(new RowType.RowField(
+                    name == null || name.isEmpty() ? "f" + i : name, counterpartOf(elements.get(i))));
+        }
+        return new RowType(fields);
     }
 
     // ------------------------------------------------------------------------------------

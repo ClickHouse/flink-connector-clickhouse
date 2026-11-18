@@ -162,7 +162,7 @@ public final class SchemaResolver {
     }
 
     /** The payload map key {@code __clickhouse_raw__} is reserved for STRING-mode payloads. */
-    private static void checkNotReservedName(String name) {
+    static void checkNotReservedName(String name) {
         if (ClickHousePayload.RAW_KEY.equals(name)) {
             throw new ValidationException(String.format(
                     "Column '%s' collides with the connector's reserved payload key and cannot be "

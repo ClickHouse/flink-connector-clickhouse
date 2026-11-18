@@ -26,7 +26,7 @@ Table of Contents
 This is a repo of ClickHouse official Apache Flink Connector supported by the ClickHouse team.
 The connector supports two main Apache Flink APIs: 
 - DataStream API
-- Table API / Flink SQL (inserts only, no updates or deletes)
+- Table API / Flink SQL (inserts only, no updates or deletes), with a read-only catalog
 
 ## Supported Flink Versions
 
@@ -259,6 +259,77 @@ Notes for SQL users:
   both jars on the classpath fails with Flink's "multiple factories" error — keep only one.
 - SQL gateways without ClickHouse network access can deploy in application mode, where
   planning runs on the JobManager inside the data plane.
+
+### Catalog
+
+The connector also registers a read-only catalog, `'type' = 'clickhouse'`, that exposes the
+databases and tables of a ClickHouse server to Flink SQL. A table reached through it needs no
+`CREATE TABLE`: the catalog derives the Flink schema from the ClickHouse table and pre-fills the
+`'connector' = 'clickhouse'` options, and from there the insert is planned exactly as above.
+
+```sql
+CREATE CATALOG ch WITH (
+    'type'     = 'clickhouse',
+    'url'      = 'http://localhost:8123',
+    'username' = 'default',
+    'password' = ''
+    -- + optional 'default-database' and sink options, see below
+);
+
+SHOW TABLES IN ch.analytics;       -- the tables ClickHouse has right now
+DESCRIBE ch.analytics.events;      -- with their derived Flink schema
+INSERT INTO ch.analytics.events SELECT event_id, amount, created_at FROM kafka_src;
+```
+
+| Option | Default | Effect |
+|---|---|---|
+| `url`, `username`, `password` | required, required, `''` | the connection, as for a table |
+| `default-database` | `default` | the database that is current after `USE CATALOG`; it must exist |
+| any other [connector option](#connector-options) except `database` and `table` | | becomes the default of every table of the catalog; an `/*+ OPTIONS(...) */` hint overrides it per statement |
+
+`CREATE CATALOG` connects once, so a wrong endpoint, credential or default database fails there,
+and it checks every option the way a table's planning would. Nothing is cached afterwards: each
+statement reads ClickHouse again, so a table created or altered there shows at once.
+
+The derived schema is the one you would declare by hand:
+
+| ClickHouse column type | Flink SQL type |
+|---|---|
+| `Bool` | `BOOLEAN` |
+| `Int8` / `Int16` / `Int32` / `Int64` | `TINYINT` / `SMALLINT` / `INT` / `BIGINT` |
+| `UInt8` / `UInt16` / `UInt32` / `UInt64` | `SMALLINT` / `INT` / `BIGINT` / `DECIMAL(20, 0)` |
+| `Int128`, `Int256`, `UInt128`, `UInt256` | `DECIMAL(38, 0)` |
+| `Float32` / `Float64` | `FLOAT` / `DOUBLE` |
+| `Decimal(p, s)`, `Decimal32/64/128/256(s)` | `DECIMAL(p, s)`; beyond Flink's 38 digits, `DECIMAL(38, s)` with `s` capped at 38 |
+| `String`, `FixedString(n)`, `UUID`, `JSON` | `STRING` |
+| `Date`, `Date32` | `DATE` |
+| `DateTime`, `DateTime64(s)` | `TIMESTAMP(0)`, `TIMESTAMP(s)` — a wall clock in `sink.timezone` |
+| `DateTime('zone')`, `DateTime64(s, 'zone')` | `TIMESTAMP_LTZ(0)`, `TIMESTAMP_LTZ(s)` — an instant |
+| `Array(T)` | `ARRAY<t>` |
+| `Map(K, V)` | `MAP<k, v>` |
+| `Tuple(...)` | `ROW<...>`, its fields named after the Tuple's elements, or `f0`, `f1`, … for an unnamed Tuple |
+
+A column is `NOT NULL` unless it is `Nullable(...)`; `Nullable(UInt8/16/32/64)` stays `NOT NULL`
+until issue #144. `LowCardinality` and a top-level `SimpleAggregateFunction` are transparent.
+These are pairs of the [type mapping](#type-mapping) above, so its per-record range checks apply.
+
+What the catalog does not do:
+- **It is read-only.** `CREATE`, `DROP` and `ALTER` of its databases, tables, views and functions
+  are refused. Change tables in ClickHouse; keep Flink-only objects `TEMPORARY` or in another catalog.
+- **It is not readable.** The connector has no table source, so a `SELECT` from a catalog table
+  fails at planning.
+- **A table with a column the sink cannot write is not usable through it** — `Enum`, `IPv4/6`,
+  `Variant`, `Time`, a `Nullable` Map value or Tuple element and the rest of "Unsupported" above.
+  The statement fails naming the column; declare that table with `CREATE TEMPORARY TABLE` and
+  leave the column out.
+- **`MATERIALIZED`, `ALIAS` and `EPHEMERAL` columns are left out** of the schema, as no insert can
+  carry them. Every other column is in it, so a non-`Nullable` column must be given a value even
+  when it has a `DEFAULT` — to leave it to the server, declare the table by hand without it.
+- ClickHouse views are listed as tables; an insert into a plain view fails at the first flush,
+  when the server refuses it. A table whose name needs quoting in SQL (anything but
+  `[a-zA-Z_][a-zA-Z0-9_]*`) is listed but cannot be used.
+- The connection options, password included, are part of every table's options, so
+  `SHOW CREATE TABLE` on a catalog table prints them.
 
 ### Example
 
