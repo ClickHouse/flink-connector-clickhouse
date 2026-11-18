@@ -1068,10 +1068,16 @@ public final class ClickHouseTypeMapper {
         }
     }
 
-    /** Flink ends at 38 digits; a wider column keeps its scale, so no written value is rounded. */
+    private static final int MIN_WIDE_DECIMAL_SCALE = 6;
+
+    /** Past Flink's 38 digits, Flink's own split: integer digits first, at least min(scale, 6) fractional. */
     private static LogicalType decimalCounterpart(int precision, int scale) {
-        int flinkPrecision = Math.min(precision, DecimalType.MAX_PRECISION);
-        return new DecimalType(flinkPrecision, Math.min(scale, flinkPrecision));
+        if (precision <= DecimalType.MAX_PRECISION) {
+            return new DecimalType(precision, scale);
+        }
+        int integerDigits = precision - scale;
+        return new DecimalType(DecimalType.MAX_PRECISION,
+                Math.max(DecimalType.MAX_PRECISION - integerDigits, Math.min(scale, MIN_WIDE_DECIMAL_SCALE)));
     }
 
     /** A column naming its zone holds instants; without one it is a wall clock in {@code sink.timezone}. */

@@ -69,9 +69,11 @@ class SchemaDeriverTest {
             {"Decimal32(2)",                                      "DECIMAL(9, 2) NOT NULL"},
             {"Decimal64(4)",                                      "DECIMAL(18, 4) NOT NULL"},
             {"Decimal128(10)",                                    "DECIMAL(38, 10) NOT NULL"},
-            // beyond Flink's 38 digits the scale is kept, and what it leaves of the precision
-            {"Decimal256(20)",                                    "DECIMAL(38, 20) NOT NULL"},
-            {"Decimal(76, 50)",                                   "DECIMAL(38, 38) NOT NULL"},
+            // beyond Flink's 38 digits the integer digits come first, and the scale keeps at least min(s, 6)
+            {"Decimal(76, 50)",                                   "DECIMAL(38, 12) NOT NULL"},
+            {"Decimal(76, 38)",                                   "DECIMAL(38, 6) NOT NULL"},
+            {"Decimal256(20)",                                    "DECIMAL(38, 6) NOT NULL"},
+            {"Decimal(50, 2)",                                    "DECIMAL(38, 2) NOT NULL"},
             {"String",                                            "STRING NOT NULL"},
             {"FixedString(8)",                                    "STRING NOT NULL"},
             {"UUID",                                              "STRING NOT NULL"},

@@ -300,7 +300,7 @@ The derived schema is the one you would declare by hand:
 | `UInt8` / `UInt16` / `UInt32` / `UInt64` | `SMALLINT` / `INT` / `BIGINT` / `DECIMAL(20, 0)` |
 | `Int128`, `Int256`, `UInt128`, `UInt256` | `DECIMAL(38, 0)` |
 | `Float32` / `Float64` | `FLOAT` / `DOUBLE` |
-| `Decimal(p, s)`, `Decimal32/64/128/256(s)` | `DECIMAL(p, s)`; beyond Flink's 38 digits, `DECIMAL(38, s)` with `s` capped at 38 |
+| `Decimal(p, s)`, `Decimal32/64/128/256(s)` | `DECIMAL(p, s)`; beyond Flink's 38 digits the integer digits come first and the scale keeps the rest, at least `min(s, 6)`: `Decimal(76, 50)` is `DECIMAL(38, 12)`, `Decimal256(20)` is `DECIMAL(38, 6)` |
 | `String`, `FixedString(n)`, `UUID`, `JSON` | `STRING` |
 | `Date`, `Date32` | `DATE` |
 | `DateTime`, `DateTime64(s)` | `TIMESTAMP(0)`, `TIMESTAMP(s)` — a wall clock in `sink.timezone` |
