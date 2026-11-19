@@ -1,6 +1,7 @@
 package org.apache.flink.connector.clickhouse.table;
 
 import com.clickhouse.client.api.Client;
+import com.clickhouse.client.api.ClientMisconfigurationException;
 import com.clickhouse.client.api.metadata.TableSchema;
 
 import org.apache.flink.configuration.ConfigOption;
@@ -8,6 +9,7 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.clickhouse.sink.ClickHouseClientConfig;
 import org.apache.flink.connector.clickhouse.table.catalog.ClickHouseCatalog;
 import org.apache.flink.connector.clickhouse.table.catalog.ClickHouseMetadataClient;
+import org.apache.flink.table.api.ValidationException;
 import org.apache.flink.table.catalog.Catalog;
 import org.apache.flink.table.catalog.exceptions.CatalogException;
 import org.apache.flink.table.factories.CatalogFactory;
@@ -105,8 +107,17 @@ public class ClickHouseCatalogFactory implements CatalogFactory {
             Configuration options = Configuration.fromMap(metadataOptions);
             ClickHouseClientConfig clientConfig =
                     ClickHouseDynamicTableSinkFactory.buildClientConfig(metadataOptions, options);
-            try (Client client = clientConfig.createPlanningClient(Map.of())) {
-                return client.queryAll(sql, parameters).stream()
+            Client client;
+            try {
+                client = clientConfig.createPlanningClient(Map.of());
+            } catch (IllegalArgumentException | ClientMisconfigurationException e) {
+                // build() alone, worded as the sink factory words it: a rejected option is not a failed read.
+                throw new ValidationException(String.format(
+                        "Invalid '%s*' option or option combination — the ClickHouse client rejected it: %s",
+                        CLIENT_OPTIONS_PREFIX, withCause(e)), e);
+            }
+            try (Client metadataClient = client) {
+                return metadataClient.queryAll(sql, parameters).stream()
                         .map(row -> row.getString(1))
                         .collect(Collectors.toList());
             } catch (Exception e) {
@@ -114,6 +125,12 @@ public class ClickHouseCatalogFactory implements CatalogFactory {
                         "Could not read the metadata of ClickHouse at %s — %s",
                         options.get(URL), ClickHouseDynamicTableSinkFactory.rootMessage(e)), e);
             }
+        }
+
+        /** build() names an unreadable SSL file or bad password only in a cause. */
+        private static String withCause(Throwable e) {
+            return e.getCause() == null ? e.getMessage()
+                    : e.getMessage() + " (" + ClickHouseDynamicTableSinkFactory.rootMessage(e.getCause()) + ")";
         }
 
         @Override

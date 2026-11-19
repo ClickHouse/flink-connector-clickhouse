@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -103,6 +104,22 @@ class ClickHouseCatalogFactoryTest {
         assertRejected(options("clickhouse.server.print_pretty_type_names", "1"),
                 "'clickhouse.server.print_pretty_type_names'");
         assertRejected(options("sink.no-such-option", "1"), "Unsupported options", "sink.no-such-option");
+    }
+
+    /** Client.Builder.build() rejects these before any I/O, so open() reports an option error, not a failed read. */
+    @Test void clientOptionsOnlyTheBuiltClientRejectsFailOpenAsOptionErrors() {
+        ValidationException zone = assertThrows(ValidationException.class,
+                create(options("clickhouse.client.use_time_zone", "Asia/Tokyo"))::open);
+        assertTrue(zone.getMessage().contains("'clickhouse.client.*'"), zone.getMessage());
+        assertTrue(zone.getMessage().contains("USE_TIME_ZONE"), zone.getMessage());
+        assertFalse(zone.getMessage().contains("Could not read the metadata"), zone.getMessage());
+
+        // An https endpoint builds the SSL context inside build(), which names the file only in a cause.
+        ValidationException ssl = assertThrows(ValidationException.class,
+                create(options("url", "https://localhost:1", "clickhouse.client.sslrootcert", "/nonexistent/ca.pem"))::open);
+        assertTrue(ssl.getMessage().contains("'clickhouse.client.*'"), ssl.getMessage());
+        assertTrue(ssl.getMessage().contains("/nonexistent/ca.pem"), ssl.getMessage());
+        assertFalse(ssl.getMessage().contains("Could not read the metadata"), ssl.getMessage());
     }
 
     @Test void tablesTakeEveryCatalogOptionButTheDefaultDatabase() {
