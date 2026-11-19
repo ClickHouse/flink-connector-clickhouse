@@ -311,7 +311,8 @@ public class ClickHouseCatalogIntegrationTests {
 
         assertFailsWith(() -> env.executeSql(
                         "INSERT INTO " + inCatalog(table) + " VALUES (1, CAST(7 AS SMALLINT))"),
-                "Column 'small'", "'sink.strict-numeric-mapping'");
+                "Column 'small'", "remove 'sink.strict-numeric-mapping' from the catalog",
+                "/*+ OPTIONS('sink.strict-numeric-mapping' = 'false') */");
 
         env.executeSql("INSERT INTO " + inCatalog(table)
                 + " /*+ OPTIONS('sink.strict-numeric-mapping' = 'false') */ VALUES (1, CAST(7 AS SMALLINT))").await();

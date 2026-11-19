@@ -986,7 +986,7 @@ public final class ClickHouseTypeMapper {
     // Reverse mapping — ClickHouse to Flink, for the catalog
     // ------------------------------------------------------------------------------------
 
-    /** Neither option shapes a derived type; they only parameterise the acceptance check. */
+    /** Neither option shapes a derived type; the check is the lenient one, as no Flink type passes the strict one for an unsigned column. */
     private static final TypeMappingOptions REVERSE_MAPPING_OPTIONS = new TypeMappingOptions(ZoneOffset.UTC, false);
 
     /**

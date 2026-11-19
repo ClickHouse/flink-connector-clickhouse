@@ -312,6 +312,9 @@ The derived schema is the one you would declare by hand:
 A column is `NOT NULL` unless it is `Nullable(...)`; `Nullable(UInt8/16/32/64)` stays `NOT NULL`
 until issue #144. `LowCardinality` and a top-level `SimpleAggregateFunction` are transparent.
 These are pairs of the [type mapping](#type-mapping) above, so its per-record range checks apply.
+No Flink type passes `'sink.strict-numeric-mapping' = 'true'` for an unsigned column, so with that
+option an `INSERT` into a table that has one is rejected at planning: leave the option off the
+catalog, or override it for a statement with `/*+ OPTIONS('sink.strict-numeric-mapping' = 'false') */`.
 
 What the catalog does not do:
 - **It is read-only.** `CREATE`, `DROP` and `ALTER` of its databases, tables, views and functions

@@ -16,7 +16,8 @@ import static com.clickhouse.utils.writer.DataWriter.unwrapSimpleAggregateFuncti
 
 /**
  * The inverse of {@link SchemaResolver}, for the catalog: the Flink schema of a ClickHouse table,
- * which always resolves against the columns it was derived from.
+ * which resolves against the columns it was derived from — except under
+ * {@code sink.strict-numeric-mapping}, which no Flink type passes for an unsigned column.
  *
  * <p>MATERIALIZED, ALIAS and EPHEMERAL columns are left out, since no insert can carry them; a
  * column the sink cannot write fails the whole table, naming the column.

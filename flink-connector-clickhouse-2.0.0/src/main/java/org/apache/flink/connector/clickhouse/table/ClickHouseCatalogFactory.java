@@ -71,7 +71,7 @@ public class ClickHouseCatalogFactory implements CatalogFactory {
         validateAsTableOptions(metadataOptions);
 
         return new ClickHouseCatalog(context.getName(), helper.getOptions().get(DEFAULT_DATABASE),
-                tableOptions, new PlanningMetadataClient(metadataOptions));
+                tableOptions, new PlanningMetadataClient(metadataOptions), new ClickHouseDynamicTableSinkFactory());
     }
 
     /** What every table of the catalog is returned with, short of its own database and table. */

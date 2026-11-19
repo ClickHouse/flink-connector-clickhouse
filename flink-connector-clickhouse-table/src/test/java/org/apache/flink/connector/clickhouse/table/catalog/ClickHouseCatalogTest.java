@@ -5,25 +5,36 @@ import com.clickhouse.client.api.ServerException;
 import com.clickhouse.client.api.metadata.TableSchema;
 import com.clickhouse.data.ClickHouseColumn;
 
+import org.apache.flink.configuration.ConfigOption;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.ValidationException;
 import org.apache.flink.table.catalog.CatalogBaseTable;
 import org.apache.flink.table.catalog.CatalogTable;
+import org.apache.flink.table.catalog.Column;
+import org.apache.flink.table.catalog.ObjectIdentifier;
 import org.apache.flink.table.catalog.ObjectPath;
+import org.apache.flink.table.catalog.ResolvedCatalogTable;
+import org.apache.flink.table.catalog.ResolvedSchema;
 import org.apache.flink.table.catalog.exceptions.DatabaseNotExistException;
 import org.apache.flink.table.catalog.exceptions.FunctionNotExistException;
 import org.apache.flink.table.catalog.exceptions.PartitionNotExistException;
 import org.apache.flink.table.catalog.exceptions.TableNotExistException;
 import org.apache.flink.table.catalog.stats.CatalogColumnStatistics;
 import org.apache.flink.table.catalog.stats.CatalogTableStatistics;
+import org.apache.flink.table.connector.sink.DynamicTableSink;
+import org.apache.flink.table.factories.DynamicTableSinkFactory;
+import org.apache.flink.table.factories.FactoryUtil;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -43,6 +54,15 @@ class ClickHouseCatalogTest {
 
     private static final ObjectPath EVENTS = new ObjectPath("analytics", "events");
 
+    private static final DynamicTableSinkFactory NO_SINK =
+            new FailingSinkFactory(new ValidationException("no sink is created in this test"));
+
+    /** What the sink's schema resolution says of a SMALLINT derived for a UInt8 column under strict mapping. */
+    private static final String STRICT_REJECTION =
+            "Column 'small': Flink type SMALLINT NOT NULL cannot be written to ClickHouse column 'small UInt8' — "
+            + "values outside the UInt8 range 0..255 can only be caught per record, which "
+            + "'sink.strict-numeric-mapping' forbids.";
+
     /** {@code default} is empty; {@code analytics} holds {@code events} and a table whose name needs quoting. */
     private static FakeClickHouse clickHouse() {
         FakeClickHouse clickHouse = new FakeClickHouse();
@@ -54,7 +74,7 @@ class ClickHouseCatalogTest {
     }
 
     private static ClickHouseCatalog catalog(FakeClickHouse clickHouse) {
-        return new ClickHouseCatalog("ch", "default", TABLE_OPTIONS, clickHouse);
+        return new ClickHouseCatalog("ch", "default", TABLE_OPTIONS, clickHouse, NO_SINK);
     }
 
     @Test
@@ -89,7 +109,7 @@ class ClickHouseCatalogTest {
         FakeClickHouse clickHouse = clickHouse();
         catalog(clickHouse).open();
 
-        ClickHouseCatalog misconfigured = new ClickHouseCatalog("ch", "staging", TABLE_OPTIONS, clickHouse);
+        ClickHouseCatalog misconfigured = new ClickHouseCatalog("ch", "staging", TABLE_OPTIONS, clickHouse, NO_SINK);
         ValidationException e = assertThrows(ValidationException.class, misconfigured::open);
         assertTrue(e.getMessage().contains("'staging'"), e.getMessage());
         assertTrue(e.getMessage().contains("'default-database'"), e.getMessage());
@@ -192,6 +212,41 @@ class ClickHouseCatalogTest {
         assertTrue(e.getMessage().contains("analytics.events"), e.getMessage());
     }
 
+    /** The user declared no Flink type to change, so the rejection names what they can: the option. */
+    @Test
+    void aStrictMappingRejectionNamesWhatACatalogUserCanChange() {
+        ValidationException rejection = new ValidationException(STRICT_REJECTION);
+
+        ValidationException e = assertThrows(ValidationException.class, () -> createSink(rejection));
+
+        assertTrue(e.getMessage().startsWith(STRICT_REJECTION), e.getMessage());
+        assertTrue(e.getMessage().contains("remove 'sink.strict-numeric-mapping' from the catalog"), e.getMessage());
+        assertTrue(e.getMessage().contains("/*+ OPTIONS('sink.strict-numeric-mapping' = 'false') */"), e.getMessage());
+        assertSame(rejection, e.getCause());
+    }
+
+    @Test
+    void anyOtherSinkFailureIsPassedOn() {
+        ValidationException failure = new ValidationException("Could not read the schema of ClickHouse table");
+
+        assertSame(failure, assertThrows(ValidationException.class, () -> createSink(failure)));
+    }
+
+    /** Asks a strict catalog's own factory for the sink of a table, as the planner does. */
+    private static void createSink(ValidationException sinkFailure) throws Exception {
+        Map<String, String> strict = new HashMap<>(TABLE_OPTIONS);
+        strict.put("sink.strict-numeric-mapping", "true");
+        ClickHouseCatalog catalog =
+                new ClickHouseCatalog("ch", "default", strict, clickHouse(), new FailingSinkFactory(sinkFailure));
+        ResolvedCatalogTable table = new ResolvedCatalogTable((CatalogTable) catalog.getTable(EVENTS),
+                ResolvedSchema.of(Column.physical("id", DataTypes.BIGINT().notNull())));
+
+        DynamicTableSinkFactory factory = (DynamicTableSinkFactory) catalog.getFactory().get();
+        factory.createDynamicTableSink(new FactoryUtil.DefaultDynamicTableContext(
+                ObjectIdentifier.of("ch", "analytics", "events"), table, Map.of(), new Configuration(),
+                ClickHouseCatalogTest.class.getClassLoader(), false));
+    }
+
     /** The planner asks these while resolving any statement, so they must answer rather than fail. */
     @Test
     void thereAreNoViewsFunctionsPartitionsOrStatistics() throws Exception {
@@ -242,6 +297,36 @@ class ClickHouseCatalogTest {
         return new ValidationException("Could not read the schema of ClickHouse table",
                 new ClientException("Failed to get table schema",
                         new ServerException(serverCode, serverMessage, 404, "")));
+    }
+
+    /** Stands in for the connector's sink factory, which lives in the version modules. */
+    private static final class FailingSinkFactory implements DynamicTableSinkFactory {
+
+        private final ValidationException failure;
+
+        private FailingSinkFactory(ValidationException failure) {
+            this.failure = failure;
+        }
+
+        @Override
+        public String factoryIdentifier() {
+            return "clickhouse";
+        }
+
+        @Override
+        public Set<ConfigOption<?>> requiredOptions() {
+            return Set.of();
+        }
+
+        @Override
+        public Set<ConfigOption<?>> optionalOptions() {
+            return Set.of();
+        }
+
+        @Override
+        public DynamicTableSink createDynamicTableSink(Context context) {
+            throw failure;
+        }
     }
 
     /** Answers the catalog's queries by the system table they read and the parameters they bind. */

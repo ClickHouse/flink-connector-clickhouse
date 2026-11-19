@@ -22,6 +22,8 @@ import org.apache.flink.table.catalog.exceptions.TableNotExistException;
 import org.apache.flink.table.catalog.stats.CatalogColumnStatistics;
 import org.apache.flink.table.catalog.stats.CatalogTableStatistics;
 import org.apache.flink.table.expressions.Expression;
+import org.apache.flink.table.factories.DynamicTableSinkFactory;
+import org.apache.flink.table.factories.Factory;
 import org.apache.flink.util.ExceptionUtils;
 
 import java.util.Collections;
@@ -59,12 +61,14 @@ public class ClickHouseCatalog extends AbstractCatalog {
     /** Every option of a table but its {@code database} and {@code table}. */
     private final Map<String, String> tableOptions;
     private final ClickHouseMetadataClient metadata;
+    private final ClickHouseCatalogSinkFactory sinkFactory;
 
     public ClickHouseCatalog(String name, String defaultDatabase, Map<String, String> tableOptions,
-                             ClickHouseMetadataClient metadata) {
+                             ClickHouseMetadataClient metadata, DynamicTableSinkFactory sinkFactory) {
         super(name, defaultDatabase);
         this.tableOptions = Collections.unmodifiableMap(new HashMap<>(tableOptions));
         this.metadata = Objects.requireNonNull(metadata, "metadata");
+        this.sinkFactory = new ClickHouseCatalogSinkFactory(sinkFactory);
     }
 
     /** Runs at CREATE CATALOG, so a wrong endpoint, credential or default database fails there. */
@@ -178,6 +182,12 @@ public class ClickHouseCatalog extends AbstractCatalog {
                 .map(ServerException::getCode)
                 .filter(code -> code == ServerException.TABLE_NOT_FOUND || code == UNKNOWN_DATABASE)
                 .isPresent();
+    }
+
+    /** The planner builds the sinks of this catalog's tables through it, so their errors can name the catalog. */
+    @Override
+    public Optional<Factory> getFactory() {
+        return Optional.of(sinkFactory);
     }
 
     // ------------------------------------------------------------------------------------
