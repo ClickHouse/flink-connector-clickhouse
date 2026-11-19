@@ -122,10 +122,12 @@ public class ClickHouseCatalog extends AbstractCatalog {
     /** ClickHouse views are listed here too: to Flink they are tables, not expandable queries. */
     @Override
     public List<String> listTables(String databaseName) throws DatabaseNotExistException, CatalogException {
-        if (!databaseExists(databaseName)) {
+        List<String> tables = metadata.queryColumn(LIST_TABLES, Collections.singletonMap("database", databaseName));
+        // Only an empty answer leaves open whether the database exists.
+        if (tables.isEmpty() && !databaseExists(databaseName)) {
             throw new DatabaseNotExistException(getName(), databaseName);
         }
-        return metadata.queryColumn(LIST_TABLES, Collections.singletonMap("database", databaseName));
+        return tables;
     }
 
     @Override

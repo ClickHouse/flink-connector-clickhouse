@@ -91,6 +91,19 @@ class ClickHouseCatalogTest {
         assertFalse(catalog.tableExists(new ObjectPath("nope", "events")));
     }
 
+    /** Tables in the answer already show that the database exists. */
+    @Test
+    void listingTablesAsksOnceUnlessTheAnswerIsEmpty() throws Exception {
+        FakeClickHouse clickHouse = clickHouse();
+        ClickHouseCatalog catalog = catalog(clickHouse);
+
+        catalog.listTables("analytics");
+        assertEquals(1, clickHouse.queries);
+
+        catalog.listTables("default");
+        assertEquals(3, clickHouse.queries);
+    }
+
     @Test
     void anUnknownDatabaseIsReportedAsMissing() {
         ClickHouseCatalog catalog = catalog(clickHouse());
@@ -336,6 +349,7 @@ class ClickHouseCatalogTest {
         private final Map<String, Map<String, String>> tables = new LinkedHashMap<>();
         private final List<Map<String, String>> described = new ArrayList<>();
         private ValidationException describeFailure;
+        private int queries;
 
         void database(String name, String comment) {
             databaseComments.put(name, comment);
@@ -348,6 +362,7 @@ class ClickHouseCatalogTest {
 
         @Override
         public List<String> queryColumn(String sql, Map<String, Object> parameters) {
+            queries++;
             Object database = parameters.get("database");
             if (sql.contains("system.databases")) {
                 if (database == null) {
