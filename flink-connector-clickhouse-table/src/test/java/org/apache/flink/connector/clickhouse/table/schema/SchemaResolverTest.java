@@ -225,17 +225,14 @@ class SchemaResolverTest {
 
     @Test
     void nestedSimpleAggregateFunctionIsRejectedAtPlanning() {
-        // client-v2 has no serializer case for SAF inside a composite; accepted schemas would
-        // fail on the first record, so planning rejects them.
         ValidationException array = assertThrows(ValidationException.class, () ->
                 SchemaResolver.resolve(
                         ResolvedSchema.of(Column.physical("v",
                                 DataTypes.ARRAY(DataTypes.BIGINT().notNull()).notNull())),
                         clickHouseSchema("v Array(SimpleAggregateFunction(max, Int64))"),
                         options(false)));
-        assertTrue(array.getMessage().contains("only writable as a top-level column"),
-                array.getMessage());
-        assertTrue(array.getMessage().contains("array element"), array.getMessage());
+        assertTrue(array.getMessage().contains("only supported as a top-level column"), array.getMessage());
+        assertTrue(array.getMessage().contains("an Array element"), array.getMessage());
 
         ValidationException map = assertThrows(ValidationException.class, () ->
                 SchemaResolver.resolve(
@@ -244,7 +241,7 @@ class SchemaResolverTest {
                                         DataTypes.BIGINT().notNull()).notNull())),
                         clickHouseSchema("m Map(String, SimpleAggregateFunction(max, Int64))"),
                         options(false)));
-        assertTrue(map.getMessage().contains("map value"), map.getMessage());
+        assertTrue(map.getMessage().contains("a Map value"), map.getMessage());
     }
 
     @Test
