@@ -287,6 +287,9 @@ INSERT INTO ch.analytics.events SELECT event_id, amount, created_at FROM kafka_s
 | `default-database` | `default` | the database that is current after `USE CATALOG`; it must exist |
 | any other [connector option](#connector-options) except `database` and `table` | | becomes the default of every table of the catalog; an `/*+ OPTIONS(...) */` hint overrides it per statement |
 
+`DEFAULT` is a reserved word in Flink SQL, so ClickHouse's `default` database is written in
+back-quotes: ``ch.`default`.events``. Its tables need no path while it is the current database.
+
 `CREATE CATALOG` connects once, so a wrong endpoint, credential or default database fails there,
 and it checks every option the way a table's planning would. Nothing is cached afterwards: each
 statement reads ClickHouse again, so a table created or altered there shows at once.
