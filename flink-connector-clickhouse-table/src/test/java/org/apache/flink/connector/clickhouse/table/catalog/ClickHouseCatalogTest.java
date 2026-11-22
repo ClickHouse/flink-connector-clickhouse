@@ -64,6 +64,8 @@ class ClickHouseCatalogTest {
             + "values outside the UInt8 range 0..255 can only be caught per record, which "
             + "'sink.strict-numeric-mapping' forbids.";
 
+    private static final Map<String, String> STRICT = Map.of("sink.strict-numeric-mapping", "true");
+
     /** {@code default} is empty; {@code analytics} holds {@code events} and a table whose name needs quoting. */
     private static FakeClickHouse clickHouse() {
         FakeClickHouse clickHouse = new FakeClickHouse();
@@ -254,6 +256,21 @@ class ClickHouseCatalogTest {
         assertSame(rejection, e.getCause());
     }
 
+    /** A catalog that never set the option has nothing to remove: the hint turned strict mapping on. */
+    @Test
+    void aStrictMappingRejectionCausedByAHintNamesTheHint() {
+        ValidationException rejection = new ValidationException(STRICT_REJECTION);
+
+        ValidationException e = assertThrows(ValidationException.class,
+                () -> createSink(Map.of(), STRICT, rejection));
+
+        assertTrue(e.getMessage().startsWith(STRICT_REJECTION), e.getMessage());
+        assertTrue(e.getMessage().contains("remove 'sink.strict-numeric-mapping' from the statement's OPTIONS hint"),
+                e.getMessage());
+        assertFalse(e.getMessage().contains("from the catalog"), e.getMessage());
+        assertSame(rejection, e.getCause());
+    }
+
     @Test
     void anyOtherSinkFailureIsPassedOn() {
         ValidationException failure = new ValidationException("Could not read the schema of ClickHouse table");
@@ -273,16 +290,25 @@ class ClickHouseCatalogTest {
 
     /** Asks a strict catalog's own factory for the sink of a table, as the planner does. */
     private static void createSink(ValidationException sinkFailure) throws Exception {
-        Map<String, String> strict = new HashMap<>(TABLE_OPTIONS);
-        strict.put("sink.strict-numeric-mapping", "true");
+        createSink(STRICT, Map.of(), sinkFailure);
+    }
+
+    /** The planner hands the factory the catalog's table with the statement's OPTIONS hint merged in. */
+    private static void createSink(Map<String, String> catalogOptions, Map<String, String> hint,
+                                   ValidationException sinkFailure) throws Exception {
+        Map<String, String> tableOptions = new HashMap<>(TABLE_OPTIONS);
+        tableOptions.putAll(catalogOptions);
         ClickHouseCatalog catalog =
-                new ClickHouseCatalog("ch", "default", strict, clickHouse(), new FailingSinkFactory(sinkFailure));
-        ResolvedCatalogTable table = new ResolvedCatalogTable((CatalogTable) catalog.getTable(EVENTS),
+                new ClickHouseCatalog("ch", "default", tableOptions, clickHouse(), new FailingSinkFactory(sinkFailure));
+        CatalogTable table = (CatalogTable) catalog.getTable(EVENTS);
+        Map<String, String> hinted = new HashMap<>(table.getOptions());
+        hinted.putAll(hint);
+        ResolvedCatalogTable resolved = new ResolvedCatalogTable(table.copy(hinted),
                 ResolvedSchema.of(Column.physical("id", DataTypes.BIGINT().notNull())));
 
         DynamicTableSinkFactory factory = (DynamicTableSinkFactory) catalog.getFactory().get();
         factory.createDynamicTableSink(new FactoryUtil.DefaultDynamicTableContext(
-                ObjectIdentifier.of("ch", "analytics", "events"), table, Map.of(), new Configuration(),
+                ObjectIdentifier.of("ch", "analytics", "events"), resolved, Map.of(), new Configuration(),
                 ClickHouseCatalogTest.class.getClassLoader(), false));
     }
 

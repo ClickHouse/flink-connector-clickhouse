@@ -360,6 +360,16 @@ public class ClickHouseCatalogIntegrationTests {
         Assertions.assertFalse(ExceptionUtils.findThrowableWithMessage(unsupported, "from the catalog").isPresent(),
                 ExceptionUtils.stringifyException(unsupported));
 
+        // A catalog without the option has nothing to remove: there the hint turned strict mapping on.
+        TableEnvironment lenient = environmentWithCatalog();
+        Exception hinted = Assertions.assertThrows(Exception.class, () -> lenient.executeSql("INSERT INTO "
+                + inCatalog(table) + " /*+ OPTIONS('sink.strict-numeric-mapping' = 'true') */ VALUES (1, CAST(7 AS SMALLINT))"));
+        Assertions.assertTrue(ExceptionUtils.findThrowableWithMessage(
+                        hinted, "remove 'sink.strict-numeric-mapping' from the statement's OPTIONS hint").isPresent(),
+                ExceptionUtils.stringifyException(hinted));
+        Assertions.assertFalse(ExceptionUtils.findThrowableWithMessage(hinted, "from the catalog").isPresent(),
+                ExceptionUtils.stringifyException(hinted));
+
         env.executeSql("INSERT INTO " + inCatalog(table)
                 + " /*+ OPTIONS('sink.strict-numeric-mapping' = 'false') */ VALUES (1, CAST(7 AS SMALLINT))").await();
 

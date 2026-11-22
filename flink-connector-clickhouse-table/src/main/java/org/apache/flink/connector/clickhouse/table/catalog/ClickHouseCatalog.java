@@ -72,7 +72,7 @@ public class ClickHouseCatalog extends AbstractCatalog {
         super(name, defaultDatabase);
         this.tableOptions = Collections.unmodifiableMap(new HashMap<>(tableOptions));
         this.metadata = Objects.requireNonNull(metadata, "metadata");
-        this.sinkFactory = new ClickHouseCatalogSinkFactory(sinkFactory);
+        this.sinkFactory = new ClickHouseCatalogSinkFactory(sinkFactory, this.tableOptions);
     }
 
     /** Runs at CREATE CATALOG, so a wrong endpoint, credential or default database fails there. */

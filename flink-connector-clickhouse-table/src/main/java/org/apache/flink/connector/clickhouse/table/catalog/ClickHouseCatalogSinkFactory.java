@@ -18,9 +18,12 @@ import static org.apache.flink.connector.clickhouse.table.ClickHouseConnectorOpt
 final class ClickHouseCatalogSinkFactory implements DynamicTableSinkFactory {
 
     private final DynamicTableSinkFactory sinkFactory;
+    /** False when only an OPTIONS hint can have turned strict mapping on. */
+    private final boolean strictCatalog;
 
-    ClickHouseCatalogSinkFactory(DynamicTableSinkFactory sinkFactory) {
+    ClickHouseCatalogSinkFactory(DynamicTableSinkFactory sinkFactory, Map<String, String> catalogTableOptions) {
         this.sinkFactory = Objects.requireNonNull(sinkFactory, "sinkFactory");
+        this.strictCatalog = isStrict(catalogTableOptions);
     }
 
     @Override
@@ -53,19 +56,24 @@ final class ClickHouseCatalogSinkFactory implements DynamicTableSinkFactory {
     }
 
     /** A strict-mapping rejection is told by its wording: Flink's unsupported-option error lists the option's key too. */
-    private static ValidationException withCatalogRemedy(ValidationException failure,
-                                                         Map<String, String> tableOptions) {
+    private ValidationException withCatalogRemedy(ValidationException failure, Map<String, String> tableOptions) {
         String option = SINK_STRICT_NUMERIC_MAPPING.key();
-        boolean strictRejection = Boolean.parseBoolean(tableOptions.get(option))
+        boolean strictRejection = isStrict(tableOptions)
                 && failure.getMessage() != null
                 && failure.getMessage().contains("which '" + option + "' forbids");
         if (!strictRejection) {
             return failure;
         }
+        String remedy = strictCatalog
+                ? String.format("remove '%s' from the catalog, or override it for a statement with "
+                        + "/*+ OPTIONS('%s' = 'false') */", option, option)
+                : String.format("remove '%s' from the statement's OPTIONS hint", option);
         return new ValidationException(String.format(
-                "%s A catalog table's Flink types are derived, so this one cannot be redeclared: "
-                + "remove '%s' from the catalog, or override it for a statement with "
-                + "/*+ OPTIONS('%s' = 'false') */.",
-                failure.getMessage(), option, option), failure);
+                "%s A catalog table's Flink types are derived, so this one cannot be redeclared: %s.",
+                failure.getMessage(), remedy), failure);
+    }
+
+    private static boolean isStrict(Map<String, String> options) {
+        return Boolean.parseBoolean(options.get(SINK_STRICT_NUMERIC_MAPPING.key()));
     }
 }
