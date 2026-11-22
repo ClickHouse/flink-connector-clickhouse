@@ -19,6 +19,7 @@ import org.apache.flink.table.catalog.exceptions.DatabaseNotExistException;
 import org.apache.flink.table.catalog.exceptions.FunctionNotExistException;
 import org.apache.flink.table.catalog.exceptions.PartitionNotExistException;
 import org.apache.flink.table.catalog.exceptions.TableNotExistException;
+import org.apache.flink.table.catalog.exceptions.TableNotPartitionedException;
 import org.apache.flink.table.catalog.stats.CatalogColumnStatistics;
 import org.apache.flink.table.catalog.stats.CatalogTableStatistics;
 import org.apache.flink.table.expressions.Expression;
@@ -197,18 +198,29 @@ public class ClickHouseCatalog extends AbstractCatalog {
     // ------------------------------------------------------------------------------------
 
     @Override
-    public List<CatalogPartitionSpec> listPartitions(ObjectPath tablePath) {
-        return Collections.emptyList();
+    public List<CatalogPartitionSpec> listPartitions(ObjectPath tablePath)
+            throws TableNotExistException, TableNotPartitionedException {
+        throw notPartitioned(tablePath);
     }
 
     @Override
-    public List<CatalogPartitionSpec> listPartitions(ObjectPath tablePath, CatalogPartitionSpec partitionSpec) {
-        return Collections.emptyList();
+    public List<CatalogPartitionSpec> listPartitions(ObjectPath tablePath, CatalogPartitionSpec partitionSpec)
+            throws TableNotExistException, TableNotPartitionedException {
+        throw notPartitioned(tablePath);
     }
 
     @Override
-    public List<CatalogPartitionSpec> listPartitionsByFilter(ObjectPath tablePath, List<Expression> filters) {
-        return Collections.emptyList();
+    public List<CatalogPartitionSpec> listPartitionsByFilter(ObjectPath tablePath, List<Expression> filters)
+            throws TableNotExistException, TableNotPartitionedException {
+        throw notPartitioned(tablePath);
+    }
+
+    /** An empty list would let SHOW PARTITIONS answer for a mistyped table name. */
+    private TableNotPartitionedException notPartitioned(ObjectPath tablePath) throws TableNotExistException {
+        if (!tableExists(tablePath)) {
+            throw new TableNotExistException(getName(), tablePath);
+        }
+        return new TableNotPartitionedException(getName(), tablePath);
     }
 
     @Override

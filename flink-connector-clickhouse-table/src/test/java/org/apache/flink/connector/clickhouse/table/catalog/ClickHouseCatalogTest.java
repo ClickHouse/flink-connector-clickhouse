@@ -21,6 +21,7 @@ import org.apache.flink.table.catalog.exceptions.DatabaseNotExistException;
 import org.apache.flink.table.catalog.exceptions.FunctionNotExistException;
 import org.apache.flink.table.catalog.exceptions.PartitionNotExistException;
 import org.apache.flink.table.catalog.exceptions.TableNotExistException;
+import org.apache.flink.table.catalog.exceptions.TableNotPartitionedException;
 import org.apache.flink.table.catalog.stats.CatalogColumnStatistics;
 import org.apache.flink.table.catalog.stats.CatalogTableStatistics;
 import org.apache.flink.table.connector.sink.DynamicTableSink;
@@ -280,11 +281,24 @@ class ClickHouseCatalogTest {
         assertEquals(List.of(), catalog.listFunctions("analytics"));
         assertFalse(catalog.functionExists(function));
         assertThrows(FunctionNotExistException.class, () -> catalog.getFunction(function));
-        assertEquals(List.of(), catalog.listPartitions(EVENTS));
         assertFalse(catalog.partitionExists(EVENTS, null));
         assertThrows(PartitionNotExistException.class, () -> catalog.getPartition(EVENTS, null));
         assertSame(CatalogTableStatistics.UNKNOWN, catalog.getTableStatistics(EVENTS));
         assertSame(CatalogColumnStatistics.UNKNOWN, catalog.getTableColumnStatistics(EVENTS));
+    }
+
+    /** An empty list would let SHOW PARTITIONS answer for a mistyped table name. */
+    @Test
+    void listingPartitionsReportsTheTableAsMissingOrNotPartitioned() {
+        ClickHouseCatalog catalog = catalog(clickHouse());
+        ObjectPath missing = new ObjectPath("analytics", "nope");
+
+        assertThrows(TableNotPartitionedException.class, () -> catalog.listPartitions(EVENTS));
+        assertThrows(TableNotPartitionedException.class, () -> catalog.listPartitions(EVENTS, null));
+        assertThrows(TableNotPartitionedException.class, () -> catalog.listPartitionsByFilter(EVENTS, List.of()));
+        assertThrows(TableNotExistException.class, () -> catalog.listPartitions(missing));
+        assertThrows(TableNotExistException.class, () -> catalog.listPartitions(missing, null));
+        assertThrows(TableNotExistException.class, () -> catalog.listPartitionsByFilter(missing, List.of()));
     }
 
     @Test
