@@ -4,7 +4,9 @@ import com.clickhouse.client.api.metadata.TableSchema;
 import com.clickhouse.data.ClickHouseColumn;
 import com.clickhouse.data.ClickHouseDataType;
 
+import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.ValidationException;
+import org.apache.flink.table.catalog.Column;
 import org.apache.flink.table.catalog.ResolvedSchema;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.utils.LogicalTypeParser;
@@ -265,6 +267,14 @@ class SchemaDeriverTest {
                 ClickHouseColumn.of("__clickhouse_raw__", "String")));
 
         ValidationException e = assertThrows(ValidationException.class, () -> SchemaDeriver.derive(schema, TABLE));
+        assertTrue(e.getMessage().contains("'__clickhouse_raw__'"), e.getMessage());
+        assertTrue(e.getMessage().contains(TABLE), e.getMessage());
         assertTrue(e.getMessage().contains("reserved payload key"), e.getMessage());
+        assertTrue(e.getMessage().contains("CREATE TEMPORARY TABLE"), e.getMessage());
+
+        // The way out the message names: the sink resolves the table declared without the column.
+        ResolvedSchema byHand = ResolvedSchema.of(Column.physical("id", DataTypes.BIGINT().notNull()));
+        assertEquals(1, SchemaResolver.resolve(byHand, schema,
+                new SchemaResolverOptions("analytics", "events", ZoneOffset.UTC, false)).size());
     }
 }
