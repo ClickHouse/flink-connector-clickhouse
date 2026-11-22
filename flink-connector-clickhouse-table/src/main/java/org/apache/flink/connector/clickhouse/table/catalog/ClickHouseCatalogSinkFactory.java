@@ -52,12 +52,13 @@ final class ClickHouseCatalogSinkFactory implements DynamicTableSinkFactory {
         }
     }
 
-    /** Only a strict-mapping rejection names the option while it is on. */
+    /** A strict-mapping rejection is told by its wording: Flink's unsupported-option error lists the option's key too. */
     private static ValidationException withCatalogRemedy(ValidationException failure,
                                                          Map<String, String> tableOptions) {
         String option = SINK_STRICT_NUMERIC_MAPPING.key();
         boolean strictRejection = Boolean.parseBoolean(tableOptions.get(option))
-                && failure.getMessage() != null && failure.getMessage().contains(option);
+                && failure.getMessage() != null
+                && failure.getMessage().contains("which '" + option + "' forbids");
         if (!strictRejection) {
             return failure;
         }

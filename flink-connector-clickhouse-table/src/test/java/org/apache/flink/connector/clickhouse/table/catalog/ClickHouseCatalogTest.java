@@ -245,6 +245,16 @@ class ClickHouseCatalogTest {
         assertSame(failure, assertThrows(ValidationException.class, () -> createSink(failure)));
     }
 
+    /** Flink's unsupported-option error lists every supported key, the strict option's among them. */
+    @Test
+    void anOptionErrorThatListsTheStrictOptionIsPassedOn() {
+        ValidationException failure = new ValidationException("Unsupported options found for 'clickhouse'.\n\n"
+                + "Unsupported options:\n\nsink.buffer-flush.max-row\n\n"
+                + "Supported options:\n\nconnector\nsink.strict-numeric-mapping\nurl");
+
+        assertSame(failure, assertThrows(ValidationException.class, () -> createSink(failure)));
+    }
+
     /** Asks a strict catalog's own factory for the sink of a table, as the planner does. */
     private static void createSink(ValidationException sinkFailure) throws Exception {
         Map<String, String> strict = new HashMap<>(TABLE_OPTIONS);

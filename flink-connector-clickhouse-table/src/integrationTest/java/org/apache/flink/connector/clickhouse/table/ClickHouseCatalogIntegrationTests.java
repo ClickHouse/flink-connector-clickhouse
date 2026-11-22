@@ -314,6 +314,14 @@ public class ClickHouseCatalogIntegrationTests {
                 "Column 'small'", "remove 'sink.strict-numeric-mapping' from the catalog",
                 "/*+ OPTIONS('sink.strict-numeric-mapping' = 'false') */");
 
+        // Flink's unsupported-option error lists the strict option too, and is no strict rejection.
+        Exception unsupported = Assertions.assertThrows(Exception.class, () -> env.executeSql("INSERT INTO "
+                + inCatalog(table) + " /*+ OPTIONS('sink.no-such-option' = '1') */ VALUES (1, CAST(7 AS SMALLINT))"));
+        Assertions.assertTrue(ExceptionUtils.findThrowableWithMessage(unsupported, "Unsupported options").isPresent(),
+                ExceptionUtils.stringifyException(unsupported));
+        Assertions.assertFalse(ExceptionUtils.findThrowableWithMessage(unsupported, "from the catalog").isPresent(),
+                ExceptionUtils.stringifyException(unsupported));
+
         env.executeSql("INSERT INTO " + inCatalog(table)
                 + " /*+ OPTIONS('sink.strict-numeric-mapping' = 'false') */ VALUES (1, CAST(7 AS SMALLINT))").await();
 
