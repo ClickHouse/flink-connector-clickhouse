@@ -278,10 +278,11 @@ public class ClickHouseCatalogIntegrationTests {
     void aMissingTableIsReportedByThePlanner() {
         TableEnvironment env = environmentWithCatalog();
 
+        // Flink's own wording: a DESCRIBE failure passed on would name the table too.
         assertFailsWith(() -> env.executeSql("INSERT INTO " + inCatalog("catalog_no_such_table") + " VALUES (1)"),
-                "catalog_no_such_table");
+                "Cannot find table", "catalog_no_such_table");
         assertFailsWith(() -> env.executeSql("INSERT INTO ch.catalog_no_such_database.t VALUES (1)"),
-                "catalog_no_such_database");
+                "Cannot find table", "catalog_no_such_database");
     }
 
     /** CREATE CATALOG opens the catalog, which is where a connection that cannot work must surface. */
