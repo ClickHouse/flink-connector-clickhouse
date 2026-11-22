@@ -285,6 +285,43 @@ public class ClickHouseCatalogIntegrationTests {
                 "Cannot find table", "catalog_no_such_database");
     }
 
+    /** The server answers a user granted single tables "access denied" for any other name, a missing table's included. */
+    @Test
+    void aUserGrantedSingleTablesCanNameAnotherCatalog() throws Exception {
+        if (ClickHouseServerForTests.isCloud()) {
+            // A user would outlive a killed run there, where the cleanup job drops databases only.
+            return;
+        }
+        String table = "catalog_granted";
+        createTable(table, "id Int64, name String");
+        String database = ClickHouseServerForTests.getDatabase();
+        String user = "catalog_table_scoped";
+        ClickHouseServerForTests.executeSql("CREATE USER OR REPLACE " + user + " IDENTIFIED BY 'scoped_password'");
+        try {
+            ClickHouseServerForTests.executeSql(
+                    String.format("GRANT INSERT, SELECT ON `%s`.`%s` TO %s", database, table, user));
+            TableEnvironment env = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
+            env.executeSql("CREATE TEMPORARY VIEW src AS SELECT CAST(1 AS BIGINT) AS id, 'one' AS name");
+            env.executeSql(String.format(
+                    "CREATE CATALOG ch WITH ('type' = 'clickhouse', 'url' = '%s', 'username' = '%s', "
+                            + "'password' = 'scoped_password', 'default-database' = '%s')",
+                    ClickHouseServerForTests.getURL(), user, database));
+            env.useCatalog("ch");
+
+            // With ch current, the planner first asks it for a table named default_catalog.
+            env.executeSql("INSERT INTO " + table + " SELECT id, name FROM default_catalog.default_database.src")
+                    .await();
+            assertFailsWith(() -> env.executeSql("INSERT INTO catalog_granted_typo VALUES (2, 'two')"),
+                    "Cannot find table", "catalog_granted_typo");
+
+            List<GenericRecord> rows = readBack("id, name", table, 1);
+            Assertions.assertEquals(1, rows.size());
+            Assertions.assertEquals("one", rows.get(0).getString("name"));
+        } finally {
+            ClickHouseServerForTests.executeSql("DROP USER IF EXISTS " + user);
+        }
+    }
+
     /** CREATE CATALOG opens the catalog, which is where a connection that cannot work must surface. */
     @Test
     void createCatalogFailsOnAConnectionThatCannotWork() {

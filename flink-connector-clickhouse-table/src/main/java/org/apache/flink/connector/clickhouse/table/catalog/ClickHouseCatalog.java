@@ -59,6 +59,9 @@ public class ClickHouseCatalog extends AbstractCatalog {
     /** The server's code for a DESCRIBE whose database is absent; {@link ServerException#TABLE_NOT_FOUND} is the table's. */
     private static final int UNKNOWN_DATABASE = 81;
 
+    /** The server checks grants before existence, so it answers this for a missing table the user has no grant on. */
+    private static final int ACCESS_DENIED = 497;
+
     /** Every option of a table but its {@code database} and {@code table}. */
     private final Map<String, String> tableOptions;
     private final ClickHouseMetadataClient metadata;
@@ -155,7 +158,7 @@ public class ClickHouseCatalog extends AbstractCatalog {
         try {
             clickHouseSchema = metadata.describe(options);
         } catch (RuntimeException e) {
-            if (isUnknownTable(e)) {
+            if (isAbsent(tablePath, e)) {
                 throw new TableNotExistException(getName(), tablePath, e);
             }
             throw e;
@@ -180,11 +183,14 @@ public class ClickHouseCatalog extends AbstractCatalog {
                 + "names matching [a-zA-Z_][a-zA-Z0-9_]* work.", tablePath.getFullName()));
     }
 
-    private static boolean isUnknownTable(Throwable failure) {
-        return ExceptionUtils.findThrowable(failure, ServerException.class)
+    private boolean isAbsent(ObjectPath tablePath, Throwable describeFailure) {
+        int code = ExceptionUtils.findThrowable(describeFailure, ServerException.class)
                 .map(ServerException::getCode)
-                .filter(code -> code == ServerException.TABLE_NOT_FOUND || code == UNKNOWN_DATABASE)
-                .isPresent();
+                .orElse(ServerException.CODE_UNKNOWN);
+        if (code == ServerException.TABLE_NOT_FOUND || code == UNKNOWN_DATABASE) {
+            return true;
+        }
+        return code == ACCESS_DENIED && !tableExists(tablePath);
     }
 
     /** The planner builds the sinks of this catalog's tables through it, so their errors can name the catalog. */

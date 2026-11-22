@@ -196,10 +196,25 @@ class ClickHouseCatalogTest {
     @Test
     void anyOtherDescribeFailureIsPassedOn() {
         FakeClickHouse clickHouse = clickHouse();
-        clickHouse.describeFailure = describeFailure(497, "Not enough privileges");
+        clickHouse.describeFailure = describeFailure(241, "Memory limit exceeded");
 
         ValidationException e = assertThrows(ValidationException.class, () -> catalog(clickHouse).getTable(EVENTS));
         assertSame(clickHouse.describeFailure, e);
+        assertEquals(0, clickHouse.queries);
+    }
+
+    /** The planner asks for names like default_catalog as tables, and a user granted single tables is denied those. */
+    @Test
+    void aDeniedTableTheUserCannotSeeIsReportedAsMissing() {
+        FakeClickHouse clickHouse = clickHouse();
+        clickHouse.describeFailure = describeFailure(497, "Not enough privileges");
+        ClickHouseCatalog catalog = catalog(clickHouse);
+
+        assertThrows(TableNotExistException.class,
+                () -> catalog.getTable(new ObjectPath("analytics", "default_catalog")));
+        // system.tables lists events, so the table exists and the denial is the error to show.
+        assertSame(clickHouse.describeFailure,
+                assertThrows(ValidationException.class, () -> catalog.getTable(EVENTS)));
     }
 
     /** client-v2 would splice the name unquoted into the DESCRIBE, where 'a.b' reads table b of database a. */

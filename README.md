@@ -292,7 +292,9 @@ back-quotes: ``ch.`default`.events``. Its tables need no path while it is the cu
 
 `CREATE CATALOG` connects once, so a wrong endpoint, credential or default database fails there,
 and it checks every option the way a table's planning would. Nothing is cached afterwards: each
-statement reads ClickHouse again, so a table created or altered there shows at once.
+statement reads ClickHouse again, so a table created or altered there shows at once. The catalog
+shows what its ClickHouse user may see: a database or table the user holds no grant on is neither
+listed nor found.
 
 The derived schema is the one you would declare by hand:
 
