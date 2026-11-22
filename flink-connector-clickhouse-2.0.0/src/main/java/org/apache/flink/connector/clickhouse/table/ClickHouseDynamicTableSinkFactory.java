@@ -142,7 +142,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
     public DynamicTableSink createDynamicTableSink(Context context) {
         ReadableConfig options = validatedOptions(context);
         validateBatchingOptions(options);
-        // Checked first so an invalid url, sink.timezone or unsupported table name fails before any network call.
+        // Checked first so an invalid url or sink.timezone fails before any network call.
         validateUrl(options.get(URL));
         SchemaResolverOptions resolverOptions = buildResolverOptions(options);
         logIgnoredPrimaryKey(context);
@@ -232,7 +232,8 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
                 options.get(USERNAME),
                 options.get(PASSWORD),
                 options.get(DATABASE),
-                options.get(TABLE),
+                // client-v2 puts the name into INSERT INTO as given; the database is a request setting.
+                ClickHouseIdentifiers.quote(options.get(TABLE)),
                 clientOptions,
                 serverSettings,
                 false); // JSON-as-string is decided once schema resolution has mapped the columns
@@ -262,7 +263,7 @@ public class ClickHouseDynamicTableSinkFactory implements DynamicTableSinkFactor
                     CLIENT_OPTIONS_PREFIX, withCause(e)), e);
         }
         try (Client planningClient = client) {
-            return planningClient.getTableSchema(table, database);
+            return planningClient.getTableSchema(ClickHouseIdentifiers.quote(table), database);
         } catch (Exception e) {
             throw new ValidationException(String.format(
                     "Could not read the schema of ClickHouse table %s.%s at %s — %s",

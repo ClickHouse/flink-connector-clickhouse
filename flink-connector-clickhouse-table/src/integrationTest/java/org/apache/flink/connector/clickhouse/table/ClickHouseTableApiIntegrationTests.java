@@ -1030,20 +1030,23 @@ public class ClickHouseTableApiIntegrationTests {
     }
 
     /**
-     * Fails when client-v2 learns to quote table names (clickhouse-java#3089) — then remove
-     * SchemaResolverOptions#requireUnquotedTableName, its unit test, and this canary.
+     * client-v2 puts the table name into DESCRIBE TABLE and INSERT INTO as given
+     * (clickhouse-java#3089), so the sink quotes it: names that are only valid quoted plan and write.
      */
     @Test
-    void clientV2StillCannotDescribeTableNamesNeedingQuotes() throws Exception {
-        createTable("table-api-canary", "id Int64");
-        try (Client client = fixtureClient()) {
-            Exception e = Assertions.assertThrows(Exception.class, () -> client.getTableSchema(
-                    "table-api-canary", ClickHouseServerForTests.getDatabase()));
-            // Unquoted, the name parses as `table - api - canary`: a server SYNTAX_ERROR (62), not
-            // some other DESCRIBE failure such as the 26.8 header-format break.
-            ServerException server = ExceptionUtils.findThrowable(e, ServerException.class)
-                    .orElseThrow(() -> new AssertionError("expected a server-side syntax error, got: " + e, e));
-            Assertions.assertEquals(62, server.getCode(), server.getMessage());
+    void tableNamesNeedingQuotesArePlannedAndWritten() throws Exception {
+        String[] tables = {"table-api-dash", "2024_table_api_digit", "table api space", "table_api.dot"};
+        TableEnvironment env = tableEnvironment();
+        for (int i = 0; i < tables.length; i++) {
+            createTable(tables[i], "id Int64, name String");
+            String flinkTable = "ch_quoted_" + i;
+            env.executeSql(sinkDdl(flinkTable, tables[i], "id BIGINT NOT NULL, name STRING NOT NULL"));
+            env.executeSql("INSERT INTO " + flinkTable + " VALUES (" + i + ", 'row " + i + "')").await();
+
+            List<GenericRecord> rows = readBack("id, name", tables[i], "id", 1);
+            Assertions.assertEquals(1, rows.size(), tables[i]);
+            Assertions.assertEquals(i, rows.get(0).getLong("id"), tables[i]);
+            Assertions.assertEquals("row " + i, rows.get(0).getString("name"), tables[i]);
         }
     }
 

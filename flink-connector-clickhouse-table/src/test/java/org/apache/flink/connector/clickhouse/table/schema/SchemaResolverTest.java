@@ -130,12 +130,10 @@ class SchemaResolverTest {
     }
 
     @Test
-    void tableNamesNeedingQuotesAreRejectedBeforeIntrospection() {
-        ValidationException e = assertThrows(ValidationException.class, () ->
-                new SchemaResolverOptions("analytics", "my-table", UTC, false));
-        assertTrue(e.getMessage().contains("'my-table'"), e.getMessage());
-        assertTrue(e.getMessage().contains("unquoted"), e.getMessage());
-        // Unusual but unquoted-legal names stay accepted.
+    void tableNamesNeedingQuotesAreAcceptedAsWritten() {
+        // The sink quotes the name for SQL (ClickHouseIdentifiers); the options keep it unquoted.
+        assertEquals("my-table", new SchemaResolverOptions("analytics", "my-table", UTC, false).table);
+        assertEquals("2024_events", new SchemaResolverOptions("analytics", "2024_events", UTC, false).table);
         assertEquals("_events_2", new SchemaResolverOptions("analytics", "_events_2", UTC, false).table);
     }
 
