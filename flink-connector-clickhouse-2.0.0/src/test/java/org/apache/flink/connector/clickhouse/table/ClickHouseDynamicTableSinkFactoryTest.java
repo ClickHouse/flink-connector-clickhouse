@@ -286,16 +286,21 @@ class ClickHouseDynamicTableSinkFactoryTest {
         assertFalse(ex.getMessage().contains("Could not read the schema"), ex.getMessage());
     }
 
-    /** Single values only the built client rejects: a TimeZone-typed value parseConfigMap turns into GMT, and an SSL file the client cannot open (a ClientMisconfigurationException, not an IllegalArgumentException). */
-    @Test void clientOptionValuesOnlyTheBuiltClientRejectsAreReportedAsOptionErrors() {
-        assertEquals(Map.of("server_time_zone", "Mars/Olympus_Mons"),
-                ClickHouseDynamicTableSinkFactory.clientOptions(Map.of("clickhouse.client.server_time_zone", "Mars/Olympus_Mons")));
+    /**
+     * An unknown time zone ID is an option error whichever client-v2 stage rejects it: Client.Builder.build()
+     * up to 0.11, where parseConfigMap turned it into GMT, and parseConfigMap itself since clickhouse-java PR 3359.
+     */
+    @Test void unknownTimeZoneIsReportedAsAnOptionError() {
         ValidationException zone = assertThrows(ValidationException.class, () -> ClickHouseDynamicTableSinkFactory.introspect(
-                planningOptions("http://localhost:1"), planningConfig("http://localhost:1", Map.of("server_time_zone", "Mars/Olympus_Mons"))));
-        assertTrue(zone.getMessage().contains("'clickhouse.client.*'"), zone.getMessage());
+                planningOptions("http://localhost:1"), planningConfig("http://localhost:1",
+                        ClickHouseDynamicTableSinkFactory.clientOptions(Map.of("clickhouse.client.server_time_zone", "Mars/Olympus_Mons")))));
+        assertTrue(zone.getMessage().contains("'clickhouse.client."), zone.getMessage());
         assertTrue(zone.getMessage().contains("Mars/Olympus_Mons"), zone.getMessage());
         assertFalse(zone.getMessage().contains("Could not read the schema"), zone.getMessage());
+    }
 
+    /** A single value only the built client rejects: an SSL file the client cannot open (a ClientMisconfigurationException, not an IllegalArgumentException). */
+    @Test void clientOptionValuesOnlyTheBuiltClientRejectsAreReportedAsOptionErrors() {
         // An https endpoint builds the SSL context inside build(), before any request is made.
         ValidationException ssl = assertThrows(ValidationException.class, () -> ClickHouseDynamicTableSinkFactory.introspect(
                 planningOptions("https://localhost:1"), planningConfig("https://localhost:1", Map.of("sslrootcert", "/nonexistent/ca.pem"))));
