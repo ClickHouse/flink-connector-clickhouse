@@ -305,6 +305,10 @@ This is the DataStream (Java value) view; for the Flink SQL / Table API pairing 
 | ZonedDateTime   | DateTime        | ✅         | DataWriter.writeDateTime    |
 | LocalDateTime   | DateTime64      | ✅         | DataWriter.writeDateTime64  |
 | ZonedDateTime   | DateTime64      | ✅         | DataWriter.writeDateTime64  |
+| Duration        | Time            | ✅         | DataWriter.writeTime        |
+| LocalTime       | Time            | ✅         | DataWriter.writeTime        |
+| Duration        | Time64          | ✅         | DataWriter.writeTime64      |
+| LocalTime       | Time64          | ✅         | DataWriter.writeTime64      |
 | int/Integer     | Time            | ❌         | N/A                         |
 | long/Long       | Time64          | ❌         | N/A                         |
 | byte/Byte       | Enum8           | ✅         | DataWriter.writeInt8        |
