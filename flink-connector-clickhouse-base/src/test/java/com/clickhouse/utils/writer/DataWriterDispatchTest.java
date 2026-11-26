@@ -11,8 +11,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Arrays;
@@ -97,6 +99,37 @@ class DataWriterDispatchTest {
     @Test void dispatchDateTime64WithScale() throws IOException {
         byte[] r = serialize(LocalDateTime.now(), ClickHouseColumn.of("c", "DateTime64(6)"));
         assertTrue(r.length > 0);
+    }
+
+    // Expected bytes are what ClickHouse itself returns for the same values in RowBinary.
+    @Test void dispatchTimeFromNegativeDuration() throws IOException {
+        byte[] r = serialize(Duration.parse("-PT12H34M56S"), ClickHouseColumn.of("c", "Time"));
+        assertArrayEquals(new byte[]{0x10, 0x4f, (byte) 0xff, (byte) 0xff}, r);
+    }
+
+    @Test void dispatchTimeFromLocalTime() throws IOException {
+        byte[] r = serialize(LocalTime.of(12, 34, 56), ClickHouseColumn.of("c", "Time"));
+        assertArrayEquals(new byte[]{(byte) 0xf0, (byte) 0xb0, 0, 0}, r);
+    }
+
+    @Test void dispatchTime64FromDuration() throws IOException {
+        byte[] r = serialize(Duration.parse("PT1H2M3.456S"), ClickHouseColumn.of("c", "Time64(3)"));
+        assertArrayEquals(new byte[]{(byte) 0xc0, (byte) 0xd0, 0x38, 0, 0, 0, 0, 0}, r);
+    }
+
+    @Test void dispatchTime64FromLocalTime() throws IOException {
+        byte[] r = serialize(LocalTime.of(1, 2, 3, 456_000_000), ClickHouseColumn.of("c", "Time64(3)"));
+        assertArrayEquals(new byte[]{(byte) 0xc0, (byte) 0xd0, 0x38, 0, 0, 0, 0, 0}, r);
+    }
+
+    @Test void dispatchTime64FromNegativeFractionalDuration() throws IOException {
+        byte[] r = serialize(Duration.ofMillis(-1500), ClickHouseColumn.of("c", "Time64(3)"));
+        assertArrayEquals(new byte[]{0x24, (byte) 0xfa, (byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff}, r);
+    }
+
+    @Test void dispatchNullableTime64Null() throws IOException {
+        byte[] r = serialize(null, ClickHouseColumn.of("c", "Nullable(Time64(6))"));
+        assertArrayEquals(new byte[]{1}, r);
     }
 
     @Test void dispatchArray() throws IOException {

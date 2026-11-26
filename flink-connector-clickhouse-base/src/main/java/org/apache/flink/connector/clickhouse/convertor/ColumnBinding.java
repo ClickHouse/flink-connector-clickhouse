@@ -59,6 +59,10 @@ public final class ColumnBinding implements Serializable {
                 ClickHouseColumn.of(columnName, "DateTime64(" + scale + ", '" + timezone + "')"));
     }
 
+    public static ColumnBinding time64(String mapKey, String columnName, int scale) {
+        return new ColumnBinding(mapKey, columnName,
+                ClickHouseColumn.of(columnName, "Time64(" + scale + ")"));
+    }
     public static ColumnBinding array(String mapKey, String columnName, ClickHouseColumn element) {
         return new ColumnBinding(mapKey, columnName,
                 ClickHouseColumn.of(columnName, "Array(" + element.getOriginalTypeName() + ")"));
