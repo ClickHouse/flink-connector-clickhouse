@@ -13,12 +13,14 @@ import org.apache.flink.connector.clickhouse.sink.convertor.DateTimePOJODataMapp
 import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJODataMapper;
 import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOWithDefaultsDataMapper;
 import org.apache.flink.connector.clickhouse.sink.convertor.SimplePOJOWithJSONDataMapper;
+import org.apache.flink.connector.clickhouse.sink.convertor.TimePOJODataMapper;
 import org.apache.flink.connector.clickhouse.sink.pojo.DateTimePOJO;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJO;
 import org.apache.flink.connector.clickhouse.sink.pojo.MaxSimplePOJO;
 import org.apache.flink.connector.clickhouse.sink.pojo.MinSimplePOJO;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJOWithDefaults;
 import org.apache.flink.connector.clickhouse.sink.pojo.SimplePOJOWithJSON;
+import org.apache.flink.connector.clickhouse.sink.pojo.TimePOJO;
 import org.apache.flink.connector.test.FlinkClusterTests;
 import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseServerForTests;
 import org.apache.flink.connector.test.embedded.clickhouse.ClickHouseTestHelpers;
@@ -31,6 +33,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -215,6 +218,98 @@ public class ClickHouseTypeTests extends FlinkClusterTests {
             Assertions.assertEquals(id, genericRecordList.get(j).getString("id"));
             Assertions.assertEquals(instant, genericRecordList.get(j).getZonedDateTime("created_at").toInstant());
             Assertions.assertEquals(numLogins, genericRecordList.get(j).getInteger("num_logins"));
+        }
+    }
+
+    // Time and Time64 arrived in ClickHouse 25.6. "latest" and "cloud" are newer.
+    private static boolean supportsTimeTypes() {
+        String[] parts = ClickHouseTestHelpers.getClickhouseVersion().split("\\.");
+        if (parts.length < 2 || !parts[0].matches("\\d+") || !parts[1].matches("\\d+")) {
+            return true;
+        }
+        int major = Integer.parseInt(parts[0]);
+        int minor = Integer.parseInt(parts[1]);
+        return major > 25 || (major == 25 && minor >= 6);
+    }
+
+    private static TimePOJO timePOJO(String id, String duration, TimePOJO.DataType dataType, int precision) {
+        return new TimePOJO(id, Duration.parse(duration).toNanos(), dataType, precision);
+    }
+
+    private static Stream<Arguments> provideTimeTypeAndPojoList() {
+        return Stream.of(
+                Arguments.of("Time",
+                        List.of(
+                                timePOJO("row-001", "-PT12H34M56S", TimePOJO.DataType.TIME, 0),
+                                timePOJO("row-002", "PT0S", TimePOJO.DataType.TIME, 0),
+                                timePOJO("row-003", "PT999H59M59S", TimePOJO.DataType.TIME, 0)),
+                        List.of("-12:34:56", "00:00:00", "999:59:59")),
+                Arguments.of("Time64(3)",
+                        List.of(
+                                timePOJO("row-001", "-PT1.5S", TimePOJO.DataType.TIME64, 3),
+                                timePOJO("row-002", "PT1H2M3.456S", TimePOJO.DataType.TIME64, 3),
+                                timePOJO("row-003", "PT999H59M59.999S", TimePOJO.DataType.TIME64, 3)),
+                        List.of("-00:00:01.500", "01:02:03.456", "999:59:59.999")),
+                Arguments.of("Time64(6)",
+                        List.of(
+                                timePOJO("row-001", "-PT0.000001S", TimePOJO.DataType.TIME64, 6),
+                                timePOJO("row-002", "PT1H2M3.456789S", TimePOJO.DataType.TIME64, 6),
+                                timePOJO("row-003", "PT999H59M59.999999S", TimePOJO.DataType.TIME64, 6)),
+                        List.of("-00:00:00.000001", "01:02:03.456789", "999:59:59.999999")),
+                Arguments.of("Time64(9)",
+                        List.of(
+                                timePOJO("row-001", "-PT0.000000001S", TimePOJO.DataType.TIME64, 9),
+                                timePOJO("row-002", "PT1H2M3.456789123S", TimePOJO.DataType.TIME64, 9),
+                                timePOJO("row-003", "PT999H59M59.999999999S", TimePOJO.DataType.TIME64, 9)),
+                        List.of("-00:00:00.000000001", "01:02:03.456789123", "999:59:59.999999999"))
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("provideTimeTypeAndPojoList")
+    void testTime(String type, List<TimePOJO> timePOJOList, List<String> expectedText) throws Exception {
+        Assumptions.assumeTrue(supportsTimeTypes(), "Time and Time64 need ClickHouse 25.6+");
+        String tableName = String.format("pojo_%s", type.replace("(", "_").replace(")", ""));
+
+        // create table
+        ClickHouseServerForTests.executeSql(TimePOJO.createTableSql(getDatabase(), tableName, type));
+
+        TableSchema timeTableSchema = ClickHouseServerForTests.getTableSchema(tableName);
+        TimePOJO sample = timePOJOList.get(0);
+        DataMapper<TimePOJO> timePOJOMapper = new TimePOJODataMapper(sample.dataType, sample.precision);
+
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(STREAM_PARALLELISM);
+
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(FlinkClusterTests.getServerURL(), FlinkClusterTests.getUsername(), FlinkClusterTests.getPassword(), FlinkClusterTests.getDatabase(), tableName);
+        clickHouseClientConfig.setSupportDefault(timeTableSchema.hasDefaults());
+
+        ClickHouseConvertor<TimePOJO> timePOJOConvertor = new ClickHouseConvertor<>(TimePOJO.class, timePOJOMapper);
+
+        ClickHouseAsyncSink<TimePOJO> timePOJOSink = ClickHouseAsyncSink.<TimePOJO>builder()
+                .setElementConverter(timePOJOConvertor)
+                .setMaxBatchSize(MAX_BATCH_SIZE)
+                .setMaxInFlightRequests(MAX_IN_FLIGHT_REQUESTS)
+                .setMaxBufferedRequests(MAX_BUFFERED_REQUESTS)
+                .setMaxBatchSizeInBytes(MAX_BATCH_SIZE_IN_BYTES)
+                .setMaxTimeInBufferMS(MAX_TIME_IN_BUFFER_MS)
+                .setMaxRecordSizeInBytes(MAX_RECORD_SIZE_IN_BYTES)
+                .setClickHouseClientConfig(clickHouseClientConfig)
+                .build();
+
+        // create from list
+        DataStream<TimePOJO> timePOJOs = env.fromCollection(timePOJOList, TypeInformation.of(TimePOJO.class));
+        // send to sink
+        timePOJOs.sinkTo(timePOJOSink);
+        int rows = executeAsyncJob(env, tableName, 10, 3);
+        Assertions.assertEquals(3, rows);
+
+        // read back as ClickHouse prints it: client-v2 0.11.1 misreads negative Time64 fractions (clickhouse-java#3419)
+        List<GenericRecord> genericRecordList = ClickHouseServerForTests.extractData("id, toString(elapsed) AS elapsed", FlinkClusterTests.getDatabase(), tableName, "id");
+        Assertions.assertEquals(3, genericRecordList.size());
+        for (int j = 0; j < genericRecordList.size(); j++) {
+            Assertions.assertEquals(timePOJOList.get(j).id, genericRecordList.get(j).getString("id"));
+            Assertions.assertEquals(expectedText.get(j), genericRecordList.get(j).getString("elapsed"));
         }
     }
 
