@@ -746,6 +746,82 @@ public class ClickHouseTableApiIntegrationTests {
     }
 
     @Test
+    void multisetNestedInsideArrayMapAndRowRoundTrips() throws Exception {
+        String table = "table_api_multiset_nested";
+        createTable(table, "id Int64, in_array Array(Map(String, UInt64)), "
+                + "in_map Map(String, Map(String, Nullable(UInt32))), in_row Tuple(Map(String, Nullable(UInt64)))");
+
+        TableEnvironment env = TableEnvironment.create(EnvironmentSettings.inBatchMode());
+        env.executeSql(sinkDdl("ch_multiset_nested", table,
+                "id BIGINT NOT NULL,"
+                        + "in_array ARRAY<MULTISET<STRING NOT NULL> NOT NULL> NOT NULL,"
+                        + "in_map MAP<STRING, MULTISET<STRING NOT NULL> NOT NULL> NOT NULL,"
+                        + "in_row ROW<a MULTISET<STRING NOT NULL> NOT NULL> NOT NULL"));
+        env.executeSql("INSERT INTO ch_multiset_nested "
+                + "SELECT id, ARRAY[tags], MAP['k', tags], ROW(tags) FROM ("
+                + "  SELECT id, COLLECT(tag) AS tags FROM ("
+                + "    SELECT CAST(id AS BIGINT) AS id, CAST(tag AS STRING) AS tag "
+                + "    FROM (VALUES (1, 'a'), (1, 'a'), (1, 'b')) AS t(id, tag)"
+                + "  ) GROUP BY id)").await();
+
+        List<GenericRecord> rows = readBack(
+                "id, toString(arrayMap(m -> mapSort(m), in_array)) AS in_array_s, "
+                        + "toString(mapSort(in_map['k'])) AS in_map_s, toString(mapSort(in_row.1)) AS in_row_s",
+                table, "id", 1);
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals("[{'a':2,'b':1}]", rows.get(0).getString("in_array_s"));
+        Assertions.assertEquals("{'a':2,'b':1}", rows.get(0).getString("in_map_s"));
+        Assertions.assertEquals("{'a':2,'b':1}", rows.get(0).getString("in_row_s"));
+    }
+
+    @Test
+    void nullableLeavesInsideNestedArraysAndMapsRoundTrip() throws Exception {
+        String table = "table_api_nullable_nested_composites";
+        createTable(table,
+                "id Int64, matrix Array(Array(Nullable(Int32))), dicts Array(Map(String, Nullable(Int32))), "
+                        + "by_key Map(String, Array(Nullable(Int32))), deep Map(String, Map(String, Nullable(Int32))), "
+                        + "wrapped Tuple(Array(Nullable(Int32))), tupled_map Tuple(Map(String, Nullable(Int32)))");
+
+        TableEnvironment env = tableEnvironment();
+        env.executeSql(sinkDdl("ch_nullable_nested_composites", table,
+                "id BIGINT NOT NULL,"
+                        + "matrix ARRAY<ARRAY<INT> NOT NULL> NOT NULL,"
+                        + "dicts ARRAY<MAP<STRING, INT> NOT NULL> NOT NULL,"
+                        + "by_key MAP<STRING, ARRAY<INT> NOT NULL> NOT NULL,"
+                        + "deep MAP<STRING, MAP<STRING, INT> NOT NULL> NOT NULL,"
+                        + "wrapped ROW<a ARRAY<INT> NOT NULL> NOT NULL,"
+                        + "tupled_map ROW<a MAP<STRING, INT> NOT NULL> NOT NULL"));
+        env.executeSql("INSERT INTO ch_nullable_nested_composites VALUES "
+                + "(1, ARRAY[ARRAY[1, CAST(NULL AS INT)], ARRAY[3]], "
+                + "ARRAY[MAP['a', CAST(NULL AS INT), 'b', 2]], "
+                + "MAP['k', ARRAY[CAST(NULL AS INT), 2]], MAP['k', MAP['n', CAST(NULL AS INT)]], "
+                + "ROW(ARRAY[1, CAST(NULL AS INT)]), ROW(MAP['a', CAST(NULL AS INT)]))").await();
+        // Separate statement: Flink cannot unify MAP types of differing nullability across VALUES rows.
+        env.executeSql("INSERT INTO ch_nullable_nested_composites VALUES "
+                + "(2, ARRAY[ARRAY[4]], ARRAY[MAP['c', 5]], MAP['k', ARRAY[6]], MAP['k', MAP['n', 7]], "
+                + "ROW(ARRAY[8]), ROW(MAP['a', 9]))").await();
+
+        List<GenericRecord> rows = readBack(
+                "id, toString(matrix) AS matrix_s, toString(arrayMap(m -> mapSort(m), dicts)) AS dicts_s, "
+                        + "toString(by_key) AS by_key_s, toString(deep) AS deep_s, "
+                        + "toString(wrapped) AS wrapped_s, toString(tupled_map) AS tupled_map_s",
+                table, "id", 2);
+        Assertions.assertEquals(2, rows.size());
+        Assertions.assertEquals("[[1,NULL],[3]]", rows.get(0).getString("matrix_s"));
+        Assertions.assertEquals("[{'a':NULL,'b':2}]", rows.get(0).getString("dicts_s"));
+        Assertions.assertEquals("{'k':[NULL,2]}", rows.get(0).getString("by_key_s"));
+        Assertions.assertEquals("{'k':{'n':NULL}}", rows.get(0).getString("deep_s"));
+        Assertions.assertEquals("([1,NULL])", rows.get(0).getString("wrapped_s"));
+        Assertions.assertEquals("({'a':NULL})", rows.get(0).getString("tupled_map_s"));
+        Assertions.assertEquals("[[4]]", rows.get(1).getString("matrix_s"));
+        Assertions.assertEquals("[{'c':5}]", rows.get(1).getString("dicts_s"));
+        Assertions.assertEquals("{'k':[6]}", rows.get(1).getString("by_key_s"));
+        Assertions.assertEquals("{'k':{'n':7}}", rows.get(1).getString("deep_s"));
+        Assertions.assertEquals("([8])", rows.get(1).getString("wrapped_s"));
+        Assertions.assertEquals("({'a':9})", rows.get(1).getString("tupled_map_s"));
+    }
+
+    @Test
     void updatingSourceIsRejectedAtPlanningAsInsertOnly() throws Exception {
         String table = "table_api_insert_only";
         createTable(table, "name String, cnt Int64", "MergeTree() ORDER BY name");

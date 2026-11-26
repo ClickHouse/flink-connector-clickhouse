@@ -46,6 +46,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -516,6 +517,32 @@ class ClickHouseTypeMapperTest {
     }
 
     @Test
+    void multisetNestsInsideArraysMapsAndRows() {
+        VarCharType key = new VarCharType(false, VarCharType.MAX_LENGTH);
+        GenericMapData counts = new GenericMapData(Map.of(StringData.fromString("a"), 2));
+        Map<String, Object> countsOut = Map.of("a", 2L);
+
+        assertEquals(List.of(countsOut), ClickHouseTypeMapper.converterFor(
+                new ArrayType(false, multisetOfString()), col("Array(Map(String, UInt64))"), LENIENT, "c")
+                .convert(new GenericArrayData(new Object[]{counts})));
+        assertEquals(Map.of("k", countsOut), ClickHouseTypeMapper.converterFor(
+                new MapType(false, key, multisetOfString()),
+                col("Map(String, Map(String, Nullable(UInt64)))"), LENIENT, "c")
+                .convert(new GenericMapData(Map.of(StringData.fromString("k"), counts))));
+        assertArrayEquals(new Object[]{countsOut}, (Object[]) ClickHouseTypeMapper.converterFor(
+                rowOf(multisetOfString()), col("Tuple(Map(String, Nullable(UInt64)))"), LENIENT, "c")
+                .convert(GenericRowData.of(counts)));
+    }
+
+    @Test
+    void nestedMultisetStillRequiresAnIntegerCountType() {
+        TypeMappingException e = assertThrows(TypeMappingException.class,
+                () -> ClickHouseTypeMapper.converterFor(
+                        new ArrayType(false, multisetOfString()), col("Array(Map(String, String))"), LENIENT, "c"));
+        assertTrue(e.getMessage().contains("MULTISET counts require an integer Map value type"), e.getMessage());
+    }
+
+    @Test
     void decimalsWiderThanTheIntegerAreRejectedAtPlanning() {
         TypeMappingException e = assertThrows(TypeMappingException.class, () -> decimalTo(20, "Int64"));
         assertTrue(e.getMessage().contains("precision 20 exceeds Int64's 19 digits"), e.getMessage());
@@ -619,6 +646,42 @@ class ClickHouseTypeMapperTest {
         expected.put("a", 1);
         expected.put("b", null);
         assertEquals(expected, nullable.convert(new GenericMapData(entries)));
+    }
+
+    @Test
+    void nullableLeavesAreForwardedThroughNestedArraysAndMaps() {
+        VarCharType key = new VarCharType(false, VarCharType.MAX_LENGTH);
+        IntType leaf = new IntType(true);
+        ArrayType nums = new ArrayType(false, leaf);
+        MapType dict = new MapType(false, key, leaf);
+        GenericArrayData numsData = new GenericArrayData(new Object[]{1, null});
+        GenericMapData dictData = new GenericMapData(Collections.singletonMap(StringData.fromString("a"), null));
+        List<Object> numsOut = Arrays.asList(1, null);
+        Map<String, Object> dictOut = Collections.singletonMap("a", null);
+
+        assertEquals(List.of(numsOut), ClickHouseTypeMapper.converterFor(
+                new ArrayType(false, nums), col("Array(Array(Nullable(Int32)))"), LENIENT, "c")
+                .convert(new GenericArrayData(new Object[]{numsData})));
+        assertEquals(List.of(dictOut), ClickHouseTypeMapper.converterFor(
+                new ArrayType(false, dict), col("Array(Map(String, Nullable(Int32)))"), LENIENT, "c")
+                .convert(new GenericArrayData(new Object[]{dictData})));
+        assertEquals(Map.of("k", numsOut), ClickHouseTypeMapper.converterFor(
+                new MapType(false, key, nums), col("Map(String, Array(Nullable(Int32)))"), LENIENT, "c")
+                .convert(new GenericMapData(Map.of(StringData.fromString("k"), numsData))));
+        assertEquals(Map.of("k", dictOut), ClickHouseTypeMapper.converterFor(
+                new MapType(false, key, dict), col("Map(String, Map(String, Nullable(Int32)))"), LENIENT, "c")
+                .convert(new GenericMapData(Map.of(StringData.fromString("k"), dictData))));
+    }
+
+    /** A nullable Flink leaf under a nested composite still needs a Nullable ClickHouse leaf. */
+    @Test
+    void nullableLeafUnderNestedCompositesIsRejectedWithoutNullable() {
+        VarCharType key = new VarCharType(false, VarCharType.MAX_LENGTH);
+        IntType leaf = new IntType(true);
+        assertThrows(TypeMappingException.class, () -> ClickHouseTypeMapper.converterFor(
+                new ArrayType(false, new MapType(false, key, leaf)), col("Array(Map(String, Int32))"), LENIENT, "c"));
+        assertThrows(TypeMappingException.class, () -> ClickHouseTypeMapper.converterFor(
+                new MapType(false, key, new ArrayType(false, leaf)), col("Map(String, Array(Int32))"), LENIENT, "c"));
     }
 
     /** ClickHouse's experimental Nullable(Tuple) takes a null ROW as a Map value or a Tuple element. */
