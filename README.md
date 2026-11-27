@@ -242,7 +242,7 @@ planning naming the column and both types.
 | `ROW<...>` | `Tuple(...)` | positional — a ROW whose field names are a named Tuple's element names in another order is rejected at planning; nullable fields need `Nullable` elements |
 
 Unsupported: `BINARY`/`VARBINARY`, `TIME`, `TIMESTAMP WITH TIME ZONE`, `INTERVAL`; ClickHouse
-`Enum` (#43), `Variant` (#60), `Time` (#91), `IPv4/6`, `Dynamic`, geo — exclude such columns
+`Enum` (#43), `Variant` (#60), `Time`/`Time64` (DataStream API only for now, #91), `IPv4/6`, `Dynamic`, geo — exclude such columns
 and let server defaults fill them.
 
 Everywhere: nullable Flink columns need `Nullable(...)` targets — except top-level

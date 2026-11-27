@@ -13,6 +13,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.time.Duration;
+import java.time.LocalTime;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumMap;
@@ -84,10 +86,22 @@ class DataWriterContractTest {
     /** Whitelist drift, direction two: fails when DataWriter learns a type unsupportedTargetReason still cites. */
     @Test
     void knownUnwritableTargetsStayUndispatched() {
-        for (String expression : List.of("Enum8('a' = 1)", "Enum16('a' = 1)", "Variant(String, Int32)", "Time", "Time64(3)")) {
+        for (String expression : List.of("Enum8('a' = 1)", "Enum16('a' = 1)", "Variant(String, Int32)")) {
             assertFalse(dispatches(expression),
                     expression + " became writable — update WRITABLE_TARGETS and unsupportedTargetReason");
         }
+    }
+
+    /** DataWriter writes Time and Time64 for the DataStream API; the planner has no TIME pairing yet (#91). */
+    @Test
+    void timeTargetsDispatchButStayOutOfThePlanner() {
+        for (String expression : List.of("Time", "Time64(3)")) {
+            assertTrue(dispatches(expression), expression + " lost its DataWriter case");
+        }
+        assertFalse(ClickHouseTypeMapper.WRITABLE_TARGETS.contains(ClickHouseDataType.Time),
+                "Time joined WRITABLE_TARGETS — update unsupportedTargetReason and the TIME rule");
+        assertFalse(ClickHouseTypeMapper.WRITABLE_TARGETS.contains(ClickHouseDataType.Time64),
+                "Time64 joined WRITABLE_TARGETS — update unsupportedTargetReason and the TIME rule");
     }
 
     /**
@@ -142,6 +156,14 @@ class DataWriterContractTest {
     void nestedNullsRestoreFromACheckpointToTheSameBytes() throws IOException {
         assertRestoresToTheSameBytes(scoresWithANull(), "Map(String, Nullable(Int32))");
         assertRestoresToTheSameBytes(new Object[]{null, "x"}, "Tuple(Nullable(Int32), Nullable(String))");
+    }
+
+    /** DataStream payloads hold Time values as LocalTime or Duration, and a restore must write the same bytes. */
+    @Test
+    void timeValuesRestoreFromACheckpointToTheSameBytes() throws IOException {
+        assertRestoresToTheSameBytes(LocalTime.of(12, 34, 56), "Time");
+        assertRestoresToTheSameBytes(Duration.ofMillis(-1500), "Time64(3)");
+        assertRestoresToTheSameBytes(LocalTime.of(1, 2, 3, 456_789_000), "Time64(6)");
     }
 
     // ------------------------------------------------------------------------------------
