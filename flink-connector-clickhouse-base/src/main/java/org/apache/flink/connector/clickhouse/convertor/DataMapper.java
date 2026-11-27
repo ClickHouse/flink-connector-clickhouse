@@ -14,7 +14,7 @@ import java.util.Map;
  * {@code null}, {@code Boolean}, {@code Byte}, {@code Short}, {@code Integer},
  * {@code Long}, {@code Float}, {@code Double}, {@code BigInteger}, {@code BigDecimal},
  * {@code String}, {@code byte[]}, {@code UUID}, {@code LocalDate},
- * {@code LocalDateTime}, {@code ZonedDateTime}, {@code List<allowed>},
+ * {@code LocalDateTime}, {@code ZonedDateTime}, {@code LocalTime}, {@code Duration}, {@code List<allowed>},
  * {@code Map<String, allowed>}, {@code Object[]} (tuples).
  * Anything else fails at checkpoint serialization time.
  */
