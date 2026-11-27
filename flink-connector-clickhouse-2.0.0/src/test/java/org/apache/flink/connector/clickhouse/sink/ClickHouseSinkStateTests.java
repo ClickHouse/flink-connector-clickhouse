@@ -15,8 +15,10 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Arrays;
@@ -67,6 +69,8 @@ class ClickHouseSinkStateTests {
         p.getData().put("ldt_v", LocalDateTime.of(2026, 5, 16, 12, 34, 56, 789_000_000));
         p.getData().put("zdt_v", ZonedDateTime.of(2026, 5, 16, 12, 34, 56, 789_000_000,
                 ZoneId.of("Europe/Berlin")));
+        p.getData().put("time_v", LocalTime.of(12, 34, 56, 789_000_000));
+        p.getData().put("duration_v", Duration.ofMillis(-1500));
         p.getData().put("list_v", Arrays.asList("a", 1, null));
         Map<String, Object> innerMap = new LinkedHashMap<>();
         innerMap.put("k", 42);

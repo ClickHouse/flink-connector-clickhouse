@@ -9,8 +9,10 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Arrays;
@@ -82,6 +84,22 @@ class TypeTagsTest {
 
     @Test void zonedDateTimeRoundTrip() throws IOException {
         ZonedDateTime v = ZonedDateTime.of(2026, 5, 16, 12, 34, 56, 789_000_000, ZoneId.of("Europe/Berlin"));
+        assertEquals(v, roundTrip(v));
+    }
+
+    @Test void localTimeRoundTrip() throws IOException {
+        LocalTime v = LocalTime.of(23, 59, 59, 999_999_999);
+        assertEquals(v, roundTrip(v));
+    }
+
+    @Test void durationRoundTrip() throws IOException {
+        Duration v = Duration.parse("PT999H59M59.123456789S");
+        assertEquals(v, roundTrip(v));
+    }
+
+    /** Time columns accept negative values, so a negative fractional Duration must come back exactly. */
+    @Test void negativeFractionalDurationRoundTrip() throws IOException {
+        Duration v = Duration.ofMillis(-1500);
         assertEquals(v, roundTrip(v));
     }
 

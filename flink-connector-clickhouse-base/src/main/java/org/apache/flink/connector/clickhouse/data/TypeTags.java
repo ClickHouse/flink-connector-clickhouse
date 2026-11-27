@@ -6,8 +6,10 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -49,6 +51,8 @@ public final class TypeTags {
     static final byte LIST = 16;
     static final byte MAP = 17;
     static final byte TUPLE = 18;
+    static final byte LOCAL_TIME = 19;
+    static final byte DURATION = 20;
 
     /** Entry format whose strings and map keys are writeUTF-encoded (capped at 64 KB). */
     public static final int V2 = 2;
@@ -109,6 +113,16 @@ public final class TypeTags {
             out.writeLong(zdt.toEpochSecond());
             out.writeInt(zdt.getNano());
             out.writeUTF(zdt.getZone().getId()); return;
+        }
+        if (value instanceof LocalTime) {
+            out.writeByte(LOCAL_TIME);
+            out.writeLong(((LocalTime) value).toNanoOfDay()); return;
+        }
+        if (value instanceof Duration) {
+            Duration d = (Duration) value;
+            out.writeByte(DURATION);
+            out.writeLong(d.getSeconds());
+            out.writeInt(d.getNano()); return;
         }
         if (value instanceof List) {
             List<?> list = (List<?>) value;
@@ -199,6 +213,11 @@ public final class TypeTags {
             case ZONED_DATETIME: {
                 long sec = in.readLong(); int nanos = in.readInt(); String zone = in.readUTF();
                 return ZonedDateTime.ofInstant(java.time.Instant.ofEpochSecond(sec, nanos), ZoneId.of(zone));
+            }
+            case LOCAL_TIME: return LocalTime.ofNanoOfDay(in.readLong());
+            case DURATION: {
+                long sec = in.readLong(); int nanos = in.readInt();
+                return Duration.ofSeconds(sec, nanos);
             }
             case LIST: {
                 int n = in.readInt();

@@ -180,7 +180,7 @@ public final class ClickHouseTypeMapper {
                 return "see issue #60";
             case Time:
             case Time64:
-                return "see issue #91";
+                return "the Table API has no TIME pairing for it yet; the DataStream API writes it (see issue #91)";
             case Nested:
                 // Only reachable with flatten_nested = 0 (the default expands it into Array columns); client-v2
                 // 0.11.0 can write it (clickhouse-java#2936) but the sink has no ARRAY<ROW> pairing for it yet.
@@ -232,7 +232,7 @@ public final class ClickHouseTypeMapper {
         rules.put(LogicalTypeRoot.VARBINARY, rejected(
                 "the sink does not yet support binary types (DataWriter lacks a byte[] write path)"));
         rules.put(LogicalTypeRoot.TIME_WITHOUT_TIME_ZONE, rejected(
-                "ClickHouse Time/Time64 are still experimental and the sink has no write path yet (see issue #91)"));
+                "the Table API does not map TIME to ClickHouse Time/Time64 yet; the DataStream API writes them (see issue #91)"));
         rules.put(LogicalTypeRoot.TIMESTAMP_WITH_TIME_ZONE, rejected(
                 "TIMESTAMP WITH TIME ZONE is not supported — use TIMESTAMP or TIMESTAMP_LTZ"));
         rules.put(LogicalTypeRoot.INTERVAL_YEAR_MONTH, rejected(

@@ -11,8 +11,10 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.UUID;
@@ -76,6 +78,38 @@ public class DataWriter {
     public void writeDateTime64(ZonedDateTime value, boolean isNullable, ClickHouseDataType dataType, String column, int scale) throws IOException {
         if (Serialize.writeValuePreamble(out, isNullable, dataType, column, value)) {
             SerializerUtils.writeDateTime64(out, value, scale, ZoneId.of("UTC")); // TODO: check
+        }
+    }
+
+    // Time is whole seconds in an Int32. Time64(p) is ticks of 10^-p seconds in an Int64.
+    private static final long[] POWERS_OF_TEN = {
+        1L, 10L, 100L, 1_000L, 10_000L, 100_000L, 1_000_000L, 10_000_000L, 100_000_000L, 1_000_000_000L
+    };
+
+    public void writeTime(LocalTime value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (Serialize.writeValuePreamble(out, isNullable, dataType, column, value)) {
+            BinaryStreamUtils.writeInt32(out, value.toSecondOfDay());
+        }
+    }
+
+    public void writeTime(Duration value, boolean isNullable, ClickHouseDataType dataType, String column) throws IOException {
+        if (Serialize.writeValuePreamble(out, isNullable, dataType, column, value)) {
+            BinaryStreamUtils.writeInt32(out, Math.toIntExact(value.getSeconds()));
+        }
+    }
+
+    public void writeTime64(LocalTime value, boolean isNullable, ClickHouseDataType dataType, String column, int scale) throws IOException {
+        if (Serialize.writeValuePreamble(out, isNullable, dataType, column, value)) {
+            BinaryStreamUtils.writeInt64(out, value.toNanoOfDay() / POWERS_OF_TEN[9 - scale]);
+        }
+    }
+
+    public void writeTime64(Duration value, boolean isNullable, ClickHouseDataType dataType, String column, int scale) throws IOException {
+        if (Serialize.writeValuePreamble(out, isNullable, dataType, column, value)) {
+            long ticks = Math.addExact(
+                    Math.multiplyExact(value.getSeconds(), POWERS_OF_TEN[scale]),
+                    value.getNano() / POWERS_OF_TEN[9 - scale]);
+            BinaryStreamUtils.writeInt64(out, ticks);
         }
     }
 
@@ -311,6 +345,20 @@ public class DataWriter {
                     writeDateTime64((LocalDateTime) value, nullable, type, name, column.getScale());
                 } else {
                     writeDateTime64((ZonedDateTime) value, nullable, type, name, column.getScale());
+                }
+                break;
+            case Time:
+                if (value instanceof LocalTime) {
+                    writeTime((LocalTime) value, nullable, type, name);
+                } else {
+                    writeTime((Duration) value, nullable, type, name);
+                }
+                break;
+            case Time64:
+                if (value instanceof LocalTime) {
+                    writeTime64((LocalTime) value, nullable, type, name, column.getScale());
+                } else {
+                    writeTime64((Duration) value, nullable, type, name, column.getScale());
                 }
                 break;
             case Array: writeArray(value, column); break;
