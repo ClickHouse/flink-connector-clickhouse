@@ -2,8 +2,8 @@
  * Build file of the flink-connector-clickhouse-table submodule.
  *
  * Version-independent Table API / SQL support: connector options, the
- * (Flink LogicalType, ClickHouseColumn) type matrix, schema resolution and the
- * RowData -> Map DataMapper.
+ * (Flink LogicalType, ClickHouseColumn) type matrix, schema resolution, the
+ * RowData -> Map DataMapper and the read-only catalog.
  *
  * Owns the source but does not ship it: each version module adds src/main/java to its
  * own sourceSet and compiles it against its own Flink. The compile here is the floor

@@ -1,5 +1,6 @@
 ## Unreleased
 * Add Table API / Flink SQL sink support https://github.com/ClickHouse/flink-connector-clickhouse/pull/165
+* Add a read-only Flink SQL catalog (`'type' = 'clickhouse'`): lists the databases and tables of ClickHouse and derives each table's Flink schema, so `INSERT INTO` needs no per-table DDL
 * Upgrade the ClickHouse Java client (client-v2) to 0.11.1 — restores schema introspection on ClickHouse 26.8+ and compressed reads on 26.9+
 * The User-Agent follows the ClickHouse client format, `Flink-ClickHouse-Sink/<version> clickhouse-java-v2/<version> (fv:flink/<version>; api:datastream|table; lv:java/<jvm>; os:<os>; hc:<http client>)`; the Scala version tag is dropped
 * Server error 159 (`TIMEOUT_EXCEEDED`) is no longer classified as retryable (client-v2 0.11.1), so such a batch follows the batch failure strategy instead of being retried

@@ -119,13 +119,14 @@ sourceSets {
     }
 }
 
-// These files are hand-duplicated across the version modules (the Table API pair needs this
-// module's ClickHouseAsyncSink/ClickHouseClientConfig, so it cannot be single-sourced in
-// :flink-connector-clickhouse-table until those are; the config and builder predate the split).
+// These files are hand-duplicated across the version modules (the Table API factories and sink
+// need this module's ClickHouseAsyncSink/ClickHouseClientConfig, so they cannot be single-sourced
+// in :flink-connector-clickhouse-table until those are; the config and builder predate the split).
 // Fail the build on drift instead. Files that legitimately differ per Flink generation
 // (ClickHouseConvertor, ClickHouseAsyncWriter, ...) must stay out of this list.
 val checkCrossVersionCopiesInSync by tasks.registering {
     val copies = listOf(
+        "src/main/java/org/apache/flink/connector/clickhouse/table/ClickHouseCatalogFactory.java",
         "src/main/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSink.java",
         "src/main/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSinkFactory.java",
         "src/main/resources/META-INF/services/org.apache.flink.table.factories.Factory",
@@ -136,6 +137,7 @@ val checkCrossVersionCopiesInSync by tasks.registering {
         "src/test/java/org/apache/flink/connector/clickhouse/sink/ClickHouseSinkStateTests.java",
         "src/test/java/org/apache/flink/connector/clickhouse/sink/ClickHouseClientConfigTest.java",
         "src/test/java/org/apache/flink/connector/clickhouse/sink/ClickHouseAsyncSinkBuilderTest.java",
+        "src/test/java/org/apache/flink/connector/clickhouse/table/ClickHouseCatalogFactoryTest.java",
         "src/test/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSinkFactoryTest.java",
         "src/test/java/org/apache/flink/connector/clickhouse/table/ClickHouseDynamicTableSinkTest.java",
     ).map { file(it) to project(":flink-connector-clickhouse-1.17").file(it) }

@@ -37,6 +37,11 @@ public final class SchemaResolverOptions {
         return new TypeMappingOptions(sinkTimezone, strictNumericMapping);
     }
 
+    /** Whether the connector can address {@code table}: only a name that needs no quoting. */
+    public static boolean isUnquotedName(String table) {
+        return UNQUOTED_IDENTIFIER.matcher(table).matches();
+    }
+
     /**
      * client-v2 concatenates the table name unquoted into DESCRIBE TABLE and INSERT INTO
      * (https://github.com/ClickHouse/clickhouse-java/issues/3089); the database travels as
@@ -44,7 +49,7 @@ public final class SchemaResolverOptions {
      */
     private static String requireUnquotedTableName(String table) {
         Objects.requireNonNull(table, "table");
-        if (UNQUOTED_IDENTIFIER.matcher(table).matches()) {
+        if (isUnquotedName(table)) {
             return table;
         }
         throw new ValidationException(String.format(
